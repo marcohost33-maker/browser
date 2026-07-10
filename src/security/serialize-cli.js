@@ -14,12 +14,15 @@
 
 import {
   loadBaseline,
-  buildHeaderMap,
   serializeCsp,
   validateBaseline,
   DEFAULT_BASELINE_PATH,
   CspValidationError,
 } from './csp.js';
+import {
+  buildHardenedHeaderMap,
+  validateSecurityHeaderValues,
+} from './header-values.js';
 
 function parseArgs(argv) {
   const opts = { mode: 'header', baseline: DEFAULT_BASELINE_PATH };
@@ -59,23 +62,28 @@ function main() {
   }
 
   if (opts.mode === 'check') {
-    const errors = validateBaseline(baseline, { approvedEndpoints });
+    const errors = [
+      ...validateBaseline(baseline, { approvedEndpoints }),
+      ...validateSecurityHeaderValues(baseline),
+    ];
     if (errors.length > 0) {
-      process.stderr.write('CSP baseline REJECTED:\n');
+      process.stderr.write('CSP/security-header baseline REJECTED:\n');
       for (const e of errors) process.stderr.write(`  - ${e}\n`);
       process.exit(1);
     }
-    process.stdout.write('CSP baseline OK: connect-src exfil boundary enforced.\n');
+    process.stdout.write(
+      'CSP/security-header baseline OK: exfiltration and header-value boundaries enforced.\n',
+    );
     process.exit(0);
   }
 
   try {
     if (opts.mode === 'json') {
-      const headers = buildHeaderMap(baseline, { approvedEndpoints });
+      const headers = buildHardenedHeaderMap(baseline, { approvedEndpoints });
       process.stdout.write(`${JSON.stringify(headers, null, 2)}\n`);
     } else {
-      // header mode: validate (fail-closed) then print the CSP string.
-      buildHeaderMap(baseline, { approvedEndpoints });
+      // Header mode: validate all security invariants, then print the CSP string.
+      buildHardenedHeaderMap(baseline, { approvedEndpoints });
       process.stdout.write(`${serializeCsp(baseline.directives)}\n`);
     }
   } catch (err) {
