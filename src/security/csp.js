@@ -1,11 +1,19 @@
-// APP-01 CSP + security-header serializer (M1B).
+// APP-01 CSP + security-header serializer + enforcement (M1B).
 //
 // Single source of truth: docs/security/csp-baseline.json. This module turns
 // that machine-readable baseline into the exact header strings the app serves,
-// and enforces the connect-src exfiltration boundary at build/CI time.
+// and enforces the *whole served surface* — every CSP directive plus every
+// additional header — at build/CI time. It is validate-then-serialize: a
+// baseline that would emit an unsafe policy is rejected fail-closed and can
+// never be serialized/served.
 //
-// No runtime dependencies (Node built-ins only) — the repo keeps the bundle
-// dependency-free (see .github/workflows/docs-ci.yml rationale).
+// Threat handled (Aegis PoC, 2026-07-10): a `;`/whitespace-carrying source
+// token in ANY directive (e.g. default-src) injects an extra widening
+// directive (`connect-src * data: https://evil`) into the serialized string,
+// and a raw `additional_headers` value downgrades HSTS to max-age=0. Both are
+// rejected here.
+//
+// No runtime dependencies (Node built-ins only).
 //
 // See docs/security/CSP_AND_SECURITY_HEADERS.md for the security rationale.
 
@@ -34,6 +42,47 @@ const VALUELESS_DIRECTIVES = new Set(['upgrade-insecure-requests']);
 // default-src; we require it explicit so the exfil boundary is auditable).
 const REQUIRED_DIRECTIVES = ['default-src', 'connect-src', 'script-src'];
 
+// Any source token containing a directive-/policy-/source separator or a
+// control char is an injection vector — a legitimate CSP source never does.
+// Rejecting these kills `;`-injection (extra directive) and header-splitting.
+const ILLEGAL_SOURCE_CHARS = /[\s;,]|[\x00-\x1f\x7f]/;
+
+// Control-char guard for header VALUES (header-splitting / CRLF injection).
+const HEADER_CTRL_CHARS = /[\x00-\x1f\x7f]/;
+
+// Strict nonce/hash source patterns (only place a non-keyword quoted token is
+// allowed, and only in directives that opt in).
+const NONCE_RE = /^'nonce-[A-Za-z0-9+/\-_]+={0,2}'$/;
+const HASH_RE = /^'sha(256|384|512)-[A-Za-z0-9+/\-_]+={0,2}'$/;
+
+// A scheme-source shorthand like https: http: data: blob: ws:
+const SCHEME_SOURCE_RE = /^[a-z][a-z0-9+.\-]*:$/i;
+
+// HSTS must not be downgraded. Floor = 1 year (common preload minimum).
+const HSTS_MAX_AGE_FLOOR = 31536000;
+
+// Per-directive policy. `keywords` = the exact quoted keywords allowed;
+// `schemes` = the scheme-sources allowed (only img-/font-style contexts);
+// `nonceHash` = accept nonces/hashes; `approvedOrigins` = accept exact origins
+// present in the curated approved-endpoint set. Anything else is rejected.
+// A directive NOT in this table is an unknown directive and is rejected.
+const DIRECTIVE_POLICY = {
+  'default-src': { keywords: ["'none'", "'self'"] },
+  'base-uri': { keywords: ["'none'", "'self'"] },
+  'object-src': { keywords: ["'none'", "'self'"] },
+  'frame-ancestors': { keywords: ["'none'", "'self'"] },
+  'form-action': { keywords: ["'none'", "'self'"] },
+  'img-src': { keywords: ["'none'", "'self'"], schemes: ['data:'] },
+  'style-src': { keywords: ["'none'", "'self'"] },
+  'font-src': { keywords: ["'none'", "'self'"] },
+  'script-src': { keywords: ["'none'", "'self'"], nonceHash: true },
+  'connect-src': { keywords: ["'none'", "'self'"], approvedOrigins: true },
+  'manifest-src': { keywords: ["'none'", "'self'"] },
+  'worker-src': { keywords: ["'none'", "'self'"] },
+  'require-trusted-types-for': { keywords: ["'script'"] },
+  'upgrade-insecure-requests': { valueless: true },
+};
+
 // Custom error carrying the full list of violations for CI reporting.
 export class CspValidationError extends Error {
   constructor(errors) {
@@ -61,31 +110,6 @@ export function loadBaseline(path = DEFAULT_BASELINE_PATH) {
 }
 
 /**
- * Serialize a directive map into a Content-Security-Policy header string.
- * @param {Record<string, string[]>} directives
- * @returns {string} CSP header value
- */
-export function serializeCsp(directives) {
-  if (!directives || typeof directives !== 'object') {
-    throw new CspValidationError(['serializeCsp: directives must be an object']);
-  }
-  const parts = [];
-  for (const [name, sources] of Object.entries(directives)) {
-    if (!Array.isArray(sources)) {
-      throw new CspValidationError([
-        `directive "${name}" must map to an array of sources`,
-      ]);
-    }
-    if (VALUELESS_DIRECTIVES.has(name) || sources.length === 0) {
-      parts.push(name);
-    } else {
-      parts.push(`${name} ${sources.join(' ')}`);
-    }
-  }
-  return parts.join('; ');
-}
-
-/**
  * Is `src` an exact origin (scheme://host[:port]) with no path, query, wildcard
  * or scheme-only shorthand? This is what "match: exact-origin" requires.
  * @param {string} src
@@ -99,77 +123,85 @@ export function isExactOrigin(src) {
   } catch {
     return false;
   }
-  // origin must round-trip exactly: rejects trailing paths/queries and
-  // scheme-only shorthands (new URL('https:') throws or has null host).
   if (!url.host) return false;
   return url.origin === src && url.origin !== 'null';
 }
 
 /**
- * Validate connect-src against the exfiltration-boundary policy.
- * Only `'self'` plus exact origins present in the approved-endpoint set are
- * allowed; wildcards, scheme-sources and forbidden tokens are rejected.
- * @param {string[]} sources connect-src source list
- * @param {object} opts
- * @param {string[]} [opts.approvedEndpoints] curated exact-origin allowlist
- * @param {string[]} opts.forbiddenTokens forbidden token list from baseline
- * @returns {string[]} list of human-readable violations (empty = clean)
+ * Validate a single source token for one directive against its policy.
+ * @returns {string[]} violations for this token (empty = clean)
  */
-export function validateConnectSrc(sources, { approvedEndpoints = [], forbiddenTokens }) {
+function validateSource(directive, src, policy, approved) {
   const errors = [];
-  if (!Array.isArray(sources)) {
-    return ['connect-src directive is missing or not an array'];
+  if (typeof src !== 'string') {
+    // Equalita wart: null/number must surface as a violation, not a TypeError.
+    errors.push(`${directive} contains a non-string source (${JSON.stringify(src)})`);
+    return errors;
   }
-  if (sources.length === 0) {
-    return ['connect-src is empty (must pin at least \'self\')'];
+  if (ILLEGAL_SOURCE_CHARS.test(src)) {
+    errors.push(
+      `${directive} source ${JSON.stringify(src)} contains an illegal ` +
+        `separator/control char (injection vector)`,
+    );
+    return errors; // do not further interpret an injection payload
   }
-  const approved = new Set(approvedEndpoints);
-  for (const src of sources) {
-    if (src === "'self'") continue;
-    if (Array.isArray(forbiddenTokens) && forbiddenTokens.includes(src)) {
-      errors.push(`connect-src contains forbidden token "${src}"`);
-      continue;
-    }
-    if (src === '*') {
-      errors.push('connect-src contains wildcard "*"');
-      continue;
-    }
-    // scheme-only source (https:, http:, data:, blob:, ws:, wss: ...)
-    if (/^[a-z][a-z0-9+.-]*:$/i.test(src)) {
-      errors.push(`connect-src contains scheme-source "${src}" (widens exfil surface)`);
-      continue;
-    }
-    if (src.includes('*')) {
-      errors.push(`connect-src contains wildcard host "${src}"`);
-      continue;
-    }
-    if (!isExactOrigin(src)) {
-      errors.push(`connect-src source "${src}" is not an exact origin`);
-      continue;
-    }
-    if (!approved.has(src)) {
-      errors.push(`connect-src origin "${src}" is not in the approved-endpoint set`);
-    }
+  if (src.includes('*')) {
+    errors.push(`${directive} contains wildcard ${JSON.stringify(src)}`);
+    return errors;
+  }
+  // Quoted keyword (e.g. 'self', 'none', 'unsafe-inline', nonce/hash).
+  if (src.startsWith("'") && src.endsWith("'")) {
+    if ((policy.keywords || []).includes(src)) return errors;
+    if (policy.nonceHash && (NONCE_RE.test(src) || HASH_RE.test(src))) return errors;
+    errors.push(`${directive} contains disallowed keyword ${src}`);
+    return errors;
+  }
+  // Scheme-source (https:, http:, data:, blob:, ws:, wss: ...).
+  if (SCHEME_SOURCE_RE.test(src)) {
+    if ((policy.schemes || []).includes(src)) return errors;
+    errors.push(`${directive} contains scheme-source ${JSON.stringify(src)} (widens surface)`);
+    return errors;
+  }
+  // Otherwise it must be an exact origin, and only where origins are allowed
+  // and only if it is in the curated approved-endpoint set.
+  if (!policy.approvedOrigins) {
+    errors.push(`${directive} does not permit host/origin sources: ${JSON.stringify(src)}`);
+    return errors;
+  }
+  if (!isExactOrigin(src)) {
+    errors.push(`${directive} source ${JSON.stringify(src)} is not an exact origin`);
+    return errors;
+  }
+  if (!approved.has(src)) {
+    errors.push(`${directive} origin ${JSON.stringify(src)} is not in the approved-endpoint set`);
   }
   return errors;
 }
 
-// Tokens that must never appear in script-src (DOM-XSS escape hatches).
-const FORBIDDEN_SCRIPT_SRC = new Set(["'unsafe-inline'", "'unsafe-eval'", '*']);
-
 /**
- * Full validation of a baseline against the M1B enforcement rules.
- * @param {object} baseline parsed csp-baseline.json
- * @param {object} [opts]
- * @param {string[]} [opts.approvedEndpoints] curated exact-origin allowlist
- * @returns {string[]} violations (empty = clean)
+ * Back-compat helper: validate a connect-src source list in isolation.
+ * @param {string[]} sources
+ * @param {object} opts { approvedEndpoints? }
+ * @returns {string[]} violations
  */
-export function validateBaseline(baseline, { approvedEndpoints = [] } = {}) {
-  const errors = [];
-  const directives = baseline?.directives;
-  if (!directives || typeof directives !== 'object') {
-    return ['baseline is missing a "directives" object'];
+export function validateConnectSrc(sources, { approvedEndpoints = [] } = {}) {
+  if (!Array.isArray(sources)) {
+    return ['connect-src directive is missing or not an array'];
   }
+  if (sources.length === 0) {
+    return ["connect-src is empty (must pin at least 'self')"];
+  }
+  const approved = new Set(approvedEndpoints);
+  const policy = DIRECTIVE_POLICY['connect-src'];
+  const errors = [];
+  for (const src of sources) {
+    errors.push(...validateSource('connect-src', src, policy, approved));
+  }
+  return errors;
+}
+
+function validateDirectives(directives, approved) {
+  const errors = [];
 
   for (const req of REQUIRED_DIRECTIVES) {
     if (!Array.isArray(directives[req])) {
@@ -177,29 +209,160 @@ export function validateBaseline(baseline, { approvedEndpoints = [] } = {}) {
     }
   }
 
-  const forbiddenTokens = baseline?.connect_src_policy?.forbidden_tokens;
+  for (const [name, sources] of Object.entries(directives)) {
+    const policy = DIRECTIVE_POLICY[name];
+    if (!policy) {
+      errors.push(`unknown directive "${name}" (not on the directive whitelist)`);
+      continue;
+    }
+    if (!Array.isArray(sources)) {
+      errors.push(`directive "${name}" must map to an array of sources`);
+      continue;
+    }
+    if (policy.valueless) {
+      if (sources.length !== 0) {
+        errors.push(`directive "${name}" is valueless but has sources`);
+      }
+      continue;
+    }
+    if (sources.length === 0) {
+      errors.push(`directive "${name}" has no sources`);
+      continue;
+    }
+    for (const src of sources) {
+      errors.push(...validateSource(name, src, policy, approved));
+    }
+  }
+  return errors;
+}
 
-  if (Array.isArray(directives['connect-src'])) {
-    errors.push(
-      ...validateConnectSrc(directives['connect-src'], {
-        approvedEndpoints,
-        forbiddenTokens,
-      }),
-    );
+function validateAdditionalHeaders(additional) {
+  const errors = [];
+  if (additional == null) return errors;
+  if (typeof additional !== 'object') {
+    return ['additional_headers must be an object'];
   }
 
-  if (Array.isArray(directives['script-src'])) {
-    for (const src of directives['script-src']) {
-      if (FORBIDDEN_SCRIPT_SRC.has(src)) {
-        errors.push(`script-src contains forbidden token "${src}"`);
+  for (const [name, value] of Object.entries(additional)) {
+    if (typeof value !== 'string') {
+      errors.push(`header "${name}" value must be a string`);
+      continue;
+    }
+    // Header-splitting guard: no CR/LF/control chars in any header value.
+    if (HEADER_CTRL_CHARS.test(value)) {
+      errors.push(`header "${name}" contains a control char (header-injection vector)`);
+      continue;
+    }
+
+    const lower = name.toLowerCase();
+    if (lower === 'strict-transport-security') {
+      const m = /max-age\s*=\s*(\d+)/i.exec(value);
+      if (!m) {
+        errors.push('Strict-Transport-Security has no max-age');
+      } else if (Number(m[1]) < HSTS_MAX_AGE_FLOOR) {
+        errors.push(
+          `Strict-Transport-Security max-age=${m[1]} is below floor ${HSTS_MAX_AGE_FLOOR} (downgrade)`,
+        );
       }
-      if (/^https?:$/i.test(src)) {
-        errors.push(`script-src contains scheme-source "${src}"`);
+    } else if (lower === 'access-control-allow-origin') {
+      if (value.trim() === '*') {
+        errors.push('Access-Control-Allow-Origin: * exposes responses cross-origin');
+      }
+    } else if (lower === 'x-content-type-options') {
+      if (value.trim().toLowerCase() !== 'nosniff') {
+        errors.push(`X-Content-Type-Options must be "nosniff", got ${JSON.stringify(value)}`);
+      }
+    } else if (lower === 'x-frame-options') {
+      if (!['DENY', 'SAMEORIGIN'].includes(value.trim().toUpperCase())) {
+        errors.push(`X-Frame-Options must be DENY or SAMEORIGIN, got ${JSON.stringify(value)}`);
+      }
+    } else if (lower === 'cross-origin-opener-policy') {
+      if (!['same-origin', 'same-origin-allow-popups'].includes(value.trim().toLowerCase())) {
+        errors.push(`Cross-Origin-Opener-Policy weakened: ${JSON.stringify(value)}`);
+      }
+    } else if (lower === 'cross-origin-embedder-policy') {
+      if (!['require-corp', 'credentialless'].includes(value.trim().toLowerCase())) {
+        errors.push(`Cross-Origin-Embedder-Policy weakened: ${JSON.stringify(value)}`);
+      }
+    } else if (lower === 'cross-origin-resource-policy') {
+      if (!['same-origin', 'same-site'].includes(value.trim().toLowerCase())) {
+        errors.push(`Cross-Origin-Resource-Policy weakened: ${JSON.stringify(value)}`);
+      }
+    } else if (lower === 'permissions-policy') {
+      if (value.includes('*')) {
+        errors.push('Permissions-Policy grants a wildcard allowlist (*)');
       }
     }
   }
-
   return errors;
+}
+
+/**
+ * Full validation of a baseline against the M1B enforcement rules — every
+ * directive AND every additional header, plus a post-serialization structural
+ * check that no directive is emitted twice (defence in depth vs. injection).
+ * @param {object} baseline parsed csp-baseline.json
+ * @param {object} [opts] { approvedEndpoints? }
+ * @returns {string[]} violations (empty = clean)
+ */
+export function validateBaseline(baseline, { approvedEndpoints = [] } = {}) {
+  const directives = baseline?.directives;
+  if (!directives || typeof directives !== 'object') {
+    return ['baseline is missing a "directives" object'];
+  }
+  const approved = new Set(approvedEndpoints);
+  const errors = [
+    ...validateDirectives(directives, approved),
+    ...validateAdditionalHeaders(baseline.additional_headers),
+  ];
+
+  // Structural defence in depth: the serialized policy must not contain a
+  // duplicate directive name (CSP "first policy wins" would let a duplicate
+  // silently override an earlier, stricter one).
+  if (errors.length === 0) {
+    const emitted = serializeCsp(directives)
+      .split(';')
+      .map((d) => d.trim().split(/\s+/)[0])
+      .filter(Boolean);
+    const seen = new Set();
+    for (const name of emitted) {
+      if (seen.has(name)) errors.push(`duplicate directive "${name}" in serialized policy`);
+      seen.add(name);
+    }
+  }
+  return errors;
+}
+
+/**
+ * Serialize a directive map into a Content-Security-Policy header string.
+ * Rejects any source token carrying an injection char (defence in depth: the
+ * serializer itself refuses to emit an unsafe policy).
+ * @param {Record<string, string[]>} directives
+ * @returns {string} CSP header value
+ */
+export function serializeCsp(directives) {
+  if (!directives || typeof directives !== 'object') {
+    throw new CspValidationError(['serializeCsp: directives must be an object']);
+  }
+  const parts = [];
+  for (const [name, sources] of Object.entries(directives)) {
+    if (!Array.isArray(sources)) {
+      throw new CspValidationError([`directive "${name}" must map to an array of sources`]);
+    }
+    for (const src of sources) {
+      if (typeof src !== 'string' || ILLEGAL_SOURCE_CHARS.test(src)) {
+        throw new CspValidationError([
+          `directive "${name}" has an unserializable source ${JSON.stringify(src)}`,
+        ]);
+      }
+    }
+    if (VALUELESS_DIRECTIVES.has(name) || sources.length === 0) {
+      parts.push(name);
+    } else {
+      parts.push(`${name} ${sources.join(' ')}`);
+    }
+  }
+  return parts.join('; ');
 }
 
 /**
@@ -207,8 +370,7 @@ export function validateBaseline(baseline, { approvedEndpoints = [] } = {}) {
  * baseline, after validating it. Throws CspValidationError on any violation so
  * a broken policy can never be served.
  * @param {object} baseline parsed csp-baseline.json
- * @param {object} [opts]
- * @param {string[]} [opts.approvedEndpoints] curated exact-origin allowlist
+ * @param {object} [opts] { approvedEndpoints? }
  * @returns {Record<string,string>} header name -> value
  */
 export function buildHeaderMap(baseline, { approvedEndpoints = [] } = {}) {

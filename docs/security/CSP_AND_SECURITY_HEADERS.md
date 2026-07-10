@@ -137,8 +137,19 @@ test is the executable form of the rules in this document.
 
 - Integration test asserts the exact header set is served (ADR-001 quality
   gate).
-- Negative test: a policy containing `*` or `https:` in `connect-src` fails
-  the build (silent-failure gate — the control must be un-bypassable).
+- Negative test: a baseline that would emit an unsafe served policy fails the
+  build (silent-failure gate). The check is **validate-then-serialize over the
+  whole served surface** — every directive and every additional header — not
+  just the `connect-src` array. Concretely it rejects: forbidden tokens /
+  wildcards / scheme-sources / non-allowlisted origins in any fetch or
+  navigation directive (`connect-src`, `script-src`, `img-src`, `form-action`,
+  `base-uri`, …); `;`/whitespace/control-char **injection** in any source token
+  (which would otherwise smuggle an extra widening directive into the emitted
+  string); unknown directive names; duplicate directives; and weakened
+  `additional_headers` (HSTS below a 1-year floor, `Access-Control-Allow-Origin: *`,
+  weakened COOP/COEP/CORP, CRLF in a header value). This closes the Aegis PoC
+  (2026-07-10) where a `;`-injection in `default-src` and an HSTS `max-age=0`
+  passed the first, connect-src-array-only check.
 - E2E: with only `'self'` in `connect-src`, an attempt to `fetch()` an
   un-approved origin is blocked by the browser and surfaced as a normalized
   error.

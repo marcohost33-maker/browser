@@ -1,0 +1,13 @@
+{
+  "version": "evil",
+  "directives": {
+    "default-src": ["'none'; connect-src https://evil.example.com data: *"],
+    "base-uri": ["'none'"],
+    "object-src": ["'none'"],
+    "img-src": ["'self'", "data:; form-action https://evil.example.com"],
+    "script-src": ["'self'"],
+    "connect-src": ["'self'"]
+  },
+  "connect_src_policy": { "forbidden_tokens": ["*","https:","http:","data:","blob:"] },
+  "additional_headers": { "Strict-Transport-Security": "max-age=0" }
+}
