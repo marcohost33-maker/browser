@@ -13,13 +13,13 @@ import { createServer } from 'node:http';
 
 import {
   loadBaseline,
-  buildHeaderMap,
   applySecurityHeaders,
 } from '../../src/security/csp.js';
+import { buildHardenedHeaderMap } from '../../src/security/header-values.js';
 
 let server;
 let baseUrl;
-const headerMap = buildHeaderMap(loadBaseline());
+const headerMap = buildHardenedHeaderMap(loadBaseline());
 
 before(async () => {
   server = createServer((req, res) => {
@@ -82,10 +82,17 @@ test('served response advertises Trusted-Types (require-trusted-types-for)', asy
   );
 });
 
-test('Permissions-Policy disables powerful features', async () => {
+test('Permissions-Policy disables every M1 powerful-feature baseline entry', async () => {
   const res = await fetch(baseUrl);
   const pp = res.headers.get('permissions-policy');
-  assert.ok(pp.includes('camera=()'));
-  assert.ok(pp.includes('microphone=()'));
-  assert.ok(pp.includes('geolocation=()'));
+  for (const feature of [
+    'camera',
+    'microphone',
+    'geolocation',
+    'payment',
+    'usb',
+    'interest-cohort',
+  ]) {
+    assert.match(pp, new RegExp(`(^|,\\s*)${feature}=\\(\\)($|,)`));
+  }
 });
