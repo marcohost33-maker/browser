@@ -1,62 +1,78 @@
-# ROADMAP — APP-01 `browser` (oeffentliche Webapp)
+# ROADMAP — APP-01 `browser` (öffentliche Webapp)
 
-> Scope: **nur** APP-01 = oeffentliche Webapp + MCP-Client.
-> Engine-/Plattformteile gehoeren zu nigin-engine (ENG-01).
+> Scope: **nur** `marcohost33-maker/browser` = APP-01 öffentliche Webapp + MCP-Client.
+> Nicht verwechseln mit `browser-nigin`. Engine-/Plattformteile bleiben außerhalb dieses Repos.
 
-## M0 — Charter + Scope-Klaerung · RESOLVED (2026-07-10)
+## M0 — Charter und Scope · RESOLVED
 
 - [x] Charter und Non-Goals festgelegt.
-- [x] Engine-Track als Provenienz abgelegt und APP-01/ENG-01 getrennt.
-- [x] APP-01 als oeffentliche, privacy-first MCP-Client-Webapp bestaetigt.
+- [x] APP-01 von Engine-/Plattform-Scope getrennt.
+- [x] Privacy-first öffentliche MCP-Client-Webapp als Arbeitsziel dokumentiert.
 
-## M1A — Foundation und Freigabefaehigkeit
+## M1A — Entscheidungs- und Sicherheitsfundament
 
-- [x] ADR-001: Architekturgrenzen und M1-Slice.
-- [x] Threat Model mit Release-Blockern.
-- [x] Privacy Model mit Speicher-, Netzwerk- und Retention-Regeln.
-- [x] MCP Consumer Profile mit ENG-01-Eingangsvoraussetzungen.
-- [x] ADR-002: Contract-Artefakt-Signatur/Provenienz (Sigstore/cosign + SLSA), verify-before-trust.
-- [x] CSP-/Security-Header-Profil spezifiziert + maschinenlesbare Baseline (`docs/security/csp-baseline.json`); `connect-src`-Allowlist-Konzept.
-- [x] Minimal-CI-Fundament: Markdown-Lint + Link-Check + zizmor (SHA-gepinnt, inline).
-- [ ] ENG-01 liefert **signierte/provenanzierte** Contract-Artefakte, Fixtures und Conformance-Flow (ADR-002).
-- [ ] Technologie-Spike entscheidet UI-Framework, Build, Browsermatrix und PWA-Verzicht/-Einsatz.
-- [x] Security-Header-Profil als **ausfuehrbare** Konfiguration (Serializer + Test aus `csp-baseline.json`) im Build (#10: `src/security/csp.js` + `connect-src`-Negativtest + `security-ci` Gate; dynamische Per-Endpoint-`connect-src`-Injektion bleibt runtime-blockiert, siehe #11 / M1C).
+- [x] ADR-001: Architekturgrenzen und minimaler Read-only-Slice.
+- [x] ADR-002: Contract-Artefakt-Signatur und Provenienz.
+- [x] Threat Model, Privacy Model und MCP Consumer Profile.
+- [x] Master Roadmap, Open-Topics- und Quellen-/Standards-Baseline.
+- [x] Maschinenlesbare CSP-/Security-Header-Baseline.
+- [x] Ausführbarer CSP-Serializer mit Fail-closed-Validierung.
+- [x] Exakte `connect-src`-Allowlist und Schutz gegen CSP-Override/Header-Injection.
+- [x] Security-CI und HTTP-Integrationstest; PR #15 meldete 35 bestandene Tests.
+- [x] Header-Wert-Härtung: Referrer-Policy-Allowlist, Permissions-Policy-Feature-Disablement und HSTS `includeSubDomains` mit Regressionstests (#16, auf diesem Branch).
+- [ ] ADR-003: Produkt-/Endpoint-/Trust-/Deployment-Modell aus #13 und #14.
+- [ ] Gepinnter MCP-Contract, Fixtures und deterministischer Conformance-Flow.
+- [ ] ADR-004: UI-/Build-/Framework-/Browsermatrix-Entscheid aus #7.
 
-**Gate M1A:** Kein Runtime-MCP-Code gegen Annahmen. Contract-Version, Fixtures und ein deterministischer Read-only-Flow muessen vorliegen.
+**Gate M1A:** Kein realer MCP-Runtime-Code, keine finale OAuth-Architektur und keine dynamische Endpoint-Freigabe, bis Produktziel (#14), Endpoint-/Deployment-Modell (#13) und Contract-Profil entschieden sind.
 
 ## M1B — Secure Project Bootstrap
 
-- [ ] TypeScript strict, reproduzierbarer Build und gepinntes Lockfile.
-- [ ] Lint, Format, Unit-, Integration- und Browser-E2E-Testharness.
-- [ ] Dependency Review, Secret Scan, SBOM und Build-Artefakt-Nachweis in CI.
-- [ ] Restriktive CSP ohne `unsafe-eval`; `frame-ancestors 'none'`, Referrer- und Permissions-Policy.
-- [ ] Keine Drittanbieter-Telemetrie, Remote-Fonts oder unnoetigen CDN-Abhaengigkeiten.
+Bereits vorhanden:
+
+- [x] Node-22-Security-Kern ohne Runtime-Abhängigkeiten.
+- [x] Security- und Dokumentations-CI mit eingeschränkten Berechtigungen.
+- [x] Statische Security-Header-Erzeugung und reale HTTP-Response-Prüfung.
+
+Noch erforderlich:
+
+- [ ] TypeScript strict für die eigentliche Webapp.
+- [ ] Gepinnte Toolchain und Lockfile nach ADR-004.
+- [ ] Lint, Format, Unit-, Integrations- und Browser-E2E-Harness.
+- [ ] Dependency Review, Secret Scan, SAST, SBOM und Build-Provenienz.
+- [ ] Branch Protection, CODEOWNERS und nachvollziehbare Release-Evidence.
+- [ ] Keine Drittanbieter-Telemetrie, Remote-Fonts oder unnötigen CDN-Abhängigkeiten.
 
 ## M1C — Privacy-first Vertical Slice
 
-- [ ] Endpoint konfigurieren; Produktion HTTPS-only, Loopback-HTTP nur explizit fuer Entwicklung.
-- [ ] Verbindung initialisieren und Endpoint-/Protokollidentitaet sichtbar machen.
-- [ ] Capabilities verhandeln, als untrusted anzeigen und deny-by-default behandeln.
-- [ ] Explizite Zustimmung fuer genau einen read-only Request.
-- [ ] Request senden, abbrechen und mit Timeout/Grössenlimit begrenzen.
-- [ ] Ergebnis sicher als Daten rendern; kein ungeprueftes HTML/Script.
-- [ ] Normalisierte Fehler fuer Transport, Protokoll, Auth, Timeout, Cancel und Validierung.
-- [ ] Clear-session entfernt sensible Daten aus Speicher, URL, Cache und Logs.
+Blockiert durch #13, #14 und Contract-Gate:
 
-## M1D — Evidence und Release Gate
+- [ ] Erlaubten Endpoint konfigurieren und Trust-Tier sichtbar machen.
+- [ ] Verbindung initialisieren; Endpoint-, Origin- und Protokollidentität anzeigen.
+- [ ] Capabilities als untrusted darstellen und deny-by-default behandeln.
+- [ ] Explizite Zustimmung für genau einen begrenzten Read-only-Request.
+- [ ] Timeout, Abort, Größen-, Element- und Verschachtelungslimits.
+- [ ] Ergebnis ausschließlich validiert und sicher als Daten rendern.
+- [ ] Normalisierte Fehler für Transport, Protokoll, Auth, Timeout, Cancel und Schema.
+- [ ] Clear-session entfernt sensible Daten aus Speicher, URL, Cache, DOM und Logs.
+- [ ] Dynamische Endpoint-Policy und tatsächlich ausgelieferte CSP bleiben synchron; niemals CSP-Wildcards als Ausweichlösung.
 
-- [ ] Contract- und Negativtests: malformed JSON-RPC, Capability-Drift, Replay, Injection, Oversize, Redirect.
-- [ ] Browser-Speicher-Test prueft localStorage, sessionStorage, IndexedDB, Cache Storage, URL und Konsole.
-- [ ] Accessibility-Smoke: Tastatur, Fokus, sichtbarer Fokus, keine Keyboard Trap.
-- [ ] Threat Model und Privacy Model gegen Implementierung aktualisiert.
-- [ ] LICENSE, SECURITY.md, Privacy Notice, SBOM und reproduzierbarer Build vorhanden.
+## M1D — Verifikation und Release Gate
 
-**Gate M1:** Alle Tests gruen, keine Secrets persistent, Consent nicht umgehbar, Contract gepinnt, Security-Header nachgewiesen.
+- [ ] Contract- und Negativtests: malformed JSON-RPC, Capability Drift, Replay, Injection, Oversize und Redirects.
+- [ ] Exfiltrations- und Prompt-Injection-E2E aus #11, sobald Runtime existiert.
+- [ ] Sensitive-Data-Sink-Test für Web Storage, IndexedDB, Cache Storage, URL/History, DOM, Konsole und Diagnostikexport.
+- [ ] WCAG-2.2-AA-orientierte automatisierte und manuelle Prüfung des kritischen Flows.
+- [ ] Threat Model, Privacy Model und Datenflussdiagramm gegen Implementierung aktualisieren.
+- [ ] LICENSE, SECURITY.md, Privacy Notice, Accessibility Statement, SBOM und Provenienz.
+- [ ] Staging, Rollback, Cache-Invalidierung und Incident-Tabletop.
 
-## M2 — Nach M1 bewusst entscheiden
+**Gate M1:** Alle erforderlichen Evidenzen verlinkt; keine P0-Risiken oder unowned P1-Risiken; Consent nicht umgehbar; Contract gepinnt; Browser-, Privacy-, Accessibility-, Security- und Rollback-Tests bestanden.
 
-OAuth, PWA/Service Worker, gespeicherte Endpoints, Schreiboperationen, lokale MCP-Server und autonome Abläufe sind jeweils eigene Design- und Threat-Model-Entscheide. Sie sind nicht implizit durch M1 freigegeben.
+## M2 — Nur nach eigenem ADR
 
-## Ausdruecklich nicht APP-01
+OAuth-Erweiterungen, PWA/Service Worker, persistierte Endpoints, Write-Tools, Sampling, Elicitation, lokale MCP-Server, autonome Abläufe und beliebige Remote-Endpoints sind jeweils eigenständige Produkt-, Architektur- und Threat-Model-Entscheidungen.
 
-Wasmtime-Host, WIT-Contract-Ownership, CAS, Engine-Fabric, WASI-Guest/Host, Solver und Orchestrator bleiben ENG-01-/Engine-Verantwortung.
+## Ausdrücklich nicht APP-01
+
+Wasmtime-Host, WIT-Ownership, CAS, Engine-Fabric, WASI-Guest/Host, Solver und Orchestrator gehören nicht in dieses Browser-Repo.
