@@ -1,6 +1,11 @@
 # APP-01 CSP and Security-Header Profile — M1
 
-- Status: GOOD-DRAFT (specification; runtime enforcement is M1B work)
+- Status: GOOD-DRAFT (specification). Build/CI enforcement landed in M1B (#10):
+  serializer + `connect-src` negative test + header-served integration test,
+  wired as the `security-ci` gate. **Runtime-blocked residue** (see #11 / M1C):
+  the dynamic per-endpoint `connect-src` injection and the UI↔policy sync depend
+  on the not-yet-existing MCP client runtime and are intentionally out of scope
+  here — the static/baseline-driven boundary is enforced now.
 - Date: 2026-07-10
 - Applies to: public MCP-client webapp (APP-01)
 - Machine-readable baseline: [`csp-baseline.json`](./csp-baseline.json)
@@ -112,11 +117,21 @@ Notes:
 
 `csp-baseline.json` is a machine-readable directive→sources map. A build/CI
 step (M1B) will serialize it into the header string above and a test will
-assert: (a) no forbidden token (`*`, `https:`, `unsafe-eval`, `unsafe-inline`)
-appears in `connect-src`/`script-src`; (b) `connect-src` contains only `'self'`
-plus origins present in the approved-endpoint set. That test is the executable
-form of the rules in this document; it is specified now and enforced when the
-build lands (see ROADMAP M1B).
+assert: (a) no forbidden token (`*`, `https:`, `http:`, `unsafe-eval`,
+`unsafe-inline`) appears in `connect-src`/`script-src`; (b) `connect-src`
+contains only `'self'` plus origins present in the approved-endpoint set. That
+test is the executable form of the rules in this document.
+
+**Enforced (M1B, #10):**
+
+- Serializer: [`src/security/csp.js`](../../src/security/csp.js) emits the served
+  header set from `csp-baseline.json` (single source of truth — no second CSP
+  definition). CLI: `node src/security/serialize-cli.js [--json|--check]`.
+- `connect-src` negative test + header-served integration test:
+  [`tests/security/`](../../tests/security/) (`npm test`, zero deps —
+  Node's built-in `node --test`).
+- CI gate: [`.github/workflows/security-ci.yml`](../../.github/workflows/security-ci.yml)
+  runs the `connect-src` gate (`--check`) and the tests on every push/PR.
 
 ## Verification plan (M1B/M1D)
 
