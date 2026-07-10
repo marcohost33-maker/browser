@@ -1,6 +1,7 @@
 # zizmor — static security analysis for the GitHub Actions workflows in this
-# repo (self-audit of docs-ci.yml + this file). Matches the baseline used by
-# the hardened coworkerz repos. Docs: https://docs.zizmor.sh
+# repo. Runs without GitHub Advanced Security, with least privilege and
+# immutable action pins. Findings remain merge-blocking; a short-lived artifact
+# preserves diagnostics when runner logs are truncated.
 name: workflow-security-audit
 
 on:
@@ -21,18 +22,30 @@ jobs:
     name: zizmor workflow audit
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      security-events: write  # SARIF upload (no-op on private without GHAS)
+      contents: read  # required for private repository checkout/collection
+      actions: read   # required for private repository online audits
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
       - name: Run zizmor
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: zizmor
+        continue-on-error: true
         uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa  # v0.5.7
         with:
           persona: regular
           advanced-security: false
           annotations: true
+          color: false
+      - name: upload zizmor diagnostics
+        if: steps.zizmor.outcome == 'failure'
+        uses: actions/upload-artifact@615b319bd27bb32c3d64dca6b6ed6974d5fbe653  # v6.0.0
+        with:
+          name: zizmor-diagnostics
+          path: ${{ runner.temp }}/zizmor
+          if-no-files-found: error
+          retention-days: 7
+      - name: enforce zizmor result
+        if: steps.zizmor.outcome == 'failure'
+        run: exit 1
