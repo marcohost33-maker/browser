@@ -1,6 +1,11 @@
 # APP-01 CSP and Security-Header Profile — M1
 
-- Status: GOOD-DRAFT (specification; runtime enforcement is M1B work)
+- Status: GOOD-DRAFT (specification). Build/CI enforcement landed in M1B (#10):
+  serializer + `connect-src` negative test + header-served integration test,
+  wired as the `security-ci` gate. **Runtime-blocked residue** (see #11 / M1C):
+  the dynamic per-endpoint `connect-src` injection and the UI↔policy sync depend
+  on the not-yet-existing MCP client runtime and are intentionally out of scope
+  here — the static/baseline-driven boundary is enforced now.
 - Date: 2026-07-10
 - Applies to: public MCP-client webapp (APP-01)
 - Machine-readable baseline: [`csp-baseline.json`](./csp-baseline.json)
@@ -112,18 +117,45 @@ Notes:
 
 `csp-baseline.json` is a machine-readable directive→sources map. A build/CI
 step (M1B) will serialize it into the header string above and a test will
-assert: (a) no forbidden token (`*`, `https:`, `unsafe-eval`, `unsafe-inline`)
-appears in `connect-src`/`script-src`; (b) `connect-src` contains only `'self'`
-plus origins present in the approved-endpoint set. That test is the executable
-form of the rules in this document; it is specified now and enforced when the
-build lands (see ROADMAP M1B).
+assert: (a) no forbidden token (`*`, `https:`, `http:`, `unsafe-eval`,
+`unsafe-inline`) appears in `connect-src`/`script-src`; (b) `connect-src`
+contains only `'self'` plus origins present in the approved-endpoint set. That
+test is the executable form of the rules in this document.
+
+**Enforced (M1B, #10):**
+
+- Serializer: [`src/security/csp.js`](../../src/security/csp.js) emits the served
+  header set from `csp-baseline.json` (single source of truth — no second CSP
+  definition). CLI: `node src/security/serialize-cli.js [--json|--check]`.
+- `connect-src` negative test + header-served integration test:
+  [`tests/security/`](../../tests/security/) (`npm test`, zero deps —
+  Node's built-in `node --test`).
+- CI gate: [`.github/workflows/security-ci.yml`](../../.github/workflows/security-ci.yml)
+  runs the `connect-src` gate (`--check`) and the tests on every push/PR.
 
 ## Verification plan (M1B/M1D)
 
 - Integration test asserts the exact header set is served (ADR-001 quality
   gate).
-- Negative test: a policy containing `*` or `https:` in `connect-src` fails
-  the build (silent-failure gate — the control must be un-bypassable).
+- Negative test: a baseline that would emit an unsafe served policy fails the
+  build (silent-failure gate). The check is **validate-then-serialize over the
+  whole served surface** — every directive and every additional header — not
+  just the `connect-src` array. Concretely it rejects: forbidden tokens /
+  wildcards / scheme-sources / non-allowlisted origins in any fetch or
+  navigation directive (`connect-src`, `script-src`, `img-src`, `form-action`,
+  `base-uri`, …); `;`/whitespace/control-char **injection** in any source token
+  (which would otherwise smuggle an extra widening directive into the emitted
+  string); unknown directive names; duplicate directives; and weakened or
+  unexpected `additional_headers`. `additional_headers` is restricted to a
+  **name allowlist**: a `Content-Security-Policy` /
+  `Content-Security-Policy-Report-Only` key (any case) is rejected — the served
+  CSP comes **only** from `directives` and cannot be overridden or shadowed via
+  an additional header. Value checks: HSTS below a 1-year floor,
+  `Access-Control-Allow-Origin` outside the approved-origin set, weakened
+  COOP/COEP/CORP/XFO, and CRLF/control chars in a header value all fail. This
+  closes the Aegis PoCs (2026-07-10 `;`-injection in `default-src` + HSTS
+  `max-age=0`; 2026-07-11 `additional_headers` CSP-override) that passed
+  earlier, narrower checks.
 - E2E: with only `'self'` in `connect-src`, an attempt to `fetch()` an
   un-approved origin is blocked by the browser and surfaced as a normalized
   error.

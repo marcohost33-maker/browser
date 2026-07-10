@@ -1,0 +1,17 @@
+{
+  "name": "app-01-browser-security",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "APP-01 security-header enforcement (M1B): CSP serializer + connect-src exfil-boundary gate, single-sourced from docs/security/csp-baseline.json. Zero runtime dependencies.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"tests/security/**/*.test.js\"",
+    "csp:header": "node src/security/serialize-cli.js",
+    "csp:json": "node src/security/serialize-cli.js --json",
+    "csp:check": "node src/security/serialize-cli.js --check"
+  },
+  "license": "MIT"
+}

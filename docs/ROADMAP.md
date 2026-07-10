@@ -20,7 +20,7 @@
 - [x] Minimal-CI-Fundament: Markdown-Lint + Link-Check + zizmor (SHA-gepinnt, inline).
 - [ ] ENG-01 liefert **signierte/provenanzierte** Contract-Artefakte, Fixtures und Conformance-Flow (ADR-002).
 - [ ] Technologie-Spike entscheidet UI-Framework, Build, Browsermatrix und PWA-Verzicht/-Einsatz.
-- [ ] Security-Header-Profil als **ausfuehrbare** Konfiguration (Serializer + Test aus `csp-baseline.json`) im Build.
+- [x] Security-Header-Profil als **ausfuehrbare** Konfiguration (Serializer + Test aus `csp-baseline.json`) im Build (#10: `src/security/csp.js` + `connect-src`-Negativtest + `security-ci` Gate; dynamische Per-Endpoint-`connect-src`-Injektion bleibt runtime-blockiert, siehe #11 / M1C).
 
 **Gate M1A:** Kein Runtime-MCP-Code gegen Annahmen. Contract-Version, Fixtures und ein deterministischer Read-only-Flow muessen vorliegen.
 
