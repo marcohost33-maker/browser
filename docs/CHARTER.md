@@ -1,7 +1,8 @@
 # CHARTER — APP-01 `browser`
 
 > Status: M0 (Charter). Provenienz: cwzl 2026-07-10-001 (advisory-only).
-> ACHTUNG Scope-Klaerung offen — siehe `docs/OPEN_DECISIONS.md`.
+> Scope geklaert (Marco 2026-07-10): Engine-Plattform-Track → nigin-engine (ENG-01);
+> APP-01 = oeffentliche MCP-Client-Webapp. Siehe `docs/OPEN_DECISIONS.md` (D1 RESOLVED).
 
 ## Zweck (gemaess Verosystem-Landkarte v0.2)
 
