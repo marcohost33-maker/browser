@@ -2,24 +2,24 @@
 
 > Offene Entscheidungen fuer Marco. Advisory-only, kein Selbst-Entscheid.
 
-## D1 (ZENTRAL, blockierend) — Scope-/Zuordnungs-Konflikt cwzl vs. Landkarte
+## D1 — Scope-/Zuordnungs-Konflikt cwzl vs. Landkarte — **RESOLVED (Marco, 2026-07-10)**
 
 Der cwzl-"browser-repo"-Roadmap-Inhalt (Wasmtime / WIT / Engine-Fabric / CAS /
 WASI / offline-core) gehoert **inhaltlich zu nigin-engine (ENG-01)**, **nicht zu
-APP-01 `browser`**. APP-01 ist laut Landkarte v0.2 die **oeffentliche MCP-Client-Webapp**.
+APP-01 `browser`**. APP-01 ist die **oeffentliche MCP-Client-Webapp**.
 
-**Fragen an Marco:**
-1. Soll die Plattform-/Engine-Roadmap (Provenienz in
-   `docs/007_ANALYSE_platform-track_PROVENIENZ.md`) stattdessen in **nigin-engine
-   (ENG-01)** gelandet werden?
-2. Was ist der **eigentliche Inhalt / Scope von APP-01 `browser`** (oeffentliche
-   MCP-Client-Webapp)? — d.h. welche konkreten Slices gehoeren in `docs/ROADMAP.md`?
+**Marco-Entscheid 2026-07-10:** Die Plattform-/Engine-Roadmap wird **nach
+`nigin-engine` (ENG-01)** ueberfuehrt (`docs/PLATFORM_ROADMAP_M0.md` dort). **APP-01
+`browser` bleibt = oeffentliche MCP-Client-Webapp** (API-gratis, Datenschutz-top,
+konsumiert MCP-Contract von nigin-engine, definiert ihn nicht). Der Provenienz-Text
+`docs/007_ANALYSE_platform-track_PROVENIENZ.md` bleibt hier nur als historischer Anker;
+inhaltlicher Owner ist ab jetzt nigin-engine.
 
-Bis D1 entschieden ist, bleibt M0 in `docs/ROADMAP.md` blockiert (nur Charter +
-Scope-Klaerung gelandet, keine Engine-Inhalte eingeplant).
+Folgefrage (offen, kleiner): welche konkreten APP-01-Slices (MCP-Client, Datenschutz-
+Modell, API-gratis-Strategie) zuerst? — wird beim APP-01-Bau gefuellt.
 
-## D2 (aus dem cwzl-Doc uebernommen) — Repo-Topologie Wasmtime-Host
+## D2 — Repo-Topologie Wasmtime-Host — verschoben nach nigin-engine
 
-Wasmtime-Host als **Pfad IN `nigin-offline-core`** (Monorepo, z.B. `platform/host/`)
-**vs.** als **separates Repo**? Diese Frage stammt aus dem Original-Doc und betrifft
-den Engine-Track; sie ist mit D1 zu klaeren (Landung des Engine-Inhalts).
+Wasmtime-Host als **Pfad IN `nigin-offline-core`** (Monorepo) **vs.** separates Repo:
+betrifft den Engine-Track und wird jetzt **in nigin-engine** entschieden (D1-Folge),
+nicht mehr hier.

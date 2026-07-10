@@ -1,5 +1,10 @@
 # 007-Analyse — ENGINE-/PLATTFORM-Track (PROVENIENZ, advisory-only)
 
+> **RESOLVED (Marco 2026-07-10):** Inhaltlicher Owner dieser Analyse ist **nigin-engine
+> (ENG-01)** — dort als `docs/PLATFORM_ROADMAP_M0.md` gelandet. Diese Datei bleibt in
+> `browser` nur als **historischer Provenienz-Anker** (Namenskollision-Herkunft). Keine
+> Pflege hier; Aktualisierungen erfolgen in nigin-engine.
+>
 > **ACHTUNG — Zuordnung:** Diese Analyse (cwzl 2026-07-10-001) betrifft den
 > **ENGINE-/PLATTFORM-Track** (Wasmtime-Host / WIT / offline-core), der laut
 > Verosystem-Landkarte v0.2 zu **nigin-engine (ENG-01)** gehoert, **NICHT** zu
