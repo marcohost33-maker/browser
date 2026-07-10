@@ -61,6 +61,30 @@ const SCHEME_SOURCE_RE = /^[a-z][a-z0-9+.\-]*:$/i;
 // HSTS must not be downgraded. Floor = 1 year (common preload minimum).
 const HSTS_MAX_AGE_FLOOR = 31536000;
 
+// The ONLY header names permitted in additional_headers (fail-closed: anything
+// else is rejected rather than passed through verbatim). Lowercased for
+// case-insensitive matching.
+const ALLOWED_ADDITIONAL_HEADERS = new Set([
+  'strict-transport-security',
+  'x-content-type-options',
+  'referrer-policy',
+  'permissions-policy',
+  'cross-origin-opener-policy',
+  'cross-origin-embedder-policy',
+  'cross-origin-resource-policy',
+  'x-frame-options',
+  'access-control-allow-origin',
+]);
+
+// The CSP MUST come exclusively from `directives`. An additional_headers key
+// (any case) that (re)defines the policy — or a Report-Only twin that can
+// shadow it / exfiltrate violation reports — overrides the generated CSP on the
+// wire and re-opens the exfil boundary. Rejected fail-closed.
+const FORBIDDEN_ADDITIONAL_HEADER_NAMES = new Set([
+  'content-security-policy',
+  'content-security-policy-report-only',
+]);
+
 // Per-directive policy. `keywords` = the exact quoted keywords allowed;
 // `schemes` = the scheme-sources allowed (only img-/font-style contexts);
 // `nonceHash` = accept nonces/hashes; `approvedOrigins` = accept exact origins
@@ -236,7 +260,7 @@ function validateDirectives(directives, approved) {
   return errors;
 }
 
-function validateAdditionalHeaders(additional) {
+function validateAdditionalHeaders(additional, approved) {
   const errors = [];
   if (additional == null) return errors;
   if (typeof additional !== 'object') {
@@ -244,6 +268,22 @@ function validateAdditionalHeaders(additional) {
   }
 
   for (const [name, value] of Object.entries(additional)) {
+    const lower = name.toLowerCase();
+
+    // Name allowlist (fail-closed). Check name BEFORE value so an injected key
+    // is rejected even if its value looks benign.
+    if (FORBIDDEN_ADDITIONAL_HEADER_NAMES.has(lower)) {
+      errors.push(
+        `header "${name}" is forbidden in additional_headers — the CSP must ` +
+          `come only from "directives" (overriding it re-opens the exfil boundary)`,
+      );
+      continue;
+    }
+    if (!ALLOWED_ADDITIONAL_HEADERS.has(lower)) {
+      errors.push(`header "${name}" is not on the additional_headers allowlist`);
+      continue;
+    }
+
     if (typeof value !== 'string') {
       errors.push(`header "${name}" value must be a string`);
       continue;
@@ -254,7 +294,6 @@ function validateAdditionalHeaders(additional) {
       continue;
     }
 
-    const lower = name.toLowerCase();
     if (lower === 'strict-transport-security') {
       const m = /max-age\s*=\s*(\d+)/i.exec(value);
       if (!m) {
@@ -265,8 +304,15 @@ function validateAdditionalHeaders(additional) {
         );
       }
     } else if (lower === 'access-control-allow-origin') {
-      if (value.trim() === '*') {
+      // Restrict to the curated approved-origin set. `*` and any fixed
+      // attacker origin not on the allowlist are rejected fail-closed.
+      const v = value.trim();
+      if (v === '*') {
         errors.push('Access-Control-Allow-Origin: * exposes responses cross-origin');
+      } else if (!approved.has(v)) {
+        errors.push(
+          `Access-Control-Allow-Origin ${JSON.stringify(v)} is not in the approved-endpoint set`,
+        );
       }
     } else if (lower === 'x-content-type-options') {
       if (value.trim().toLowerCase() !== 'nosniff') {
@@ -313,7 +359,7 @@ export function validateBaseline(baseline, { approvedEndpoints = [] } = {}) {
   const approved = new Set(approvedEndpoints);
   const errors = [
     ...validateDirectives(directives, approved),
-    ...validateAdditionalHeaders(baseline.additional_headers),
+    ...validateAdditionalHeaders(baseline.additional_headers, approved),
   ];
 
   // Structural defence in depth: the serialized policy must not contain a
@@ -381,9 +427,19 @@ export function buildHeaderMap(baseline, { approvedEndpoints = [] } = {}) {
   const headers = {
     'Content-Security-Policy': serializeCsp(baseline.directives),
   };
+  // Defence in depth: even though validation already rejects a CSP-defining or
+  // colliding additional-header key, never let additional_headers overwrite an
+  // already-set header (case-insensitive) — the served CSP comes ONLY from
+  // `directives`, and no attacker key can shadow it on the wire.
+  const seen = new Set(Object.keys(headers).map((k) => k.toLowerCase()));
   const additional = baseline.additional_headers || {};
   for (const [name, value] of Object.entries(additional)) {
+    const lower = name.toLowerCase();
+    if (FORBIDDEN_ADDITIONAL_HEADER_NAMES.has(lower) || seen.has(lower)) {
+      continue; // unreachable after validation; belt-and-suspenders on the wire
+    }
     headers[name] = value;
+    seen.add(lower);
   }
   return headers;
 }

@@ -145,11 +145,17 @@ test is the executable form of the rules in this document.
   navigation directive (`connect-src`, `script-src`, `img-src`, `form-action`,
   `base-uri`, …); `;`/whitespace/control-char **injection** in any source token
   (which would otherwise smuggle an extra widening directive into the emitted
-  string); unknown directive names; duplicate directives; and weakened
-  `additional_headers` (HSTS below a 1-year floor, `Access-Control-Allow-Origin: *`,
-  weakened COOP/COEP/CORP, CRLF in a header value). This closes the Aegis PoC
-  (2026-07-10) where a `;`-injection in `default-src` and an HSTS `max-age=0`
-  passed the first, connect-src-array-only check.
+  string); unknown directive names; duplicate directives; and weakened or
+  unexpected `additional_headers`. `additional_headers` is restricted to a
+  **name allowlist**: a `Content-Security-Policy` /
+  `Content-Security-Policy-Report-Only` key (any case) is rejected — the served
+  CSP comes **only** from `directives` and cannot be overridden or shadowed via
+  an additional header. Value checks: HSTS below a 1-year floor,
+  `Access-Control-Allow-Origin` outside the approved-origin set, weakened
+  COOP/COEP/CORP/XFO, and CRLF/control chars in a header value all fail. This
+  closes the Aegis PoCs (2026-07-10 `;`-injection in `default-src` + HSTS
+  `max-age=0`; 2026-07-11 `additional_headers` CSP-override) that passed
+  earlier, narrower checks.
 - E2E: with only `'self'` in `connect-src`, an attempt to `fetch()` an
   un-approved origin is blocked by the browser and surfaced as a normalized
   error.
