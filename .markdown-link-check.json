@@ -1,0 +1,22 @@
+{
+  "//": "Config for markdown-link-check (docs-ci link-check job). Verifies internal relative links strictly and external links leniently: bot-blocking (403) and rate-limiting (429) are accepted so the gate does not flake on anti-bot defenses of cited sources; genuine 404s still fail.",
+  "retryOn429": true,
+  "retryCount": 3,
+  "fallbackRetryDelay": "30s",
+  "timeout": "20s",
+  "aliveStatusCodes": [200, 206, 301, 302, 307, 308, 401, 403, 429],
+  "httpHeaders": [
+    {
+      "urls": ["https://"],
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (compatible; markdown-link-check; +ci)",
+        "Accept": "text/html,application/xhtml+xml"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    { "pattern": "^https?://localhost" },
+    { "pattern": "^https?://127\\.0\\.0\\.1" },
+    { "pattern": "^https?://\\[::1\\]" }
+  ]
+}
