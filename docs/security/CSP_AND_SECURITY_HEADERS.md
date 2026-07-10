@@ -1,0 +1,137 @@
+# APP-01 CSP and Security-Header Profile — M1
+
+- Status: GOOD-DRAFT (specification; runtime enforcement is M1B work)
+- Date: 2026-07-10
+- Applies to: public MCP-client webapp (APP-01)
+- Machine-readable baseline: [`csp-baseline.json`](./csp-baseline.json)
+
+## Why `connect-src` is the crown-jewel control here
+
+APP-01 handles prompts, resources, tool arguments and results, plus
+authorization material. The single highest-value exfiltration control for a
+browser MCP client is the CSP `connect-src` directive: it governs every
+outbound request channel a script can use — `fetch()`, `XMLHttpRequest`,
+`WebSocket`, `EventSource`, `<a ping>`, and `navigator.sendBeacon()`
+([content-security-policy.com/connect-src](https://content-security-policy.com/connect-src/),
+confidence: high; corroborated by
+[MDN CSP reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy)).
+
+Consequence: even if an attacker achieves script execution (XSS, or injected
+instructions rendered from untrusted MCP content), a correctly pinned
+`connect-src` prevents that script from shipping stolen credentials or content
+to an attacker-controlled origin. It is the enforcement backstop behind the
+ASI02 endpoint allowlist and the SSRF controls in the threat model.
+
+## Core rule: `connect-src` is pinned to the approved-endpoint set
+
+`connect-src` MUST enumerate exactly the origins APP-01 is permitted to reach:
+`'self'` plus the specific, approved MCP endpoint origin(s). It MUST NOT use
+`*`, `https:`, `data:`, `blob:` or any scheme-wildcard. An explicit
+per-origin allowlist — not a permissive pattern — is what makes the directive
+an exfiltration boundary
+([OWASP CSP Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html),
+confidence: high).
+
+### The static-SPA tension (stated honestly)
+
+A CSP delivered with the document cannot be *loosened* at runtime: additional
+policies only ever intersect (tighten), never widen
+([MDN CSP: multiple policies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy),
+confidence: high). A purely static SPA therefore cannot inject a
+user-typed endpoint origin into its own served `connect-src` after load.
+Three admissible resolutions, in order of preference:
+
+1. **Same-origin proxy** — all MCP traffic flows through a same-origin
+   backend; `connect-src` stays `'self'`. (Out of M1 scope: ADR-001 defers
+   server-side proxying; listed here as the strongest long-term option.)
+2. **Curated allowlist compiled into the deployed policy** — a vetted set of
+   MCP endpoint origins is baked into the served CSP at build/deploy time
+   (see the ASI02 allowlist mechanic in the threat model). User selection is
+   restricted to this set.
+3. **Per-deployment policy generation** — the operator regenerates the CSP
+   for their own endpoint set at deploy time from `csp-baseline.json`.
+
+Forbidden non-resolution: widening `connect-src` to `https:` or `*` to
+"support any endpoint". That converts the crown-jewel control into a no-op.
+
+### Fail-closed coupling with the UI
+
+The served `connect-src` allowlist is the single source of truth. If a user
+approves an endpoint in the UI whose origin is **not** in the served policy,
+the connection MUST fail closed with a visible error — never a silent widening
+of the exfiltration surface. UI approval state and CSP allowlist are kept in
+sync by construction, not by hope.
+
+## Full baseline header set (M1, before any endpoint is approved)
+
+The baseline below assumes a same-origin-only application shell with no
+approved remote MCP endpoint yet. Approving an endpoint adds *only* that
+origin to `connect-src` (via one of the three resolutions above).
+
+| Header | Baseline value | Purpose |
+|---|---|---|
+| `Content-Security-Policy` | see `csp-baseline.json` | XSS + exfiltration boundary |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | HTTPS pinning |
+| `X-Content-Type-Options` | `nosniff` | MIME-sniffing defense |
+| `Referrer-Policy` | `no-referrer` | prevent endpoint/URL leakage |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()` | disable unused powerful features |
+| `Cross-Origin-Opener-Policy` | `same-origin` | process isolation |
+| `Cross-Origin-Embedder-Policy` | `require-corp` | isolation / Spectre defense |
+| `Cross-Origin-Resource-Policy` | `same-origin` | limit cross-origin embedding |
+| `X-Frame-Options` | `DENY` | clickjacking (legacy backstop to `frame-ancestors`) |
+
+The CSP itself (baseline) is:
+
+```text
+default-src 'none';
+base-uri 'none';
+object-src 'none';
+frame-ancestors 'none';
+form-action 'self';
+img-src 'self' data:;
+style-src 'self';
+font-src 'self';
+script-src 'self';
+connect-src 'self';
+manifest-src 'self';
+worker-src 'self';
+require-trusted-types-for 'script';
+upgrade-insecure-requests
+```
+
+Notes:
+
+- No `unsafe-eval`, no `unsafe-inline` (ADR-001 release blocker). Any inline
+  need uses a per-response nonce, not `unsafe-inline`.
+- `require-trusted-types-for 'script'` hardens DOM-XSS sinks — appropriate
+  because APP-01 renders untrusted MCP result content.
+- `connect-src 'self'` is the baseline; **only** an approved endpoint origin
+  is appended, and nothing else.
+
+## Executable artifact
+
+`csp-baseline.json` is a machine-readable directive→sources map. A build/CI
+step (M1B) will serialize it into the header string above and a test will
+assert: (a) no forbidden token (`*`, `https:`, `unsafe-eval`, `unsafe-inline`)
+appears in `connect-src`/`script-src`; (b) `connect-src` contains only `'self'`
+plus origins present in the approved-endpoint set. That test is the executable
+form of the rules in this document; it is specified now and enforced when the
+build lands (see ROADMAP M1B).
+
+## Verification plan (M1B/M1D)
+
+- Integration test asserts the exact header set is served (ADR-001 quality
+  gate).
+- Negative test: a policy containing `*` or `https:` in `connect-src` fails
+  the build (silent-failure gate — the control must be un-bypassable).
+- E2E: with only `'self'` in `connect-src`, an attempt to `fetch()` an
+  un-approved origin is blocked by the browser and surfaced as a normalized
+  error.
+
+## Sources
+
+- CSP `connect-src` semantics — <https://content-security-policy.com/connect-src/> (high)
+- MDN Content-Security-Policy reference — <https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy> (high)
+- OWASP CSP Cheat Sheet — <https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html> (high)
+- Deploying CSP in SPAs (Auth0) — <https://auth0.com/blog/deploying-csp-in-spa/> (medium)
+- MCP Security Best Practices (recommends CSP for web MCP clients) — <https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices> (high)

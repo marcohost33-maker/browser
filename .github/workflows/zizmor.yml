@@ -1,0 +1,38 @@
+# zizmor — static security analysis for the GitHub Actions workflows in this
+# repo (self-audit of docs-ci.yml + this file). Matches the baseline used by
+# the hardened coworkerz repos. Docs: https://docs.zizmor.sh
+name: workflow-security-audit
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+  schedule:
+    - cron: "13 6 * * 1"  # Mondays 06:13 UTC
+
+permissions: {}
+
+jobs:
+  zizmor:
+    name: zizmor workflow audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # SARIF upload (no-op on private without GHAS)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Run zizmor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa  # v0.5.7
+        with:
+          persona: regular
+          advanced-security: false
+          annotations: true

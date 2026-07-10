@@ -1,0 +1,22 @@
+// markdownlint-cli2 configuration for APP-01 `browser` docs.
+// Rationale: keep structural rules (headings, lists, trailing newline) that
+// catch real rendering bugs; disable purely cosmetic width/pipe-spacing rules
+// that would force churn on prose and wide tables without quality benefit.
+{
+  "config": {
+    "default": true,
+    // MD013 line-length: prose and wide security tables wrap naturally; a hard
+    // 80-col limit hurts readability of threat/control tables. Not enforced.
+    "MD013": false,
+    // MD060 table-column-style: pipe-adjacent spacing is cosmetic; GitHub
+    // renders compact and padded tables identically. Not enforced.
+    "MD060": false
+  },
+  "globs": [
+    "**/*.md"
+  ],
+  "ignores": [
+    "node_modules",
+    ".git"
+  ]
+}

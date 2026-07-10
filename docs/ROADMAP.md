@@ -15,9 +15,12 @@
 - [x] Threat Model mit Release-Blockern.
 - [x] Privacy Model mit Speicher-, Netzwerk- und Retention-Regeln.
 - [x] MCP Consumer Profile mit ENG-01-Eingangsvoraussetzungen.
-- [ ] ENG-01 liefert gepinnte Contract-Artefakte, Fixtures und Conformance-Flow.
+- [x] ADR-002: Contract-Artefakt-Signatur/Provenienz (Sigstore/cosign + SLSA), verify-before-trust.
+- [x] CSP-/Security-Header-Profil spezifiziert + maschinenlesbare Baseline (`docs/security/csp-baseline.json`); `connect-src`-Allowlist-Konzept.
+- [x] Minimal-CI-Fundament: Markdown-Lint + Link-Check + zizmor (SHA-gepinnt, inline).
+- [ ] ENG-01 liefert **signierte/provenanzierte** Contract-Artefakte, Fixtures und Conformance-Flow (ADR-002).
 - [ ] Technologie-Spike entscheidet UI-Framework, Build, Browsermatrix und PWA-Verzicht/-Einsatz.
-- [ ] Security-Header-Profil und CI-Gates als ausfuehrbare Konfiguration.
+- [ ] Security-Header-Profil als **ausfuehrbare** Konfiguration (Serializer + Test aus `csp-baseline.json`) im Build.
 
 **Gate M1A:** Kein Runtime-MCP-Code gegen Annahmen. Contract-Version, Fixtures und ein deterministischer Read-only-Flow muessen vorliegen.
 

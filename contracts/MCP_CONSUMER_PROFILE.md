@@ -11,7 +11,11 @@ This profile states what APP-01 needs from ENG-01 without redefining MCP or beco
 ## Required ENG-01 inputs
 
 1. Pinned MCP protocol version and supported transport profile.
-2. Machine-readable schemas/types and integrity identifier.
+2. Machine-readable schemas/types delivered as a **signed artifact with build
+   provenance** (Sigstore/cosign signature + SLSA provenance), not a bare hash.
+   APP-01 verifies signature, provenance and transparency-log inclusion before
+   trust — see [ADR-002](../docs/adr/ADR-002-contract-artifact-signing.md). A
+   digest is retained only as a secondary integrity check.
 3. Initialization and capability-negotiation fixtures.
 4. Read-only success fixture and normalized error fixtures.
 5. Cancellation, timeout and disconnect expectations.
@@ -44,6 +48,43 @@ interface McpClientPort {
 ```
 
 Concrete names and generated types must come from the pinned ENG-01 artifact. Runtime validation is required at every external boundary even when compile-time types exist.
+
+## Endpoint allowlist mechanic (ASI02 — tool misuse)
+
+The set of MCP endpoints APP-01 may reach is governed by a **two-tier
+allowlist**, deny-by-default:
+
+1. **Curated baseline allowlist** — a vetted set of endpoint origins compiled
+   into the deployment and reflected 1:1 in the served CSP `connect-src`
+   (see [CSP profile](../docs/security/CSP_AND_SECURITY_HEADERS.md)). This is
+   the trusted default set.
+2. **User-added endpoints** — permitted only with explicit, informed consent,
+   session-scoped by default, HTTPS-only in production, exact-origin match.
+
+Binding rule: a user-added endpoint can take effect **only if the served CSP
+`connect-src` already permits its origin**. In a strict-CSP static deployment,
+an origin outside the curated policy **fails closed** (visible error) rather
+than silently widening the exfiltration surface. `connect-src` is never
+widened to `*` or `https:`; supporting arbitrary user endpoints requires a
+same-origin proxy or per-deployment policy regeneration, each its own reviewed
+decision. This is the enforcement half of the ASI02 tool/endpoint-misuse
+control ([OWASP Top 10 for Agentic Applications 2026, ASI02 Tool Misuse and
+Exploitation](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/),
+confidence: high).
+
+## Untrusted result content and downstream re-review (ASI01 — goal hijack)
+
+All MCP result content (tool output, resource text, annotations, prompts) is
+**untrusted data**. In M1 it is rendered for **human review only** and never
+interpreted as instructions. The moment any result content is fed back into an
+agent, an LLM prompt, or any automated decision path — rather than to a human
+— the injection threat is re-classified as **ASI01 Agent Goal Hijack** (the
+EchoLeak-class indirect-injection pattern, where untrusted content silently
+redirects an agent's objective) and MUST undergo a fresh injection/threat
+re-review **before** that path is enabled. M1 enables no such downstream
+automated consumption
+([OWASP Top 10 for Agentic Applications 2026, ASI01 Agent Goal Hijack](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/),
+confidence: high).
 
 ## Fail-closed rules
 
