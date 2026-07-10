@@ -34,7 +34,7 @@ jobs:
           npx --yes markdownlint-cli2@0.23.0 2>&1 | tee markdownlint.log
       - name: upload markdownlint diagnostics
         if: steps.markdownlint.outcome == 'failure'
-        uses: actions/upload-artifact@615b319bd27bb32c3d64dca6b6ed6974d5fbe653  # v6.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: markdownlint-diagnostics
           path: markdownlint.log
