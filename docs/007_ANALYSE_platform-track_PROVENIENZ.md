@@ -12,7 +12,8 @@
 >
 > Sie ist hier **ausschliesslich als Provenienz** abgelegt, weil das cwzl-Doc unter
 > dem Namen "browser-repo" gefuehrt wurde (Namenskollision, Landkarte R4). Der Inhalt
-> ist **KEINE APP-01-Roadmap**. Offene Zuordnungsfrage: `docs/OPEN_DECISIONS.md`.
+> ist **KEINE APP-01-Roadmap**. Zuordnung RESOLVED (Marco 2026-07-10 → nigin-engine),
+> siehe `docs/OPEN_DECISIONS.md` (D1).
 >
 > Provenienz: cwzl 2026-07-10-001 · browser-repo-analyse-roadmap · Claude · advisory-only.
 > Zielrepo im Original-Doc: `nigin-offline-core` (Wasmtime-Host, WIT-Contracts, CAS,
