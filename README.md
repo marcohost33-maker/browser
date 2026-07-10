@@ -19,4 +19,7 @@ research/compliance/pr_nr/inventar/007acc/todo/.github.)
 Jetzt **privat**; später bewusst → **public** (opensource) nach Marco-Freigabe.
 
 ## Status
-Scaffold. Fleet-Härtung folgt (Landkarte §7). Kanon: `LANDKARTE_VEROSYSTEM_REPOS_v0.1.md` (v0.2).
+M0-Charter gelandet (`docs/CHARTER.md`). **ACHTUNG Scope-Klaerung offen:** die
+cwzl-Roadmap (2026-07-10-001) betraf den Engine-Plattform-Track = **nigin-engine**
+(ENG-01), NICHT diese App — siehe `docs/OPEN_DECISIONS.md`.
+Fleet-Härtung folgt (Landkarte §7). Kanon: `LANDKARTE_VEROSYSTEM_REPOS_v0.1.md` (v0.2).
