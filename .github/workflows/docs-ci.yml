@@ -27,7 +27,22 @@ jobs:
         with:
           node-version: "22"
       - name: markdownlint
-        run: npx --yes markdownlint-cli2@0.23.0
+        id: markdownlint
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx --yes markdownlint-cli2@0.23.0 2>&1 | tee markdownlint.log
+      - name: upload markdownlint diagnostics
+        if: steps.markdownlint.outcome == 'failure'
+        uses: actions/upload-artifact@615b319bd27bb32c3d64dca6b6ed6974d5fbe653  # v6.0.0
+        with:
+          name: markdownlint-diagnostics
+          path: markdownlint.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: enforce markdownlint result
+        if: steps.markdownlint.outcome == 'failure'
+        run: exit 1
 
   link-check:
     name: link-check (markdown-link-check)
