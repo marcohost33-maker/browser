@@ -167,9 +167,9 @@ Deployment configuration separates:
 The build fails when endpoint URLs and approved origins are inconsistent. A UI
 selection cannot add an origin that is absent from the served policy.
 
-The environment variable used by the current CSP serializer contains **origins,
-not endpoint URLs**. It will be renamed to `CSP_APPROVED_ORIGINS` before runtime
-integration; any compatibility alias must fail when both names are present.
+The CSP serializer uses `CSP_APPROVED_ORIGINS`, whose values are canonical
+origins rather than full endpoint URLs. `CSP_APPROVED_ENDPOINTS` remains a
+temporary deprecated alias; setting both names is a configuration error.
 
 ## Verification spike
 
@@ -217,8 +217,7 @@ ADR-003 can become ACCEPTED only when:
   `https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization`
 - MCP security best practices:
   `https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices`
-- Fetch Standard:
-  `https://fetch.spec.whatwg.org/`
+- Fetch Standard: `https://fetch.spec.whatwg.org/`
 - MDN CORS guide:
   `https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS`
 - RFC 9700 OAuth 2.0 Security Best Current Practice:
