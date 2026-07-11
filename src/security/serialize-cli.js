@@ -21,7 +21,7 @@ import {
 } from './csp.js';
 import {
   buildHardenedHeaderMap,
-  validateSecurityHeaderValues,
+  validateHardenedBaseline,
 } from './header-values.js';
 
 function parseArgs(argv) {
@@ -31,8 +31,13 @@ function parseArgs(argv) {
     if (a === '--json') opts.mode = 'json';
     else if (a === '--check') opts.mode = 'check';
     else if (a === '--header') opts.mode = 'header';
-    else if (a === '--baseline') opts.baseline = argv[++i];
-    else {
+    else if (a === '--baseline') {
+      if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) {
+        process.stderr.write('--baseline requires a path\n');
+        process.exit(2);
+      }
+      opts.baseline = argv[++i];
+    } else {
       process.stderr.write(`unknown argument: ${a}\n`);
       process.exit(2);
     }
@@ -64,7 +69,7 @@ function main() {
   if (opts.mode === 'check') {
     const errors = [
       ...validateBaseline(baseline, { approvedEndpoints }),
-      ...validateSecurityHeaderValues(baseline),
+      ...validateHardenedBaseline(baseline, { approvedEndpoints }),
     ];
     if (errors.length > 0) {
       process.stderr.write('CSP/security-header baseline REJECTED:\n');
@@ -72,7 +77,7 @@ function main() {
       process.exit(1);
     }
     process.stdout.write(
-      'CSP/security-header baseline OK: exfiltration and header-value boundaries enforced.\n',
+      'CSP/security-header baseline OK: exfiltration, endpoint and header-value boundaries enforced.\n',
     );
     process.exit(0);
   }
