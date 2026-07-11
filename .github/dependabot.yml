@@ -7,6 +7,11 @@ updates:
       day: monday
       time: "06:30"
       timezone: Europe/Zurich
+    cooldown:
+      default-days: 7
+      semver-major-days: 21
+      semver-minor-days: 7
+      semver-patch-days: 3
     open-pull-requests-limit: 5
     versioning-strategy: increase-if-necessary
     assignees:
@@ -32,6 +37,11 @@ updates:
       day: monday
       time: "06:45"
       timezone: Europe/Zurich
+    cooldown:
+      default-days: 7
+      semver-major-days: 21
+      semver-minor-days: 7
+      semver-patch-days: 3
     open-pull-requests-limit: 5
     assignees:
       - marcohost33-maker
