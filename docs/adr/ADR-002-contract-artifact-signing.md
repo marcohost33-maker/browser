@@ -1,123 +1,171 @@
-# ADR-002 — Contract Artifact Signing and Provenance (verify-before-trust)
+# ADR-002 — Contract Artifact Signature and Provenance
 
-- Status: PROPOSED
-- Date: 2026-07-10
-- Scope: how APP-01 `browser` establishes trust in the ENG-01 `nigin-engine`
-  MCP contract artifact it consumes
-- Supersedes: the "integrity identifier (hash)" language in
-  `contracts/MCP_CONSUMER_PROFILE.md` (required input #2)
+- Status: ACCEPTED TARGET DESIGN
+- Decision date: 2026-07-10
+- Revalidated: 2026-07-11
+- Implementation: BLOCKED on ENG-01 contract publication
+- Scope: how APP-01 establishes trust in the ENG-01 MCP contract artifact
 
 ## Context
 
-APP-01 consumes — never defines — the MCP contract from ENG-01 (schemas,
-generated types, fixtures). ADR-001 and the MCP Consumer Profile require the
-contract input to be *version-pinned*, and the threat model has a
-"Supply-chain compromise" control and an "unpinned contract input" release
-blocker.
+APP-01 consumes schemas, generated types, fixtures and conformance expectations
+from ENG-01. A digest can detect a changed artifact relative to a trusted
+reference, but a digest supplied alongside a malicious artifact does not prove
+who produced it or how it was built.
 
-The original profile asked ENG-01 for an "integrity identifier" (a hash). A
-hash proves **integrity relative to a reference value** — it detects
-corruption in transit. It does **not** prove **authenticity or provenance**:
-an attacker who can influence what APP-01 pins can supply a malicious artifact
-*and* its matching hash. Hash-pinning alone is not verify-before-trust.
+Production contract input therefore requires integrity, producer identity,
+build provenance and an immutable reviewed pin.
 
 ## Decision
 
-The ENG-01 contract artifact MUST be **cryptographically signed with build
-provenance**, and APP-01's toolchain MUST **verify signature + provenance +
-transparency-log inclusion before consuming it**. A bare digest is retained
-as a secondary integrity check, not as the trust anchor.
+ENG-01 production contract artifacts must be distributed with:
 
-Standard chosen: **Sigstore keyless signing (cosign)** for the signature and
-**SLSA build provenance** for the "how it was built" attestation. Together:
-provenance proves the build process was legitimate; the cosign signature
-proves the artifact has not changed since provenance was generated
-([AquilaX: Sigstore/SLSA beyond SBOMs](https://aquilax.ai/blog/supply-chain-artifact-signing-slsa),
-confidence: medium;
-[Sigstore verify docs](https://docs.sigstore.dev/cosign/verifying/verify/),
-confidence: high). By 2026, signed artifacts with verifiable provenance are
-treated as a supply-chain baseline (SLSA L2+; CISA guidance)
-([OpenSSF/Sigstore](https://openssf.org/blog/2024/02/16/scaling-up-supply-chain-security-implementing-sigstore-for-seamless-container-image-signing/),
-confidence: medium).
+1. a cryptographic signature bound to the expected GitHub Actions workload
+   identity;
+2. a verification bundle containing the certificate and transparency-log
+   evidence;
+3. SLSA provenance identifying source, revision, builder and build invocation;
+4. a digest recorded in APP-01's reviewed contract lock;
+5. versioned schemas, fixtures and compatibility metadata.
 
-### Producer side (ENG-01 responsibility — stated as a requirement, not owned here)
+APP-01 verifies all evidence before code generation, fixture use or runtime
+integration. Any failure blocks the build.
 
-1. Build the contract artifact deterministically in ENG-01 CI (tagged release).
-2. Sign it **keyless**: the GitHub Actions OIDC identity authenticates to the
-   Fulcio CA, which issues a short-lived certificate; cosign signs the
-   artifact; the signing event is recorded in the Rekor transparency log
-   ([Sigstore keyless](https://www.systemshardening.com/articles/cicd/sigstore-keyless-signing/),
-   confidence: high). No long-lived private key to leak.
-3. Emit **SLSA provenance** (build attestation) naming the builder, the source
-   repo (`marcohost33-maker/nigin-engine`), the commit/tag, and the build
-   entry point.
-4. Publish: the artifact, its `.sigstore` bundle (cert + signature + Rekor
-   inclusion proof), the SLSA provenance attestation, and the digest.
+The selected mechanism is Sigstore keyless signing with `cosign` plus SLSA
+provenance. Long-lived signing keys are not introduced into either repository.
 
-### Consumer side (APP-01 responsibility — verify before trust)
+## Producer requirements for ENG-01
 
-APP-01's dependency-update / CI step verifies **all** of the following before
-the contract version is allowed into the build; any failure fails closed:
+ENG-01 should:
 
-1. **Signature + identity** — the artifact is signed by the expected ENG-01
-   release workflow identity and OIDC issuer:
+1. build the contract artifact in a protected release workflow;
+2. use GitHub Actions OIDC to obtain short-lived signing identity;
+3. sign the artifact and publish a Sigstore bundle;
+4. emit SLSA provenance naming the source repository, commit/tag, builder and
+   entry point;
+5. publish artifact, bundle, provenance, digest and compatibility metadata as
+   one immutable release set;
+6. retain the release workflow and action pins needed to reproduce and audit the
+   build.
 
-   ```bash
-   cosign verify-blob \
-     --certificate-identity-regexp \
-       '^https://github.com/marcohost33-maker/nigin-engine/\.github/workflows/.+@refs/tags/.+$' \
-     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-     --bundle mcp-contract.sigstore.json \
-     mcp-contract.tar.gz
-   ```
+These are cross-repository requirements, not implementation owned by APP-01.
 
-2. **Provenance** — the SLSA attestation matches expected source and builder:
+## Consumer verification in APP-01
 
-   ```bash
-   slsa-verifier verify-artifact mcp-contract.tar.gz \
-     --provenance-path mcp-contract.intoto.jsonl \
-     --source-uri github.com/marcohost33-maker/nigin-engine \
-     --source-tag "$PINNED_CONTRACT_TAG"
-   ```
+A future contract-update workflow must verify:
 
-   (Equivalent: `cosign verify-attestation --type slsaprovenance ...`.)
+### Signature identity
 
-3. **Transparency-log inclusion** — Rekor inclusion proof in the bundle is
-   valid (verified as part of `cosign verify-blob`).
+The certificate identity must match the specifically approved ENG-01 release
+workflow and tag/ref policy. Avoid a broad regular expression that allows any
+workflow file.
 
-4. **Digest pin** — the verified artifact's digest equals the digest recorded
-   in APP-01's contract lockfile (secondary integrity check).
+Illustrative shape only—the exact workflow path is pinned when ENG-01 publishes
+it:
 
-Only after 1–4 succeed may generated types/fixtures be regenerated from the
-artifact. Verification identity strings (`certificate-identity-regexp`,
-`source-uri`, pinned tag) live in APP-01 config and are themselves reviewed on
-change.
+```bash
+cosign verify-blob \
+  --certificate-identity \
+    'https://github.com/marcohost33-maker/nigin-engine/.github/workflows/release-contract.yml@refs/tags/<tag>' \
+  --certificate-oidc-issuer \
+    'https://token.actions.githubusercontent.com' \
+  --bundle mcp-contract.sigstore.json \
+  mcp-contract.tar.gz
+```
+
+### Provenance
+
+The attestation must identify:
+
+- `marcohost33-maker/nigin-engine` as source;
+- the reviewed tag and source commit;
+- the accepted builder/workflow identity;
+- the expected subject digest;
+- the expected build entry point and artifact name.
+
+Verification uses an official SLSA verifier or equivalent policy-enforcing
+attestation verifier pinned by version and digest.
+
+### Digest lock
+
+After signature and provenance verification, the artifact digest must equal the
+value in APP-01's reviewed contract lock. The lock also records:
+
+- contract version and MCP revision;
+- artifact URL/release identifier;
+- digest algorithm and value;
+- signature identity and OIDC issuer;
+- provenance predicate type;
+- retrieval and verification time;
+- compatibility and expiry/review date.
+
+### Safe extraction and generation
+
+Before consuming an archive:
+
+- reject absolute paths, `..` traversal, device files and unexpected symlinks;
+- enforce file-count and uncompressed-size limits;
+- require an explicit manifest allowlist;
+- generate into a clean temporary directory;
+- compare generated output deterministically;
+- do not execute lifecycle scripts or code from the artifact.
+
+## Failure behavior
+
+Verification fails closed on:
+
+- absent or invalid signature/bundle;
+- unexpected workflow identity or issuer;
+- missing transparency evidence when required by the bundle profile;
+- source, tag, builder or subject mismatch;
+- digest mismatch;
+- expired or revoked trust policy;
+- unsafe archive content;
+- non-deterministic generated output;
+- incompatible contract or MCP revision.
+
+A hash-only or manually copied artifact may be used for isolated mock research
+only. It cannot become a production build input.
+
+## Trust-policy change control
+
+Changes to producer identity, issuer, source repository, workflow path,
+provenance predicate, verifier or contract lock are security-sensitive and
+require code-owner review plus passing negative tests.
+
+Trust roots and identity expressions are configuration under review, not values
+accepted from the downloaded artifact.
+
+## Verification tests required before implementation completes
+
+- valid signed artifact passes;
+- artifact modified after signing fails;
+- valid signature from the wrong workflow/repository fails;
+- valid signature with wrong provenance subject fails;
+- digest-lock mismatch fails;
+- missing bundle/provenance fails;
+- path traversal, symlink and archive-bomb fixtures fail;
+- regenerated output matches the committed/published digest;
+- verifier unavailability fails without silently accepting the artifact.
 
 ## Consequences
 
-- APP-01 gains verify-before-trust against ENG-01 (threat-model
-  "Supply-chain compromise" control strengthened from "provenance/SBOM" to
-  "signature + SLSA provenance + transparency-log verification").
-- Hard dependency: **ENG-01 must publish signed, provenanced artifacts.**
-  Until it does, APP-01 has no runtime MCP code (per Gate M1A) and MUST treat
-  any hash-only artifact as **unverified provenance**: usable for local
-  development against mocks only, never as a production trust anchor. This is
-  recorded as an open cross-repo dependency, not silently accepted.
-- Verification runs in CI (keyless verification needs only public Fulcio/Rekor
-  roots; no secrets), so it is reproducible and does not weaken the
-  no-persistent-secret posture.
+- Runtime MCP work remains blocked until ENG-01 publishes the required release
+  set and APP-01 implements this verifier.
+- Contract updates become explicit reviewed supply-chain events.
+- APP-01 gains stronger provenance than digest-only pinning, but the control is
+  only effective when branch/release protection and identity policy are also
+  enforced.
 
-## Interim state (today)
+## Primary sources
 
-ENG-01 has not yet published the contract artifact (MCP Consumer Profile is
-"blocked on ENG-01 contract publication"). This ADR specifies the target
-verification design so that when ENG-01 delivers, APP-01 adopts
-signature+provenance from day one rather than retrofitting hash-only pinning.
-
-## Sources
-
-- Sigstore cosign verifying docs — <https://docs.sigstore.dev/cosign/verifying/verify/> (high)
-- Sigstore keyless signing (Fulcio/Rekor/OIDC) — <https://www.systemshardening.com/articles/cicd/sigstore-keyless-signing/> (high)
-- Cosign + SLSA + provenance overview — <https://aquilax.ai/blog/supply-chain-artifact-signing-slsa> (medium)
-- SLSA framework build levels & provenance — <https://www.decryptiondigest.com/blog/slsa-software-supply-chain-framework-guide> (medium)
-- OpenSSF: scaling Sigstore signing — <https://openssf.org/blog/2024/02/16/scaling-up-supply-chain-security-implementing-sigstore-for-seamless-container-image-signing/> (medium)
+- Sigstore cosign blob signing and bundle creation:
+  `https://docs.sigstore.dev/cosign/signing/signing_with_blobs/`
+- Sigstore verification:
+  `https://docs.sigstore.dev/cosign/verifying/verify/`
+- GitHub Actions OIDC security hardening:
+  `https://docs.github.com/en/actions/concepts/security/openid-connect`
+- SLSA Provenance v1.2:
+  `https://slsa.dev/spec/v1.2/provenance`
+- SLSA verification summary:
+  `https://slsa.dev/spec/v1.2/verifying-artifacts`
