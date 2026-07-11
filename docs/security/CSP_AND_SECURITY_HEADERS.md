@@ -63,6 +63,11 @@ is prohibited.
 | `Cross-Origin-Resource-Policy` | exactly `same-origin` |
 | `X-Frame-Options` | exactly `DENY` |
 
+`Access-Control-Allow-Origin` is deliberately absent and forbidden in this
+profile. Outbound MCP target origins and inbound app-response CORS permissions
+are opposite trust directions. Endpoint CORS belongs to the MCP server and
+ADR-003 compatibility profile.
+
 The baseline CSP is:
 
 ```text
@@ -93,6 +98,7 @@ The implementation rejects:
 - duplicate serialized CSP directives;
 - CSP or Report-Only overrides in `additional_headers`;
 - case-insensitive duplicate header names;
+- unexpected app-response headers, including ACAO;
 - header-name or value injection;
 - malformed, duplicate, unknown or weak HSTS directives;
 - noncanonical or weak Referrer-Policy values;
@@ -107,27 +113,28 @@ A baseline that fails validation cannot be serialized or served.
 
 - `docs/security/csp-baseline.json` contains policy data.
 - `src/security/csp.js` validates CSP structure and serializes the policy.
-- `src/security/header-values.js` validates the complete M1 header and approved
-  origin policy.
+- `src/security/header-values.js` validates the complete M1 response-header and
+  approved-origin policy.
 - `src/security/serialize-cli.js` is the CI/deployment gate.
-- `tests/security/` contains positive, negative and real-response tests.
+- `tests/security/` contains positive, negative, CLI and real-response tests.
 
 No deployment template or application server may maintain a second independent
-CSP string.
+CSP string. Application/serving code uses `buildHardenedHeaderMap()`, not the
+low-level serializer directly.
 
-## Commands
+## Commands and deployment configuration
 
 ```bash
-npm ci --ignore-scripts
+npm ci --ignore-scripts --audit=false --fund=false
 npm run csp:check
 npm test
 npm run csp:json
 ```
 
-`CSP_APPROVED_ENDPOINTS` currently accepts a comma-separated list of **origins**,
-not endpoint URLs. Before runtime integration it will be renamed to
-`CSP_APPROVED_ORIGINS`; a compatibility alias must reject ambiguous dual
-configuration.
+`CSP_APPROVED_ORIGINS` accepts a comma-separated list of canonical origins, not
+full MCP endpoint URLs. `CSP_APPROVED_ENDPOINTS` is a temporary deprecated alias;
+setting both names is a configuration error. Empty, duplicate, noncanonical or
+insecure origins fail closed.
 
 ## Runtime requirements after ADR-003
 
@@ -155,8 +162,7 @@ application must verify that:
 
 ## Primary sources
 
-- CSP Level 3:
-  `https://www.w3.org/TR/CSP3/`
+- CSP Level 3: `https://www.w3.org/TR/CSP3/`
 - MDN Content-Security-Policy:
   `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy`
 - W3C Permissions Policy Editor's Draft:
