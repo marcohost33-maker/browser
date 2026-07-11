@@ -3,6 +3,7 @@
 - Status: ACTIVE WORKING BASELINE
 - Updated: 2026-07-11
 - Repository: `marcohost33-maker/browser`
+- Source verification date: 2026-07-11 UTC
 
 ## Purpose
 
@@ -22,8 +23,8 @@ Prevent roadmap, architecture and security claims from relying on secondary summ
 
 ### Model Context Protocol
 
-- Current published MCP protocol revision observed on 2026-07-11: `2025-11-25`.
-- Versioning: `https://modelcontextprotocol.io/specification/versioning`
+- Current published MCP protocol revision re-verified on 2026-07-11 UTC: `2025-11-25`.
+- Versioning: `https://modelcontextprotocol.io/docs/learn/versioning`
 - Specification: `https://modelcontextprotocol.io/specification/2025-11-25`
 - Security best practices: `https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices`
 - Authorization: use the authorization section belonging to the protocol revision selected by the contract owner.
@@ -36,7 +37,8 @@ Project rules:
 - User consent, data privacy and tool safety remain explicit host/client responsibilities.
 - Tool descriptions, annotations, resource content and remote URLs are untrusted input even when protocol-valid.
 - Token passthrough is forbidden; sessions are not authentication.
-- Authorization URLs accept only validated HTTP(S), with HTTP restricted to explicit loopback development use.
+- Authorization and approved remote endpoint URLs require HTTPS in production.
+- Plain HTTP is restricted to explicit `localhost`, `127.0.0.1` or `::1` development origins.
 - Unknown mandatory or security-relevant semantics fail closed. Harmless extensions follow the documented compatibility policy.
 
 ### OAuth and browser authorization
@@ -58,15 +60,31 @@ Project rules when OAuth is enabled:
 
 ### Web platform security
 
-- Content Security Policy and Fetch/CORS behavior must be validated against the selected deployment topology and supported browsers.
-- GitHub Actions secure-use guidance: `https://docs.github.com/en/actions/reference/security/secure-use`
+Primary sources and implementation references:
+
+- Permissions Policy Editor's Draft, retrieved 2026-07-11 UTC:
+  - `https://w3c.github.io/webappsec-permissions-policy/`
+- MDN Permissions-Policy reference:
+  - `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy`
+- OWASP HTTP Headers Cheat Sheet:
+  - `https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html`
+- GitHub Actions secure-use guidance:
+  - `https://docs.github.com/en/actions/reference/security/secure-use`
+
+Status rule:
+
+- The Permissions Policy Editor's Draft is work in progress and is used for current grammar and processing behavior, not as a claim of stable W3C Recommendation status.
 
 Project rules:
 
 - A static SPA cannot assume arbitrary remote MCP endpoints are reachable; CORS, credentials, redirects and CSP are architecture constraints.
 - `connect-src` follows the approved endpoint model and must not be widened to `*`, `https:` or `http:`.
+- Approved origins use canonical exact-origin serialization; HTTPS is mandatory except for explicit loopback development origins.
+- Permissions-Policy feature identifiers are emitted and validated as exact lowercase tokens. Unknown or differently cased dictionary members may be ignored by user agents and therefore cannot satisfy required disablement controls.
+- Required powerful features are explicitly disabled with the canonical empty inner list `()`.
 - CSP is defense in depth, not a substitute for safe rendering, input validation or authorization.
-- Security headers are generated from a machine-readable baseline and must fail CI on unsafe structural or value-level changes.
+- Security headers are generated from a machine-readable baseline and must fail CI on unsafe structural, casing, duplicate-name or value-level changes.
+- HSTS requires a valid `max-age` at or above the project floor and `includeSubDomains`; preload remains an explicit deployment commitment.
 
 ### Accessibility
 
@@ -112,7 +130,7 @@ Every normative requirement in an ADR, security profile or release gate records:
 - source title and URL;
 - exact version/revision;
 - publication/revision date;
-- retrieval date;
+- retrieval date and timezone;
 - affected requirement or risk IDs;
 - supersession review trigger.
 
@@ -120,6 +138,7 @@ Review triggers:
 
 - MCP revision or selected contract version changes;
 - endpoint/deployment/OAuth model changes;
+- Permissions Policy grammar, feature registry or supported browser behavior changes;
 - supported browser matrix changes;
 - major runtime, dependency or CI-tool upgrade;
 - public-release preparation;
