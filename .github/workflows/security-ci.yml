@@ -1,13 +1,7 @@
-# security-ci — enforce the CSP + security-header profile (M1B).
+# security-ci — enforce the APP-01 static security foundation.
 #
-# Turns docs/security/csp-baseline.json from "specified" into "enforced":
-#   1. deterministic install from package-lock.json with lifecycle scripts off
-#   2. complete CSP/header/endpoint fail-closed gate
-#   3. serializer + served-header integration and regression tests
-#   4. SPDX SBOM generation retained as workflow evidence
-#
-# Hardening mirrors docs-ci.yml: top-level empty permissions (least privilege),
-# SHA-pinned public actions, persist-credentials: false and pinned Node major.
+# Evidence produced by this workflow is bound to both the source head and the
+# actual checkout SHA (an ephemeral merge commit for pull_request events).
 name: security-ci
 
 on:
@@ -29,6 +23,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      TESTED_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -43,14 +40,55 @@ jobs:
         run: npm run csp:check
       - name: serializer, served-header and regression tests
         run: npm test
-      - name: generate SPDX SBOM
+      - name: generate SPDX SBOM and evidence manifest
         run: |
+          set -euo pipefail
           npm sbom --sbom-format=spdx > sbom.spdx.json
-          node -e "JSON.parse(require('node:fs').readFileSync('sbom.spdx.json', 'utf8'))"
-      - name: upload SBOM evidence
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { createHash } = require('node:crypto');
+          const { readFileSync, writeFileSync } = require('node:fs');
+
+          const bytes = readFileSync('sbom.spdx.json');
+          const sbom = JSON.parse(bytes.toString('utf8'));
+          const evidence = {
+            schema_version: '1.0',
+            repository: process.env.GITHUB_REPOSITORY,
+            event_name: process.env.GITHUB_EVENT_NAME,
+            source_sha: process.env.SOURCE_SHA,
+            tested_sha: process.env.TESTED_SHA,
+            workflow: process.env.GITHUB_WORKFLOW,
+            run_id: process.env.GITHUB_RUN_ID,
+            run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+            generated_at: new Date().toISOString(),
+            tools: {
+              node: process.version,
+              npm: execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(),
+            },
+            sbom: {
+              path: 'sbom.spdx.json',
+              sha256: createHash('sha256').update(bytes).digest('hex'),
+              spdx_version: sbom.spdxVersion,
+              document_name: sbom.name,
+              package_count: Array.isArray(sbom.packages) ? sbom.packages.length : null,
+            },
+          };
+
+          if (!evidence.source_sha || !evidence.tested_sha) {
+            throw new Error('source/tested commit identity is missing');
+          }
+          if (evidence.sbom.spdx_version !== 'SPDX-2.3') {
+            throw new Error(`unexpected SPDX version: ${evidence.sbom.spdx_version}`);
+          }
+
+          writeFileSync('security-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`);
+          NODE
+      - name: upload immutable security evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
-          name: app-01-sbom-${{ github.sha }}
-          path: sbom.spdx.json
+          name: app-01-security-evidence-${{ env.SOURCE_SHA }}
+          path: |
+            sbom.spdx.json
+            security-evidence.json
           if-no-files-found: error
           retention-days: 14
