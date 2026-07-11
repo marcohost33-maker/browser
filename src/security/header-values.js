@@ -1,11 +1,15 @@
-// APP-01 security-header value validation.
+// APP-01 complete CSP/security-header/origin validation.
 //
-// This complements the CSP structural validator in csp.js. It protects the
-// machine-readable baseline from value-level downgrades by a compromised or
-// mistaken editor and is called by the CLI/serving wrapper before headers are
-// emitted.
+// csp.js owns directive parsing and serialization. This module adds the exact
+// M1 response-header policy and deployment-origin policy, then exposes the only
+// serving/CI entry point that callers should use.
 
-import { buildHeaderMap, CspValidationError, isExactOrigin } from './csp.js';
+import {
+  buildHeaderMap,
+  CspValidationError,
+  isExactOrigin,
+  validateBaseline,
+} from './csp.js';
 
 const HSTS_MAX_AGE_FLOOR = 31536000;
 
@@ -16,9 +20,6 @@ const ALLOWED_REFERRER_POLICIES = new Set([
   'strict-origin-when-cross-origin',
 ]);
 
-// APP-01's M1 baseline deliberately disables these powerful features.
-// Additional directives are allowed only when they are lowercase and disabled
-// with the canonical empty inner-list syntax ().
 const REQUIRED_DISABLED_PERMISSIONS = new Set([
   'camera',
   'microphone',
@@ -65,6 +66,7 @@ function validateHsts(value) {
 
     const maxAgeMatch = /^max-age=([0-9]+)$/i.exec(part);
     let key;
+
     if (maxAgeMatch) {
       key = 'max-age';
       const parsed = Number(maxAgeMatch[1]);
@@ -79,12 +81,16 @@ function validateHsts(value) {
     } else if (/^preload$/i.test(part)) {
       key = 'preload';
     } else {
-      errors.push(`Strict-Transport-Security contains an unknown or malformed directive ${JSON.stringify(part)}`);
+      errors.push(
+        `Strict-Transport-Security contains an unknown or malformed directive ${JSON.stringify(part)}`,
+      );
       continue;
     }
 
     if (seen.has(key)) {
-      errors.push(`Strict-Transport-Security contains duplicate directive ${JSON.stringify(key)}`);
+      errors.push(
+        `Strict-Transport-Security contains duplicate directive ${JSON.stringify(key)}`,
+      );
     }
     seen.add(key);
   }
@@ -105,8 +111,6 @@ function validateHsts(value) {
 }
 
 function validateReferrerPolicy(value) {
-  // Canonical lowercase serialization is required. This avoids emitting a token
-  // whose browser interpretation differs from the value that was validated.
   if (!ALLOWED_REFERRER_POLICIES.has(value)) {
     return [
       `Referrer-Policy must be one of ${[...ALLOWED_REFERRER_POLICIES].join(', ')}, got ${JSON.stringify(value)}`,
@@ -128,12 +132,14 @@ function validatePermissionsPolicy(value) {
   }
 
   for (const directive of directives) {
-    // HTTP dictionary member names are emitted exactly as written. Requiring
-    // lowercase prevents a mixed-case unknown member from being ignored by the
-    // browser while our validator mistakenly treats it as a required feature.
+    // Exact lowercase identifiers are required. A differently cased unknown
+    // dictionary member may be ignored by the browser and cannot satisfy a
+    // required feature disablement.
     const match = /^([a-z][a-z0-9-]*)\s*=\s*(.+)$/.exec(directive);
     if (!match) {
-      errors.push(`Permissions-Policy directive is malformed or not lowercase: ${JSON.stringify(directive)}`);
+      errors.push(
+        `Permissions-Policy directive is malformed or not lowercase: ${JSON.stringify(directive)}`,
+      );
       continue;
     }
 
@@ -155,7 +161,9 @@ function validatePermissionsPolicy(value) {
 
   for (const feature of REQUIRED_DISABLED_PERMISSIONS) {
     if (!seen.has(feature)) {
-      errors.push(`Permissions-Policy is missing required disabled feature ${JSON.stringify(feature)}`);
+      errors.push(
+        `Permissions-Policy is missing required disabled feature ${JSON.stringify(feature)}`,
+      );
     }
   }
 
@@ -177,9 +185,8 @@ function isLoopbackDevelopmentOrigin(origin) {
 }
 
 /**
- * Validate the deployment-provided exact-origin allowlist.
- * Production origins require HTTPS. Plain HTTP is limited to explicit loopback
- * development endpoints; private-network and arbitrary remote HTTP are denied.
+ * Validate deployment-provided CSP origins.
+ * Production origins require HTTPS. Plain HTTP is loopback-development only.
  */
 export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
   if (!Array.isArray(approvedEndpoints)) {
@@ -191,7 +198,9 @@ export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
 
   for (const origin of approvedEndpoints) {
     if (!isExactOrigin(origin)) {
-      errors.push(`approved endpoint ${JSON.stringify(origin)} is not an exact canonical origin`);
+      errors.push(
+        `approved endpoint ${JSON.stringify(origin)} is not an exact canonical origin`,
+      );
       continue;
     }
 
@@ -213,9 +222,12 @@ export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
 }
 
 /**
- * Validate value-level invariants for the complete M1 security-header set.
- * @param {object} baseline parsed csp-baseline.json
- * @returns {string[]} violations
+ * Validate the exact M1 app-response header profile.
+ *
+ * No additional response header is accepted here. In particular,
+ * Access-Control-Allow-Origin is forbidden: outbound MCP target origins and
+ * inbound app-response CORS permissions are opposite trust directions and must
+ * never share one allowlist. Endpoint CORS belongs to ADR-003/server policy.
  */
 export function validateSecurityHeaderValues(baseline) {
   const additional = baseline?.additional_headers;
@@ -228,12 +240,25 @@ export function validateSecurityHeaderValues(baseline) {
 
   for (const [name, value] of Object.entries(additional)) {
     const lower = name.toLowerCase();
+
     if (byLowerName.has(lower)) {
       errors.push(
         `additional_headers contains duplicate case-insensitive header name ${JSON.stringify(lower)}`,
       );
       continue;
     }
+
+    if (!REQUIRED_HEADER_NAMES.has(lower)) {
+      errors.push(
+        `header ${JSON.stringify(name)} is not permitted in the M1 app-response profile`,
+      );
+    }
+
+    if (typeof value !== 'string') {
+      errors.push(`header ${JSON.stringify(name)} value must be a string`);
+      continue;
+    }
+
     byLowerName.set(lower, value);
   }
 
@@ -266,23 +291,19 @@ export function validateSecurityHeaderValues(baseline) {
   return errors;
 }
 
-/**
- * Complete hardened validation used by CI and the serving path.
- */
+/** Complete validation used by CI and the serving path. */
 export function validateHardenedBaseline(
   baseline,
   { approvedEndpoints = [] } = {},
 ) {
   return [
+    ...validateBaseline(baseline, { approvedEndpoints }),
     ...validateSecurityHeaderValues(baseline),
     ...validateApprovedEndpointOrigins(approvedEndpoints),
   ];
 }
 
-/**
- * Build the served header map only after structural CSP validation, complete
- * value validation and deployment endpoint validation have passed.
- */
+/** Build a served header map only after every policy layer passes. */
 export function buildHardenedHeaderMap(baseline, options = {}) {
   const errors = validateHardenedBaseline(baseline, options);
   if (errors.length > 0) throw new CspValidationError(errors);
