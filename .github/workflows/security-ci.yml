@@ -1,13 +1,13 @@
 # security-ci — enforce the CSP + security-header profile (M1B).
 #
 # Turns docs/security/csp-baseline.json from "specified" into "enforced":
-#   1. connect-src exfil-boundary gate (build fails on */https:/http:/non-allowlisted origin)
-#   2. serializer + header-served integration tests (node --test, zero deps)
+#   1. deterministic install from package-lock.json with lifecycle scripts off
+#   2. complete CSP/header/endpoint fail-closed gate
+#   3. serializer + served-header integration and regression tests
+#   4. SPDX SBOM generation retained as workflow evidence
 #
-# Hardening mirrors docs-ci.yml: top-level empty permissions (least privilege;
-# each job opts in), SHA-pinned public actions, persist-credentials: false,
-# pinned tool version (Node 22, local<->CI parity). Inline on purpose (a
-# private coworkerz-ci reusable breaks under the default GITHUB_TOKEN).
+# Hardening mirrors docs-ci.yml: top-level empty permissions (least privilege),
+# SHA-pinned public actions, persist-credentials: false and pinned Node major.
 name: security-ci
 
 on:
@@ -18,10 +18,15 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: security-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   csp-enforcement:
-    name: CSP connect-src gate + header tests
+    name: hardened policy gate + security tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -31,7 +36,21 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
           node-version: "22"
-      - name: connect-src exfil-boundary gate (fails on wildcard/scheme/non-allowlisted origin)
-        run: node src/security/serialize-cli.js --check
-      - name: serializer + header-served integration tests
+          cache: npm
+      - name: deterministic install with lifecycle scripts disabled
+        run: npm ci --ignore-scripts --audit=false --fund=false
+      - name: CSP, endpoint and security-header fail-closed gate
+        run: npm run csp:check
+      - name: serializer, served-header and regression tests
         run: npm test
+      - name: generate SPDX SBOM
+        run: |
+          npm sbom --sbom-format=spdx > sbom.spdx.json
+          node -e "JSON.parse(require('node:fs').readFileSync('sbom.spdx.json', 'utf8'))"
+      - name: upload SBOM evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: app-01-sbom-${{ github.sha }}
+          path: sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 14
