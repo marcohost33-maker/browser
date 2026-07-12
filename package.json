@@ -11,6 +11,7 @@
   },
   "scripts": {
     "toolchain:check": "node scripts/check-toolchain.js",
+    "lockfile:check": "node scripts/validate-lockfile.js",
     "test": "node --test \"tests/security/**/*.test.js\"",
     "csp:header": "node src/security/serialize-cli.js",
     "csp:json": "node src/security/serialize-cli.js --json",
