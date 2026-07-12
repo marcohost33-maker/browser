@@ -1,8 +1,8 @@
 // APP-01 complete CSP/security-header/origin validation.
 //
 // csp.js owns directive parsing and serialization. This module adds the exact
-// M1 response-header policy and deployment-origin policy, then exposes the only
-// serving/CI entry point that callers should use.
+// M1 response-header and directive profiles plus deployment-origin policy, then
+// exposes the only serving/CI entry point that callers should use.
 
 import {
   buildHeaderMap,
@@ -47,6 +47,34 @@ const REQUIRED_HEADER_NAMES = new Set([
   'cross-origin-resource-policy',
   'x-frame-options',
 ]);
+
+// Exact M1 policy. The lower-level CSP validator intentionally understands a
+// wider safe vocabulary for future ADR-backed profiles; APP-01 must not silently
+// drift to that wider vocabulary before the architecture and browser matrix are
+// accepted. connect-src is handled separately because curated deployment origins
+// may be appended after 'self'.
+const REQUIRED_EXACT_DIRECTIVES = new Map([
+  ['default-src', ["'none'"]],
+  ['base-uri', ["'none'"]],
+  ['object-src', ["'none'"]],
+  ['frame-ancestors', ["'none'"]],
+  ['form-action', ["'self'"]],
+  ['img-src', ["'self'", 'data:']],
+  ['style-src', ["'self'"]],
+  ['font-src', ["'self'"]],
+  ['script-src', ["'self'"]],
+  ['manifest-src', ["'self'"]],
+  ['worker-src', ["'self'"]],
+  ['require-trusted-types-for', ["'script'"]],
+  ['upgrade-insecure-requests', []],
+]);
+
+function arraysEqual(actual, expected) {
+  return (
+    actual.length === expected.length &&
+    actual.every((value, index) => value === expected[index])
+  );
+}
 
 function validateHsts(value) {
   const errors = [];
@@ -221,6 +249,74 @@ export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
   return errors;
 }
 
+/** Validate the exact APP-01 M1 CSP directive profile. */
+export function validateSecurityDirectiveProfile(
+  baseline,
+  { approvedEndpoints = [] } = {},
+) {
+  const directives = baseline?.directives;
+  if (!directives || typeof directives !== 'object' || Array.isArray(directives)) {
+    return ['baseline is missing a "directives" object'];
+  }
+
+  const errors = [];
+  const allowedNames = new Set([...REQUIRED_EXACT_DIRECTIVES.keys(), 'connect-src']);
+
+  for (const [name, expected] of REQUIRED_EXACT_DIRECTIVES) {
+    const actual = directives[name];
+    if (!Array.isArray(actual)) {
+      errors.push(`required M1 directive ${JSON.stringify(name)} is missing`);
+      continue;
+    }
+    if (!arraysEqual(actual, expected)) {
+      errors.push(
+        `M1 directive ${JSON.stringify(name)} must equal ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+      );
+    }
+  }
+
+  const connectSrc = directives['connect-src'];
+  if (!Array.isArray(connectSrc)) {
+    errors.push('required M1 directive "connect-src" is missing');
+  } else {
+    if (connectSrc[0] !== "'self'") {
+      errors.push(`M1 connect-src must begin with "'self'", got ${JSON.stringify(connectSrc)}`);
+    }
+
+    const seen = new Set();
+    for (const source of connectSrc) {
+      if (seen.has(source)) {
+        errors.push(`M1 connect-src contains duplicate source ${JSON.stringify(source)}`);
+      }
+      seen.add(source);
+    }
+
+    if (connectSrc.filter((source) => source === "'self'").length !== 1) {
+      errors.push('M1 connect-src must contain exactly one "\'self\'" source');
+    }
+
+    // The lower-level validator checks that every non-self source is an exact
+    // origin in this set. This explicit check keeps the M1 profile diagnostic
+    // local and deterministic when the generic CSP policy evolves.
+    const approved = new Set(Array.isArray(approvedEndpoints) ? approvedEndpoints : []);
+    for (const source of connectSrc.slice(1)) {
+      if (!approved.has(source)) {
+        errors.push(
+          `M1 connect-src source ${JSON.stringify(source)} is not in the approved-endpoint set`,
+        );
+      }
+    }
+  }
+
+  for (const name of Object.keys(directives)) {
+    if (!allowedNames.has(name)) {
+      errors.push(`directive ${JSON.stringify(name)} is not permitted by the APP-01 M1 profile`);
+    }
+  }
+
+  return errors;
+}
+
 /**
  * Validate the exact M1 app-response header profile.
  *
@@ -296,10 +392,16 @@ export function validateHardenedBaseline(
   baseline,
   { approvedEndpoints = [] } = {},
 ) {
+  const endpointErrors = validateApprovedEndpointOrigins(approvedEndpoints);
+  const safeApprovedEndpoints = Array.isArray(approvedEndpoints) ? approvedEndpoints : [];
+
   return [
-    ...validateBaseline(baseline, { approvedEndpoints }),
+    ...validateBaseline(baseline, { approvedEndpoints: safeApprovedEndpoints }),
+    ...validateSecurityDirectiveProfile(baseline, {
+      approvedEndpoints: safeApprovedEndpoints,
+    }),
     ...validateSecurityHeaderValues(baseline),
-    ...validateApprovedEndpointOrigins(approvedEndpoints),
+    ...endpointErrors,
   ];
 }
 
