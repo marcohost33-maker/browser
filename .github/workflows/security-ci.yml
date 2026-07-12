@@ -19,7 +19,7 @@ concurrency:
 jobs:
   csp-enforcement:
     name: hardened policy gate + security tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -35,13 +35,13 @@ jobs:
         with:
           node-version: "22.23.1"
           cache: npm
-      - name: verify exact Node and npm toolchain
+      - name: verify exact Node, npm, registry and lifecycle policy
         run: npm run toolchain:check
       - name: verify frozen lockfile invariants
         run: npm run lockfile:check
       - name: deterministic install with lifecycle scripts disabled
         run: npm ci --ignore-scripts --audit=false --fund=false
-      - name: dependency vulnerability gate
+      - name: dependency vulnerability gate and snapshot
         run: npm run audit:ci
       - name: CSP, endpoint and security-header fail-closed gate
         run: npm run csp:check
@@ -66,11 +66,16 @@ jobs:
           };
 
           const sbomFile = hash('sbom.spdx.json');
+          const auditFile = hash('npm-audit.json');
           const packageFile = hash('package.json');
           const lockFile = hash('package-lock.json');
+          const npmrcFile = hash('.npmrc');
           const sbom = JSON.parse(sbomFile.bytes.toString('utf8'));
+          const audit = JSON.parse(auditFile.bytes.toString('utf8'));
+          const vulnerabilities = audit.metadata?.vulnerabilities;
+
           const evidence = {
-            schema_version: '1.1',
+            schema_version: '1.2',
             repository: process.env.GITHUB_REPOSITORY,
             event_name: process.env.GITHUB_EVENT_NAME,
             source_sha: process.env.SOURCE_SHA,
@@ -79,13 +84,29 @@ jobs:
             run_id: process.env.GITHUB_RUN_ID,
             run_attempt: process.env.GITHUB_RUN_ATTEMPT,
             generated_at: new Date().toISOString(),
+            runner: {
+              os: process.env.RUNNER_OS,
+              arch: process.env.RUNNER_ARCH,
+              image_os: process.env.ImageOS || null,
+              image_version: process.env.ImageVersion || null,
+              kernel: execFileSync('uname', ['-srmo'], { encoding: 'utf8' }).trim(),
+              git: execFileSync('git', ['--version'], { encoding: 'utf8' }).trim(),
+            },
             tools: {
               node: process.version,
               npm: execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(),
+              registry: execFileSync('npm', ['config', 'get', 'registry'], { encoding: 'utf8' }).trim(),
             },
             inputs: {
               package_json_sha256: packageFile.sha256,
               package_lock_sha256: lockFile.sha256,
+              npmrc_sha256: npmrcFile.sha256,
+            },
+            audit: {
+              path: auditFile.path,
+              sha256: auditFile.sha256,
+              report_version: audit.auditReportVersion,
+              vulnerabilities,
             },
             sbom: {
               path: sbomFile.path,
@@ -102,6 +123,18 @@ jobs:
           if (evidence.tools.node !== 'v22.23.1' || evidence.tools.npm !== '10.9.8') {
             throw new Error(`unexpected evidence toolchain: ${JSON.stringify(evidence.tools)}`);
           }
+          if (evidence.tools.registry !== 'https://registry.npmjs.org/') {
+            throw new Error(`unexpected npm registry: ${evidence.tools.registry}`);
+          }
+          if (evidence.runner.os !== 'Linux' || evidence.runner.arch !== 'X64') {
+            throw new Error(`unexpected runner platform: ${JSON.stringify(evidence.runner)}`);
+          }
+          if (audit.auditReportVersion !== 2 || !vulnerabilities) {
+            throw new Error('npm audit snapshot is missing expected schema metadata');
+          }
+          if ((vulnerabilities.high ?? 0) > 0 || (vulnerabilities.critical ?? 0) > 0) {
+            throw new Error(`high/critical vulnerabilities present: ${JSON.stringify(vulnerabilities)}`);
+          }
           if (evidence.sbom.spdx_version !== 'SPDX-2.3') {
             throw new Error(`unexpected SPDX version: ${evidence.sbom.spdx_version}`);
           }
@@ -109,9 +142,9 @@ jobs:
             throw new Error('SBOM package inventory is empty or malformed');
           }
 
-          delete sbomFile.bytes;
-          delete packageFile.bytes;
-          delete lockFile.bytes;
+          for (const file of [sbomFile, auditFile, packageFile, lockFile, npmrcFile]) {
+            delete file.bytes;
+          }
           writeFileSync('security-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`);
           NODE
       - name: upload immutable security evidence
@@ -119,7 +152,8 @@ jobs:
         with:
           name: app-01-security-evidence-${{ env.SOURCE_SHA }}
           path: |
+            npm-audit.json
             sbom.spdx.json
             security-evidence.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
