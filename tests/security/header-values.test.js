@@ -24,6 +24,13 @@ function baselineWithEndpoint(origin) {
   return baseline;
 }
 
+function mutatedPermissions(mutator) {
+  return mutatedHeader(
+    'Permissions-Policy',
+    mutator(REAL.additional_headers['Permissions-Policy']),
+  );
+}
+
 test('real committed security-header baseline passes complete hardening', () => {
   assert.deepEqual(validateHardenedBaseline(REAL), []);
   assert.ok(buildHardenedHeaderMap(REAL)['Content-Security-Policy']);
@@ -33,18 +40,21 @@ test('case-insensitive duplicate headers are rejected before emission', () => {
   const baseline = clone(REAL);
   const { 'Strict-Transport-Security': _removed, ...rest } = baseline.additional_headers;
   baseline.additional_headers = {
-    'Strict-Transport-Security': 'max-age=63072000; preload',
-    'strict-transport-security': 'max-age=63072000; includeSubDomains; preload',
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+    'strict-transport-security': 'max-age=63072000; includeSubDomains',
     ...rest,
   };
 
   const errors = validateSecurityHeaderValues(baseline);
   assert.ok(errors.some((error) => /duplicate case-insensitive header name/.test(error)));
-  assert.ok(errors.some((error) => /includeSubDomains/.test(error)));
+  assert.ok(errors.some((error) => /63072000/.test(error)));
   assert.throws(() => buildHardenedHeaderMap(baseline), CspValidationError);
 });
 
 for (const unsafe of [
+  'same-origin',
+  'strict-origin',
+  'strict-origin-when-cross-origin',
   'unsafe-url',
   'no-referrer-when-downgrade',
   'origin-when-cross-origin',
@@ -52,7 +62,7 @@ for (const unsafe of [
   'NO-REFERRER',
   ' no-referrer',
 ]) {
-  test(`Referrer-Policy downgrade/non-canonical value ${JSON.stringify(unsafe)} is rejected`, () => {
+  test(`Referrer-Policy drift ${JSON.stringify(unsafe)} is rejected`, () => {
     const baseline = mutatedHeader('Referrer-Policy', unsafe);
     const errors = validateSecurityHeaderValues(baseline);
     assert.ok(errors.some((error) => /Referrer-Policy/.test(error)));
@@ -60,22 +70,16 @@ for (const unsafe of [
   });
 }
 
-for (const safe of [
-  'no-referrer',
-  'same-origin',
-  'strict-origin',
-  'strict-origin-when-cross-origin',
-]) {
-  test(`Referrer-Policy ${safe} is accepted`, () => {
-    const baseline = mutatedHeader('Referrer-Policy', safe);
-    assert.deepEqual(validateSecurityHeaderValues(baseline), []);
-  });
-}
+test('only exact no-referrer remains accepted', () => {
+  assert.deepEqual(
+    validateSecurityHeaderValues(mutatedHeader('Referrer-Policy', 'no-referrer')),
+    [],
+  );
+});
 
 test('Permissions-Policy rejects self grant for a disabled feature', () => {
-  const baseline = mutatedHeader(
-    'Permissions-Policy',
-    'camera=(), microphone=(), geolocation=(self), payment=(), usb=(), interest-cohort=()',
+  const baseline = mutatedPermissions((value) =>
+    value.replace('geolocation=()', 'geolocation=(self)'),
   );
   const errors = validateSecurityHeaderValues(baseline);
   assert.ok(errors.some((error) => /geolocation/.test(error)));
@@ -83,19 +87,15 @@ test('Permissions-Policy rejects self grant for a disabled feature', () => {
 });
 
 test('Permissions-Policy rejects a foreign-origin grant', () => {
-  const baseline = mutatedHeader(
-    'Permissions-Policy',
-    'camera=(self "https://evil.example"), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
+  const baseline = mutatedPermissions((value) =>
+    value.replace('camera=()', 'camera=(self "https://evil.example")'),
   );
   const errors = validateSecurityHeaderValues(baseline);
   assert.ok(errors.some((error) => /camera/.test(error)));
 });
 
 test('Permissions-Policy rejects mixed-case feature names', () => {
-  const baseline = mutatedHeader(
-    'Permissions-Policy',
-    'Camera=(), Microphone=(), Geolocation=(), Payment=(), USB=(), Interest-Cohort=()',
-  );
+  const baseline = mutatedPermissions((value) => value.replace('camera=()', 'Camera=()'));
   const errors = validateSecurityHeaderValues(baseline);
   assert.ok(errors.some((error) => /not lowercase/.test(error)));
   assert.ok(errors.some((error) => /missing required disabled feature/.test(error)));
@@ -103,30 +103,27 @@ test('Permissions-Policy rejects mixed-case feature names', () => {
 });
 
 test('Permissions-Policy rejects missing required disabled features', () => {
-  const baseline = mutatedHeader(
-    'Permissions-Policy',
-    'camera=(), microphone=(), geolocation=()',
-  );
+  const baseline = mutatedPermissions((value) => value.replace('payment=(), ', ''));
   const errors = validateSecurityHeaderValues(baseline);
   assert.ok(errors.some((error) => /payment/.test(error)));
-  assert.ok(errors.some((error) => /usb/.test(error)));
 });
 
 test('Permissions-Policy rejects duplicate feature directives', () => {
-  const baseline = mutatedHeader(
-    'Permissions-Policy',
-    'camera=(), camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
-  );
+  const baseline = mutatedPermissions((value) => `camera=(), ${value}`);
   assert.ok(
     validateSecurityHeaderValues(baseline).some((error) => /duplicate feature/.test(error)),
   );
 });
 
-test('HSTS without includeSubDomains is rejected', () => {
-  const baseline = mutatedHeader(
-    'Strict-Transport-Security',
-    'max-age=63072000; preload',
+test('Permissions-Policy rejects semantically equal but noncanonical ordering', () => {
+  const baseline = mutatedPermissions((value) => value.split(', ').reverse().join(', '));
+  assert.ok(
+    validateSecurityHeaderValues(baseline).some((error) => /canonical reviewed/.test(error)),
   );
+});
+
+test('HSTS without includeSubDomains is rejected', () => {
+  const baseline = mutatedHeader('Strict-Transport-Security', 'max-age=63072000');
   const errors = validateSecurityHeaderValues(baseline);
   assert.ok(errors.some((error) => /includeSubDomains/.test(error)));
   assert.throws(() => buildHardenedHeaderMap(baseline), CspValidationError);
@@ -140,8 +137,11 @@ for (const unsafe of [
   'max-age=63072000; includeSubDomains; unknown',
   'max-age=63072000; includeSubDomains;',
   'max-age=10; includeSubDomains',
+  'max-age=31536000; includeSubDomains',
+  'max-age=63072001; includeSubDomains',
+  'includeSubDomains; max-age=63072000',
 ]) {
-  test(`malformed or weakened HSTS ${JSON.stringify(unsafe)} is rejected`, () => {
+  test(`malformed, weakened or noncanonical HSTS ${JSON.stringify(unsafe)} is rejected`, () => {
     const baseline = mutatedHeader('Strict-Transport-Security', unsafe);
     assert.ok(validateSecurityHeaderValues(baseline).length >= 1);
     assert.throws(() => buildHardenedHeaderMap(baseline), CspValidationError);
@@ -191,7 +191,10 @@ test('HTTPS approved endpoint is accepted and emitted when explicitly allowliste
   const baseline = baselineWithEndpoint(origin);
   const options = { approvedEndpoints: [origin] };
   assert.deepEqual(validateHardenedBaseline(baseline, options), []);
-  assert.match(buildHardenedHeaderMap(baseline, options)['Content-Security-Policy'], /https:\/\/mcp\.example\.com/);
+  assert.match(
+    buildHardenedHeaderMap(baseline, options)['Content-Security-Policy'],
+    /https:\/\/mcp\.example\.com/,
+  );
 });
 
 for (const origin of [
