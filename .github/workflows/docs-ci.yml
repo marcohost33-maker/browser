@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   markdown-lint:
     name: markdown-lint (markdownlint-cli2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: "22.23.1"
           cache: npm
-      - name: verify exact toolchain and lockfile
+      - name: verify exact toolchain, registry and lockfile
         run: |
           npm run toolchain:check
           npm run lockfile:check
@@ -51,7 +51,7 @@ jobs:
 
   link-check:
     name: link-check (markdown-link-check)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -63,7 +63,7 @@ jobs:
         with:
           node-version: "22.23.1"
           cache: npm
-      - name: verify exact toolchain and lockfile
+      - name: verify exact toolchain, registry and lockfile
         run: |
           npm run toolchain:check
           npm run lockfile:check
