@@ -3,14 +3,14 @@
 - Status: ACTIVE
 - Updated: 2026-07-12
 - Scope: `marcohost33-maker/browser`
-- Current evidence branch: PR #17
+- Current evidence branch: Draft PR #17
 
 ## Status vocabulary
 
 - `NOT-TESTED` — no relevant evidence.
 - `BLOCKED` — prerequisite or external artifact missing.
 - `FAIL` — tested and acceptance criteria not met.
-- `IMPLEMENTED` — change exists but current evidence is incomplete.
+- `IMPLEMENTED` — change exists but exact-candidate evidence is incomplete.
 - `PASS-CI` — automated evidence passed on the referenced commit.
 - `PASS-MANUAL` — required manual evaluation passed with records.
 - `PASS-INDEPENDENT-REVIEW` — reviewed by a qualified separate reviewer.
@@ -18,7 +18,7 @@
 
 A document, checklist mark or prior green commit does not prove a later commit.
 Production requires the relevant rows to reference evidence from the exact release
-candidate and deployed artifact.
+candidate, built artifact and deployed instance.
 
 ## G0 — Scope and governance
 
@@ -30,7 +30,7 @@ candidate and deployed artifact.
 | GOV-04 | Default branch requires PR, required checks, independent/code-owner review and resolved conversations | FAIL / OPEN | Direct `main` write was possible; #18 |
 | GOV-05 | Vulnerability disclosure and response policy | IMPLEMENTED (PR #17) | `SECURITY.md`; private-reporting setting not verified |
 | GOV-06 | Public claims match verified maturity | PASS-CI (PR #17) | README/status/matrix prohibit production claim |
-| GOV-07 | Current head has independent review after the latest security changes | BLOCKED | latest policy/toolchain changes require cross-family review |
+| GOV-07 | Exact final head has independent review after the latest security changes | BLOCKED | #20; automated/self-review is not independent approval |
 
 ## G1 — Product evidence
 
@@ -48,7 +48,7 @@ candidate and deployed artifact.
 |---|---|---|---|
 | END-01 | Supported endpoint class and trust tier accepted | BLOCKED | ADR-003 proposed; #13 open |
 | END-02 | Full endpoint URL and canonical CSP origin separated | IMPLEMENTED (design + policy) | ADR-003; CLI/origin tests |
-| END-03 | Static origin gate: HTTPS remote, HTTP loopback only, private/link-local IP literals rejected | PASS-CI (PR #17) | hardened origin validator and negative tests |
+| END-03 | Static origin gate rejects plaintext remote, localhost misuse and non-public/reserved address literals | PASS-CI (PR #17) | exact-origin and mapped-address regressions |
 | END-04 | Representative endpoint passes browser CORS profile | NOT-TESTED | preflight/method/header/credential evidence required |
 | END-05 | Redirect, DNS rebinding, resolved private-network and metadata-service policy tested | NOT-TESTED | string validation cannot prove runtime resolution; ADR-003 spike |
 | AUTH-01 | Explicit no-OAuth or accepted OAuth profile | BLOCKED | ENG-01 contract + ADR-003 |
@@ -68,29 +68,30 @@ candidate and deployed artifact.
 
 | ID | Requirement | Current status | Evidence / blocker |
 |---|---|---|---|
-| BUILD-01 | Frozen lockfile; exact direct tools; integrity digests; no install scripts; `npm ci --ignore-scripts` | PASS-CI (PR #17) | lockfile invariant gate and deterministic install |
-| BUILD-02 | Exact Node and npm versions enforced in package metadata and every evidence workflow | PASS-CI (PR #17) | Node 22.23.1, npm 10.9.8, `toolchain:check` |
+| BUILD-01 | Frozen lockfile, exact direct tools, integrity digests, fixed public registry and lifecycle scripts disabled | PASS-CI (PR #17) | `.npmrc`, lockfile invariant gate, `npm ci --ignore-scripts` |
+| BUILD-02 | Exact Node/npm versions and Linux runner family enforced in evidence workflows | PASS-CI (PR #17) | Node 22.23.1, npm 10.9.8, `ubuntu-24.04`; hosted image patch remains external |
 | BUILD-03 | Strict TypeScript application bootstrap | NOT-TESTED | ADR-004 required first |
 | BUILD-04 | Lint, format, typecheck, unit, integration and browser E2E | BLOCKED | application runtime/toolchain absent |
 | BUILD-05 | Dependency updates use review and release cooldown | IMPLEMENTED (PR #17) | Dependabot config; first update cycle not verified |
 | BUILD-06 | Workflow actions immutable and least privilege | PASS-CI (PR #17) | SHA pins and zizmor audit |
-| BUILD-07 | Dependency vulnerability policy enforced for current tooling | PASS-CI (PR #17 foundation) | `npm audit --audit-level=high`; final app graph absent |
+| BUILD-07 | Current tooling graph has machine-readable vulnerability evidence and high/critical gate | PASS-CI (PR #17 foundation) | archived `npm-audit.json`; final application graph absent |
 | BUILD-08 | Secret scanning, dependency review and applicable SAST configured | NOT-TESTED | repository feature/workflow configuration open |
 
 ## G5 — Static browser security foundation
 
 | ID | Requirement | Current status | Evidence / blocker |
 |---|---|---|---|
-| SEC-01 | One emitted-value baseline plus independent exact M1 contract prevents silent policy drift | PASS-CI (PR #17) | baseline, contract and directive-drift regressions |
-| SEC-02 | Exact-origin `connect-src`; no wildcard/scheme/private-IP widening | PASS-CI (PR #17) | positive/negative origin and policy tests |
-| SEC-03 | CSP override/source/header injection blocked | PASS-CI (PR #17) | Aegis regression fixtures |
+| SEC-01 | One emitted-value baseline plus independent exact contract and validated metadata prevent silent drift | PASS-CI (PR #17) | baseline, metadata, directive and policy regressions |
+| SEC-02 | Exact-origin `connect-src`; no wildcard, scheme or non-public-literal widening | PASS-CI (PR #17) | positive/negative origin and policy tests |
+| SEC-03 | CSP override, source/header injection and raw source-level bypass blocked | PASS-CI (PR #17) | Aegis fixtures and entry-point import gate |
 | SEC-04 | Reviewed M1 static header contract present and fail closed | PASS-CI (PR #17) | hardened validator; not a universal browser-policy claim |
-| SEC-05 | Header casing, duplicates, weak values, premature HSTS preload and policy drift fail closed | PASS-CI (PR #17) | regression and production-boundary tests |
-| SEC-06 | Endpoint origins and app-response CORS trust directions separated | PASS-CI (PR #17) | ACAO forbidden in hardened app profile |
-| SEC-07 | Final in-process response map preserves every protected header exactly | PASS-CI (PR #17) | `validateServedHeaderMap` and apply/readback tests |
-| SEC-08 | Deployed edge and supported browsers preserve/enforce headers | BLOCKED | staging/CDN/browser E2E absent |
+| SEC-05 | Exact two-year HSTS, exact `no-referrer`, canonical Permissions-Policy and strict isolation values enforced | PASS-CI (PR #17) | downgrade, ordering and serialization regressions |
+| SEC-06 | Endpoint origins and every app-response `Access-Control-*` trust direction separated | PASS-CI (PR #17) | final-response gate rejects CORS headers |
+| SEC-07 | Final in-process response preserves protected headers and rejects reporting, cookie and disclosure extras | PASS-CI (PR #17) | response-map and forbidden-header tests |
+| SEC-08 | Deployed edge and supported browsers preserve/enforce headers | BLOCKED | staging/CDN/raw-wire/browser E2E absent |
 | SEC-09 | Unapproved browser exfiltration is empirically blocked | BLOCKED | real app/E2E absent |
 | SEC-10 | Permissions-Policy, COOP and COEP compatibility verified across supported browsers/auth flows | BLOCKED | ADR-003/ADR-004 and runtime absent |
+| SEC-11 | Provisional form, data-image, font, manifest and worker capabilities are removed or justified individually | BLOCKED | ADR-004 remove-unless-proven capability budget |
 
 ## G6 — Runtime security, privacy and reliability
 
@@ -107,6 +108,7 @@ candidate and deployed artifact.
 | PRIV-02 | No sensitive canary in storage, URL, history, DOM, logs or diagnostics | BLOCKED | browser sink test absent |
 | PRIV-03 | Clear-session and forced disconnect verified | BLOCKED | runtime absent |
 | PRIV-04 | Privacy Notice matches observed behavior | BLOCKED | implementation/data flow absent |
+| PRIV-05 | Browser reporting/telemetry endpoints have explicit data-minimization decision | BLOCKED | M1 forbids reporting headers; future monitoring requires privacy review |
 
 ## G7 — Accessibility and interaction quality
 
@@ -123,25 +125,26 @@ candidate and deployed artifact.
 
 | ID | Requirement | Current status | Evidence / blocker |
 |---|---|---|---|
-| SUP-01 | SPDX SBOM generated and structurally validated for current source/tool graph | PASS-CI (PR #17 foundation) | immutable artifact; final app completeness open |
-| SUP-02 | Evidence manifest binds source/tested SHA, exact tools and package/lock/SBOM digests | PASS-CI (PR #17 foundation) | security evidence schema 1.1 |
+| SUP-01 | SPDX SBOM generated and structurally validated for current source/tool graph | PASS-CI (PR #17 foundation) | immutable artifact; final application completeness open |
+| SUP-02 | Evidence manifest binds source/tested SHA, tools, registry, runner facts and package/lock/npmrc/audit/SBOM digests | PASS-CI (PR #17 foundation) | security evidence schema 1.2, 90-day artifact |
 | SUP-03 | Release artifact provenance/attestation | BLOCKED | release build absent |
-| SUP-04 | Reproducible candidate build and independent digest comparison | BLOCKED | application build absent |
+| SUP-04 | Bit-for-bit reproducible candidate build and independent digest comparison | BLOCKED | hosted image, live advisory DB, timestamps and application build remain uncontrolled |
 | SUP-05 | Contract provenance verified before trust | BLOCKED | ENG-01 artifact/verifier absent |
+| SUP-06 | Dependency licenses/notices reviewed against exact release graph | BLOCKED | final application graph absent |
 | LEGAL-01 | Repository license explicit | IMPLEMENTED (PR #17) | MIT LICENSE |
-| LEGAL-02 | Third-party notices/license review | BLOCKED | final dependency graph absent |
 
 ## G9 — Deployment and operations
 
 | ID | Requirement | Current status | Evidence / blocker |
 |---|---|---|---|
 | OPS-01 | Staging/production separation and config validation | BLOCKED | deployment absent |
-| OPS-02 | Security headers verified after all middleware/CDN/edge transformations | BLOCKED | deployment absent |
-| OPS-03 | Privacy-safe monitoring and support ownership | BLOCKED | product/deployment decision absent |
+| OPS-02 | Security headers verified after all middleware/CDN/edge transformations using raw-wire capture | BLOCKED | deployment absent |
+| OPS-03 | Privacy-safe monitoring and support ownership | BLOCKED | product/deployment decision absent; reporting currently forbidden |
 | OPS-04 | Rollback and cache invalidation exercised | BLOCKED | release/deployment absent |
 | OPS-05 | Credential/session revocation procedure | BLOCKED | auth/runtime absent |
 | OPS-06 | Incident tabletop and contact path tested | NOT-TESTED | SECURITY.md foundation only |
 | OPS-07 | HSTS subdomain inventory and any preload enrollment/removal plan accepted | BLOCKED | preload deliberately rejected by M1 policy |
+| OPS-08 | Service-worker/PWA cache, update, persistence and emergency-removal strategy accepted if enabled | BLOCKED | ADR-004 capability decision open |
 
 ## Production gate
 
@@ -155,6 +158,7 @@ APP-01 may be described as production-ready only when:
 - runtime, privacy, accessibility, supply-chain and operational gates pass;
 - staging deploys the attested artifact and rollback has been exercised.
 
-Current conclusion: **NOT PRODUCTION-READY**. The static repository/security
-foundation is substantially hardened, but product, contract, runtime, deployed
-browser behavior, accessibility and operations remain materially incomplete.
+Current conclusion: **NOT PRODUCTION-READY**. The static repository/security and
+traceability foundation is substantially hardened, but governance enforcement,
+product, contract, runtime, deployed browser behavior, accessibility, release
+reproducibility and operations remain materially incomplete.
