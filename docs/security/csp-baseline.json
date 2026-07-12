@@ -1,7 +1,7 @@
 {
-  "$schema-note": "Machine-readable CSP baseline for APP-01 browser (M1). A build/CI serializer (M1B) turns this into a Content-Security-Policy header string; a test asserts connect-src/script-src contain no forbidden token and connect-src holds only 'self' plus origins from the approved-endpoint set. See CSP_AND_SECURITY_HEADERS.md.",
-  "version": "0.1.0",
-  "date": "2026-07-10",
+  "$schema-note": "Machine-readable emitted security-policy baseline for APP-01 M1. src/security/header-values.js independently enforces the reviewed contract so this data cannot silently widen. Any policy change must update baseline, contract, tests, security rationale and applicable ADR in one reviewed change.",
+  "version": "0.2.0",
+  "date": "2026-07-12",
   "directives": {
     "default-src": ["'none'"],
     "base-uri": ["'none'"],
@@ -22,14 +22,14 @@
     "seed": ["'self'"],
     "append_only_from": "approved-endpoint-set",
     "forbidden_tokens": ["*", "https:", "http:", "data:", "blob:", "'unsafe-inline'", "'unsafe-eval'"],
-    "match": "exact-origin",
-    "note": "connect-src is the exfiltration boundary; only origins the user has explicitly approved AND that the served policy permits may be added. Wildcards/scheme-sources are rejected by the build test."
+    "match": "exact-canonical-origin",
+    "note": "Only reviewed HTTPS public origins or explicit HTTP loopback development origins may be appended. Wildcards, scheme sources, private/link-local IP literals, paths and noncanonical hosts are rejected. DNS resolution and redirect checks remain runtime/ADR-003 obligations."
   },
   "additional_headers": {
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+    "Permissions-Policy": "accelerometer=(), autoplay=(), bluetooth=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), hid=(), local-fonts=(), local-network=(), loopback-network=(), magnetometer=(), microphone=(), payment=(), picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), storage-access=(), usb=(), xr-spatial-tracking=()",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "require-corp",
     "Cross-Origin-Resource-Policy": "same-origin",
