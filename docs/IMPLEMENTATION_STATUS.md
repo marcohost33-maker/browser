@@ -123,10 +123,10 @@ Owner with evidence and bounded risk rationale.
 
 ## Production-readiness statement
 
-APP-01 is **not production-ready** and is not a functioning MCP web client. PR
-#17 raises the quality and auditability of the static repository foundation; it
-does not satisfy product, contract, runtime, deployed-browser, accessibility or
-operational gates required for a production claim.
+APP-01 is **not production-ready** and is not a functioning MCP web client.
+Draft PR #17 raises the quality and auditability of the static repository
+foundation; it does not satisfy product, contract, runtime, deployed-browser,
+accessibility or operational gates required for a production claim.
 
 The next correct execution order is:
 
