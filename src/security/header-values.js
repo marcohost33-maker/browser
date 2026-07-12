@@ -221,7 +221,7 @@ function validatePermissionsPolicy(value) {
   return errors;
 }
 
-function isLoopbackDevelopmentOrigin(origin) {
+function isExplicitLoopbackDevelopmentOrigin(origin) {
   let url;
   try {
     url = new URL(origin);
@@ -234,19 +234,83 @@ function isLoopbackDevelopmentOrigin(origin) {
   );
 }
 
-function isPrivateIpLiteral(hostname) {
-  if (/^10\./.test(hostname) || /^192\.168\./.test(hostname) || /^169\.254\./.test(hostname)) {
-    return true;
+function parseCanonicalIpv4(hostname) {
+  const parts = hostname.split('.');
+  if (parts.length !== 4) return null;
+  const octets = [];
+  for (const part of parts) {
+    if (!/^(0|[1-9][0-9]{0,2})$/.test(part)) return null;
+    const value = Number(part);
+    if (value > 255) return null;
+    octets.push(value);
   }
-  const v4 = /^172\.(\d{1,3})\./.exec(hostname);
-  if (v4 && Number(v4[1]) >= 16 && Number(v4[1]) <= 31) return true;
+  return octets;
+}
 
-  const normalized = hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+function isNonPublicIpv4(octets) {
+  const [a, b, c] = octets;
   return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 0) ||
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0 && c === 2) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113) ||
+    a >= 224
+  );
+}
+
+function mappedIpv4FromIpv6(hostname) {
+  const normalized = hostname
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .toLowerCase();
+  if (!normalized.startsWith('::ffff:')) return null;
+
+  const tail = normalized.slice('::ffff:'.length).split(':');
+  if (tail.length !== 2 || tail.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) {
+    return null;
+  }
+  const high = Number.parseInt(tail[0], 16);
+  const low = Number.parseInt(tail[1], 16);
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff];
+}
+
+function isNonPublicAddressLiteral(hostname) {
+  const ipv4 = parseCanonicalIpv4(hostname);
+  if (ipv4) return isNonPublicIpv4(ipv4);
+
+  const normalized = hostname
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .toLowerCase();
+  if (!normalized.includes(':')) return false;
+
+  const mapped = mappedIpv4FromIpv6(hostname);
+  if (mapped) return isNonPublicIpv4(mapped);
+
+  return (
+    normalized === '::' ||
+    normalized === '::1' ||
     normalized.startsWith('fc') ||
     normalized.startsWith('fd') ||
-    /^fe[89ab]/.test(normalized)
+    /^fe[89ab]/.test(normalized) ||
+    /^fe[c-f]/.test(normalized) ||
+    normalized.startsWith('ff') ||
+    normalized.startsWith('2001:db8:') ||
+    normalized === '2001:db8::'
   );
+}
+
+function isLocalhostName(hostname) {
+  const lower = hostname.toLowerCase();
+  return lower === 'localhost' || lower.endsWith('.localhost');
 }
 
 /** Validate deployment-provided CSP origins. */
@@ -267,6 +331,7 @@ export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
     }
 
     const url = new URL(origin);
+    const explicitLoopback = isExplicitLoopbackDevelopmentOrigin(origin);
     if (url.hostname.endsWith('.')) {
       errors.push(`approved endpoint ${JSON.stringify(origin)} has a noncanonical trailing-dot host`);
     }
@@ -276,14 +341,19 @@ export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
     }
     seen.add(origin);
 
-    if (url.protocol !== 'https:' && !isLoopbackDevelopmentOrigin(origin)) {
+    if (url.protocol !== 'https:' && !explicitLoopback) {
       errors.push(
         `approved endpoint ${JSON.stringify(origin)} must use HTTPS; HTTP is restricted to explicit loopback development origins`,
       );
     }
-    if (isPrivateIpLiteral(url.hostname) && !isLoopbackDevelopmentOrigin(origin)) {
+    if (isLocalhostName(url.hostname) && !explicitLoopback) {
       errors.push(
-        `approved endpoint ${JSON.stringify(origin)} is a private/link-local IP literal and is blocked by the M1 endpoint profile`,
+        `approved endpoint ${JSON.stringify(origin)} uses a localhost name outside the explicit development profile`,
+      );
+    }
+    if (isNonPublicAddressLiteral(url.hostname) && !explicitLoopback) {
+      errors.push(
+        `approved endpoint ${JSON.stringify(origin)} is a non-public/reserved address literal and is blocked by the M1 endpoint profile`,
       );
     }
   }
