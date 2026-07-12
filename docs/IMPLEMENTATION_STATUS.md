@@ -21,33 +21,54 @@
 ### Static security enforcement
 
 - exact M1 CSP directive contract independent from emitted baseline values;
+- checked baseline version/date/top-level and `connect_src_policy` metadata;
 - case-insensitive duplicate-header rejection;
-- strict HSTS grammar, floor, duplicate and `includeSubDomains` enforcement;
+- exact `max-age=63072000; includeSubDomains` HSTS value;
 - HSTS `preload` rejected pending deployment/rollback approval;
-- canonical Referrer-Policy allowlist;
-- reviewed exact Permissions-Policy deny set;
+- exact `Referrer-Policy: no-referrer`;
+- exact ordered Permissions-Policy deny set;
 - strict COOP, COEP, CORP, MIME and framing values;
 - canonical approved-origin validation;
 - HTTPS remote origins and explicit loopback-only HTTP development origins;
 - non-public/reserved IPv4, IPv6, mapped-address and localhost rejection;
+- source-level ban on application imports of raw serializer/map/apply validators;
 - final in-process protected-header readback;
-- negative tests for drift, casing, duplicates, malformed values, downgrades,
-  non-public origins and final-response mutation.
+- rejection of final-response CORS, reporting, cookie and implementation-disclosure
+  headers;
+- negative tests for metadata drift, injection, casing, duplicates, malformed
+  values, downgrades, non-public origins and final-response mutation.
 
 These controls do not verify DNS resolution, redirects, DNS rebinding, deployed
 edge transformations or supported-browser behavior.
 
-### Deterministic evidence foundation
+### Provisional capability debt
+
+The static baseline still provisionally permits same-origin forms, `data:`
+images, fonts, a manifest and workers. ADR-004 must evaluate each capability and
+remove it unless measured product/runtime evidence justifies retaining it.
+Service-worker enablement additionally requires cache, update, persistence,
+offline-threat and emergency-removal evidence.
+
+### Evidence and supply-chain foundation
 
 - exact Node `22.23.1` and npm `10.9.8` gates;
+- public npm registry and `ignore-scripts=true` enforced through `.npmrc` and
+  toolchain verification;
 - exact documentation tools in lockfile v3;
 - lockfile alignment, integrity, no-registry-URL and no-install-script checks;
 - `npm ci --ignore-scripts` in all Node workflows;
-- high-severity dependency vulnerability gate;
+- machine-readable high/critical vulnerability gate and archived
+  `npm-audit.json`;
 - SPDX 2.3 SBOM;
-- evidence manifest binding source/tested SHA, tool versions and package/lock/SBOM
-  hashes;
-- SHA-pinned Actions, least privilege and workflow security audit.
+- evidence manifest schema 1.2 binding source/tested SHA, tool/registry/runner
+  facts and package/lock/npmrc/audit/SBOM hashes;
+- 90-day immutable security evidence artifact;
+- `ubuntu-24.04` runner family, SHA-pinned Actions, least privilege and workflow
+  security audit.
+
+This is strong traceability, not bit-for-bit reproducibility. Hosted-runner image
+patches, the live advisory database and timestamped evidence can differ between
+reruns of the same source commit.
 
 ### Governance and operations foundation
 
@@ -56,7 +77,8 @@ edge transformations or supported-browser behavior.
 - proposed ADR-003 endpoint/CORS/deployment decision;
 - falsifiable product-discovery protocol for issue #14;
 - SECURITY.md vulnerability-reporting process;
-- CODEOWNERS for critical paths;
+- expanded CODEOWNERS coverage for security, workflows, npm policy and evidence
+  scripts;
 - Dependabot with release cooldowns;
 - pull-request evidence template;
 - MIT license matching package metadata;
@@ -100,7 +122,8 @@ Owner with evidence and bounded risk rationale.
    network and deployment evidence.
 3. **ENG-01 contract:** selected MCP revision, signed schemas/types, fixtures,
    limits and deterministic conformance flow.
-4. **ADR-004 (#7):** framework/build/browser decision after gates 1–3.
+4. **ADR-004 (#7):** framework/build/browser and capability-budget decision after
+   gates 1–3.
 
 ## Runtime and release work not implemented
 
@@ -114,7 +137,8 @@ Owner with evidence and bounded risk rationale.
 - Permissions-Policy/COOP/COEP supported-browser compatibility matrix;
 - scoped WCAG 2.2 evaluation;
 - release artifact provenance and contract verifier;
-- staging, deployed-edge header verification, monitoring, rollback and incident
+- bit-for-bit reproducible application build and independent digest comparison;
+- staging, raw-wire edge-header verification, monitoring, rollback and incident
   exercises;
 - Privacy Notice and Accessibility Statement derived from actual behavior.
 
@@ -122,8 +146,9 @@ Owner with evidence and bounded risk rationale.
 
 APP-01 is **not production-ready** and is not a functioning MCP web client.
 Draft PR #17 raises the quality and auditability of the static repository
-foundation; it does not satisfy product, contract, runtime, deployed-browser,
-accessibility or operational gates required for a production claim.
+foundation; it does not satisfy governance enforcement, product, contract,
+runtime, deployed-browser, accessibility, reproducible release or operational
+gates required for a production claim.
 
 The next correct execution order is:
 
@@ -133,9 +158,9 @@ The next correct execution order is:
   -> #14 product evidence
   -> #13 / ADR-003 endpoint spike and decision
   -> signed/pinned ENG-01 contract + conformance
-  -> #7 / ADR-004 stack spike
+  -> #7 / ADR-004 stack and capability-budget spike
   -> secure TypeScript bootstrap
   -> mock then real read-only vertical slice
   -> browser/privacy/accessibility/security verification
-  -> staging, release provenance, rollback and incident gate
+  -> reproducible build, staging, provenance, rollback and incident gate
 ```
