@@ -35,27 +35,38 @@ results and privacy-safe session clearing.
 The repository currently enforces and tests:
 
 - CSP emitted from one machine-readable baseline plus an independent exact M1
-  contract that prevents silent data-only widening;
+  contract and checked policy metadata;
 - exact-origin `connect-src` policy;
 - HTTPS remote origins with explicit loopback-only HTTP development support;
-- rejection of unapproved, noncanonical and private/link-local IP-literal origins;
-- a reviewed fail-closed M1 static security-header contract;
+- rejection of unapproved, noncanonical, localhost-misused and non-public or
+  reserved address-literal origins;
+- exact two-year HSTS, exact `no-referrer`, canonical Permissions-Policy and
+  strict MIME, opener, embedder, resource and framing values;
 - blocked HSTS preload until deployment and rollback approval;
 - regression tests for injection, drift, duplicate/casing and downgrade bypasses;
-- final in-process response-header readback;
-- deterministic installation, vulnerability audit, SPDX SBOM and evidence
-  manifest;
-- least-privilege, SHA-pinned GitHub Actions with workflow security audit.
+- source-level prevention of application imports of raw security primitives;
+- final in-process response-header readback that also rejects CORS, browser
+  reporting, cookie and implementation-disclosure headers;
+- fixed npm registry and lifecycle-script policy, deterministic install,
+  machine-readable vulnerability snapshot, SPDX SBOM and evidence manifest;
+- least-privilege, SHA-pinned GitHub Actions on the `ubuntu-24.04` runner family
+  with workflow security audit.
+
+The current CSP still contains provisional same-origin form, `data:` image, font,
+manifest and worker capabilities. ADR-004 must remove each one unless measured
+product/runtime evidence justifies retaining it.
 
 These controls do not prove deployed edge behavior, browser compatibility,
-runtime input safety, SSRF resistance, privacy or production readiness.
+runtime input safety, DNS/redirect/SSRF resistance, privacy, reproducible release
+artifacts or production readiness.
 
 Security policy and private vulnerability reporting are documented in
 [`SECURITY.md`](SECURITY.md).
 
 ## Local verification
 
-Required toolchain: exactly Node.js `22.23.1` and npm `10.9.8`.
+Required toolchain: exactly Node.js `22.23.1` and npm `10.9.8`, using the public
+npm registry configured in `.npmrc` with lifecycle scripts disabled.
 
 ```bash
 npm run toolchain:check
@@ -67,12 +78,16 @@ npm test
 npm run csp:json
 ```
 
-No lifecycle script is required or permitted by the current locked tool graph.
+`npm run audit:ci` writes `npm-audit.json`; CI archives it with the SBOM and
+security-evidence manifest. This provides traceability, not a bit-for-bit
+reproducible release build.
 
 ## Decision order
 
 ```text
-product evidence (#14)
+branch protection (#18) + independent final-head review (#20)
+  -> merge the static foundation if approved
+  -> product evidence (#14)
   -> endpoint/CORS/deployment ADR-003 (#13)
   -> signed and pinned ENG-01 contract
   -> framework/build/browser ADR-004 (#7)
@@ -83,7 +98,7 @@ product evidence (#14)
 ```
 
 Runtime code must not bypass this order by embedding an unvalidated endpoint,
-contract or authorization assumption.
+contract, capability or authorization assumption.
 
 ## Repository map
 
@@ -92,7 +107,7 @@ contract or authorization assumption.
 - [`docs/MASTER_ROADMAP.md`](docs/MASTER_ROADMAP.md) — evidence-gated program
 - [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md) — active decision register
 - [`docs/adr/`](docs/adr/) — architecture decisions
-- [`docs/security/`](docs/security/) — threat and header policy
+- [`docs/security/`](docs/security/) — threat and browser-policy profile
 - [`docs/research/PRODUCT_DISCOVERY_PROTOCOL.md`](docs/research/PRODUCT_DISCOVERY_PROTOCOL.md)
   — falsifiable product discovery
 - [`docs/verification/PRODUCTION_READINESS_MATRIX.md`](docs/verification/PRODUCTION_READINESS_MATRIX.md)
@@ -100,12 +115,13 @@ contract or authorization assumption.
 - [`contracts/`](contracts/) — consumer profile; future verified ENG-01 input
 - [`src/security/`](src/security/) — current static policy enforcement
 - [`tests/security/`](tests/security/) — positive, negative and HTTP tests
+- [`scripts/`](scripts/) — toolchain, lockfile and audit evidence gates
 
 ## Governance
 
 - Critical paths are listed in `.github/CODEOWNERS`; enforcement still requires
   issue #18.
-- Independent review of the final PR #17 head is tracked in issue #20.
+- Independent review of the exact final PR #17 head is tracked in issue #20.
 - Dependency and GitHub Actions updates use Dependabot release cooldowns; the
   first scheduled post-merge cycle remains operational evidence.
 - Pull requests must link exact-head evidence and preserve fail-closed negative
