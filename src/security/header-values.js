@@ -1,10 +1,12 @@
-// APP-01 complete CSP/security-header/origin validation.
+// APP-01 exact M1 CSP, response-header and deployment-origin enforcement.
 //
-// csp.js owns directive parsing and serialization. This module adds the exact
-// M1 response-header and directive profiles plus deployment-origin policy, then
-// exposes the only serving/CI entry point that callers should use.
+// docs/security/csp-baseline.json is the only source of values that are emitted.
+// This module is an intentionally independent policy contract: changing the
+// baseline requires an explicit matching contract/test/documentation change and
+// cannot silently widen the M1 attack surface.
 
 import {
+  applySecurityHeaders,
   buildHeaderMap,
   CspValidationError,
   isExactOrigin,
@@ -20,13 +22,33 @@ const ALLOWED_REFERRER_POLICIES = new Set([
   'strict-origin-when-cross-origin',
 ]);
 
+// Curated M1 deny set. Permissions Policy remains defense in depth: browser
+// support differs and must be verified by the ADR-004 browser/E2E matrix.
 const REQUIRED_DISABLED_PERMISSIONS = new Set([
+  'accelerometer',
+  'autoplay',
+  'bluetooth',
   'camera',
-  'microphone',
+  'display-capture',
+  'encrypted-media',
+  'fullscreen',
   'geolocation',
+  'gyroscope',
+  'hid',
+  'local-fonts',
+  'local-network',
+  'loopback-network',
+  'magnetometer',
+  'microphone',
   'payment',
+  'picture-in-picture',
+  'publickey-credentials-create',
+  'publickey-credentials-get',
+  'screen-wake-lock',
+  'serial',
+  'storage-access',
   'usb',
-  'interest-cohort',
+  'xr-spatial-tracking',
 ]);
 
 const REQUIRED_EXACT_HEADERS = new Map([
@@ -48,11 +70,6 @@ const REQUIRED_HEADER_NAMES = new Set([
   'x-frame-options',
 ]);
 
-// Exact M1 policy. The lower-level CSP validator intentionally understands a
-// wider safe vocabulary for future ADR-backed profiles; APP-01 must not silently
-// drift to that wider vocabulary before the architecture and browser matrix are
-// accepted. connect-src is handled separately because curated deployment origins
-// may be appended after 'self'.
 const REQUIRED_EXACT_DIRECTIVES = new Map([
   ['default-src', ["'none'"]],
   ['base-uri', ["'none'"]],
@@ -87,6 +104,7 @@ function validateHsts(value) {
   const seen = new Set();
   let maxAge;
   let includeSubDomains = false;
+  let preload = false;
 
   for (const rawPart of rawParts) {
     const part = rawPart.trim();
@@ -108,6 +126,7 @@ function validateHsts(value) {
       includeSubDomains = true;
     } else if (/^preload$/i.test(part)) {
       key = 'preload';
+      preload = true;
     } else {
       errors.push(
         `Strict-Transport-Security contains an unknown or malformed directive ${JSON.stringify(part)}`,
@@ -130,9 +149,11 @@ function validateHsts(value) {
       `Strict-Transport-Security max-age=${maxAge} is below floor ${HSTS_MAX_AGE_FLOOR}`,
     );
   }
-
   if (!includeSubDomains) {
     errors.push('Strict-Transport-Security must include includeSubDomains');
+  }
+  if (preload) {
+    errors.push('Strict-Transport-Security preload is blocked until the deployment/rollback gate is accepted');
   }
 
   return errors;
@@ -149,20 +170,17 @@ function validateReferrerPolicy(value) {
 
 function validatePermissionsPolicy(value) {
   const errors = [];
+  const rawDirectives = value.split(',');
   const seen = new Set();
-  const directives = value
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
 
-  if (directives.length === 0) {
-    return ['Permissions-Policy must contain explicit disabled feature directives'];
+  if (rawDirectives.length === 0 || rawDirectives.some((part) => part.trim() === '')) {
+    errors.push('Permissions-Policy contains an empty directive');
   }
 
-  for (const directive of directives) {
-    // Exact lowercase identifiers are required. A differently cased unknown
-    // dictionary member may be ignored by the browser and cannot satisfy a
-    // required feature disablement.
+  for (const rawDirective of rawDirectives) {
+    const directive = rawDirective.trim();
+    if (!directive) continue;
+
     const match = /^([a-z][a-z0-9-]*)\s*=\s*(.+)$/.exec(directive);
     if (!match) {
       errors.push(
@@ -174,6 +192,11 @@ function validatePermissionsPolicy(value) {
     const feature = match[1];
     const allowlist = match[2].trim();
 
+    if (!REQUIRED_DISABLED_PERMISSIONS.has(feature)) {
+      errors.push(
+        `Permissions-Policy feature ${JSON.stringify(feature)} is not in the reviewed M1 deny set`,
+      );
+    }
     if (seen.has(feature)) {
       errors.push(`Permissions-Policy contains duplicate feature ${JSON.stringify(feature)}`);
       continue;
@@ -205,17 +228,28 @@ function isLoopbackDevelopmentOrigin(origin) {
   } catch {
     return false;
   }
-
   return (
     url.protocol === 'http:' &&
     ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname)
   );
 }
 
-/**
- * Validate deployment-provided CSP origins.
- * Production origins require HTTPS. Plain HTTP is loopback-development only.
- */
+function isPrivateIpLiteral(hostname) {
+  if (/^10\./.test(hostname) || /^192\.168\./.test(hostname) || /^169\.254\./.test(hostname)) {
+    return true;
+  }
+  const v4 = /^172\.(\d{1,3})\./.exec(hostname);
+  if (v4 && Number(v4[1]) >= 16 && Number(v4[1]) <= 31) return true;
+
+  const normalized = hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+  return (
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    /^fe[89ab]/.test(normalized)
+  );
+}
+
+/** Validate deployment-provided CSP origins. */
 export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
   if (!Array.isArray(approvedEndpoints)) {
     return ['approvedEndpoints must be an array of exact origins'];
@@ -232,16 +266,24 @@ export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
       continue;
     }
 
+    const url = new URL(origin);
+    if (url.hostname.endsWith('.')) {
+      errors.push(`approved endpoint ${JSON.stringify(origin)} has a noncanonical trailing-dot host`);
+    }
     if (seen.has(origin)) {
       errors.push(`approved endpoint ${JSON.stringify(origin)} is duplicated`);
       continue;
     }
     seen.add(origin);
 
-    const url = new URL(origin);
     if (url.protocol !== 'https:' && !isLoopbackDevelopmentOrigin(origin)) {
       errors.push(
-        `approved endpoint ${JSON.stringify(origin)} must use HTTPS; HTTP is restricted to localhost, 127.0.0.1 or ::1 development origins`,
+        `approved endpoint ${JSON.stringify(origin)} must use HTTPS; HTTP is restricted to explicit loopback development origins`,
+      );
+    }
+    if (isPrivateIpLiteral(url.hostname) && !isLoopbackDevelopmentOrigin(origin)) {
+      errors.push(
+        `approved endpoint ${JSON.stringify(origin)} is a private/link-local IP literal and is blocked by the M1 endpoint profile`,
       );
     }
   }
@@ -249,7 +291,7 @@ export function validateApprovedEndpointOrigins(approvedEndpoints = []) {
   return errors;
 }
 
-/** Validate the exact APP-01 M1 CSP directive profile. */
+/** Validate the exact APP-01 M1 CSP directive contract. */
 export function validateSecurityDirectiveProfile(
   baseline,
   { approvedEndpoints = [] } = {},
@@ -266,9 +308,7 @@ export function validateSecurityDirectiveProfile(
     const actual = directives[name];
     if (!Array.isArray(actual)) {
       errors.push(`required M1 directive ${JSON.stringify(name)} is missing`);
-      continue;
-    }
-    if (!arraysEqual(actual, expected)) {
+    } else if (!arraysEqual(actual, expected)) {
       errors.push(
         `M1 directive ${JSON.stringify(name)} must equal ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
       );
@@ -290,14 +330,10 @@ export function validateSecurityDirectiveProfile(
       }
       seen.add(source);
     }
-
     if (connectSrc.filter((source) => source === "'self'").length !== 1) {
       errors.push('M1 connect-src must contain exactly one "\'self\'" source');
     }
 
-    // The lower-level validator checks that every non-self source is an exact
-    // origin in this set. This explicit check keeps the M1 profile diagnostic
-    // local and deterministic when the generic CSP policy evolves.
     const approved = new Set(Array.isArray(approvedEndpoints) ? approvedEndpoints : []);
     for (const source of connectSrc.slice(1)) {
       if (!approved.has(source)) {
@@ -313,18 +349,10 @@ export function validateSecurityDirectiveProfile(
       errors.push(`directive ${JSON.stringify(name)} is not permitted by the APP-01 M1 profile`);
     }
   }
-
   return errors;
 }
 
-/**
- * Validate the exact M1 app-response header profile.
- *
- * No additional response header is accepted here. In particular,
- * Access-Control-Allow-Origin is forbidden: outbound MCP target origins and
- * inbound app-response CORS permissions are opposite trust directions and must
- * never share one allowlist. Endpoint CORS belongs to ADR-003/server policy.
- */
+/** Validate the exact M1 app-response security-header profile. */
 export function validateSecurityHeaderValues(baseline) {
   const additional = baseline?.additional_headers;
   if (!additional || typeof additional !== 'object' || Array.isArray(additional)) {
@@ -336,25 +364,21 @@ export function validateSecurityHeaderValues(baseline) {
 
   for (const [name, value] of Object.entries(additional)) {
     const lower = name.toLowerCase();
-
     if (byLowerName.has(lower)) {
       errors.push(
         `additional_headers contains duplicate case-insensitive header name ${JSON.stringify(lower)}`,
       );
       continue;
     }
-
     if (!REQUIRED_HEADER_NAMES.has(lower)) {
       errors.push(
         `header ${JSON.stringify(name)} is not permitted in the M1 app-response profile`,
       );
     }
-
     if (typeof value !== 'string') {
       errors.push(`header ${JSON.stringify(name)} value must be a string`);
       continue;
     }
-
     byLowerName.set(lower, value);
   }
 
@@ -363,26 +387,19 @@ export function validateSecurityHeaderValues(baseline) {
       errors.push(`required security header ${JSON.stringify(name)} is missing`);
     }
   }
-
   for (const [name, expected] of REQUIRED_EXACT_HEADERS) {
     const actual = byLowerName.get(name);
     if (typeof actual === 'string' && actual !== expected) {
-      errors.push(
-        `${name} must equal ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
-      );
+      errors.push(`${name} must equal ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
     }
   }
 
   const hsts = byLowerName.get('strict-transport-security');
   if (typeof hsts === 'string') errors.push(...validateHsts(hsts));
-
   const referrer = byLowerName.get('referrer-policy');
   if (typeof referrer === 'string') errors.push(...validateReferrerPolicy(referrer));
-
   const permissions = byLowerName.get('permissions-policy');
-  if (typeof permissions === 'string') {
-    errors.push(...validatePermissionsPolicy(permissions));
-  }
+  if (typeof permissions === 'string') errors.push(...validatePermissionsPolicy(permissions));
 
   return errors;
 }
@@ -394,7 +411,6 @@ export function validateHardenedBaseline(
 ) {
   const endpointErrors = validateApprovedEndpointOrigins(approvedEndpoints);
   const safeApprovedEndpoints = Array.isArray(approvedEndpoints) ? approvedEndpoints : [];
-
   return [
     ...validateBaseline(baseline, { approvedEndpoints: safeApprovedEndpoints }),
     ...validateSecurityDirectiveProfile(baseline, {
@@ -410,4 +426,73 @@ export function buildHardenedHeaderMap(baseline, options = {}) {
   const errors = validateHardenedBaseline(baseline, options);
   if (errors.length > 0) throw new CspValidationError(errors);
   return buildHeaderMap(baseline, options);
+}
+
+function normalizeHeaderEntries(headers) {
+  if (Array.isArray(headers)) return headers;
+  if (headers && typeof headers.entries === 'function') return [...headers.entries()];
+  if (headers && typeof headers === 'object') return Object.entries(headers);
+  return null;
+}
+
+/**
+ * Verify protected headers at the final response boundary.
+ * Extra operational headers are allowed, but protected values cannot be absent,
+ * duplicated or changed. Deployment/edge E2E is still required after this call.
+ */
+export function validateServedHeaderMap(headers, baseline, options = {}) {
+  const entries = normalizeHeaderEntries(headers);
+  if (!entries) return ['served headers must be an object, Headers-like value or entry array'];
+
+  let expected;
+  try {
+    expected = buildHardenedHeaderMap(baseline, options);
+  } catch (error) {
+    if (error instanceof CspValidationError) return [...error.errors];
+    throw error;
+  }
+
+  const actualByLowerName = new Map();
+  const errors = [];
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || entry.length !== 2) {
+      errors.push(`served header entry is malformed: ${JSON.stringify(entry)}`);
+      continue;
+    }
+    const [name, value] = entry;
+    if (typeof name !== 'string' || typeof value !== 'string') {
+      errors.push(`served header name/value must be strings: ${JSON.stringify(entry)}`);
+      continue;
+    }
+    const lower = name.toLowerCase();
+    if (actualByLowerName.has(lower)) {
+      errors.push(`served headers contain duplicate case-insensitive name ${JSON.stringify(lower)}`);
+      continue;
+    }
+    actualByLowerName.set(lower, value);
+  }
+
+  for (const [name, value] of Object.entries(expected)) {
+    const lower = name.toLowerCase();
+    if (!actualByLowerName.has(lower)) {
+      errors.push(`served security header ${JSON.stringify(name)} is missing`);
+    } else if (actualByLowerName.get(lower) !== value) {
+      errors.push(
+        `served security header ${JSON.stringify(name)} differs from the hardened value`,
+      );
+    }
+  }
+  return errors;
+}
+
+/** Apply the hardened map and immediately verify the response object's headers. */
+export function applyHardenedSecurityHeaders(res, baseline, options = {}) {
+  if (!res || typeof res.setHeader !== 'function' || typeof res.getHeaders !== 'function') {
+    throw new TypeError('response must provide setHeader() and getHeaders()');
+  }
+  const headerMap = buildHardenedHeaderMap(baseline, options);
+  applySecurityHeaders(res, headerMap);
+  const errors = validateServedHeaderMap(res.getHeaders(), baseline, options);
+  if (errors.length > 0) throw new CspValidationError(errors);
+  return headerMap;
 }
