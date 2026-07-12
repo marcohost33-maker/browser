@@ -8,7 +8,7 @@
 
 ## Security objective and maturity boundary
 
-The M1 foundation minimizes document, script, resource, permission and network
+The M1 foundation constrains document, script, resource, permission and network
 surfaces before application runtime exists. The committed baseline is validated
 fail closed, serialized, tested through a Node response boundary and checked in
 CI.
@@ -38,8 +38,15 @@ one reviewed change:
 3. positive and negative tests;
 4. this rationale and the applicable ADR/risk record.
 
+The validator also checks the baseline's top-level metadata and
+`connect_src_policy` object. Unknown keys, malformed versions/dates or drifted
+policy metadata fail closed instead of becoming unaudited prose beside the real
+controls.
+
 Application code uses `buildHardenedHeaderMap()` or
-`applyHardenedSecurityHeaders()`, never the low-level serializer directly.
+`applyHardenedSecurityHeaders()`, never the low-level serializer or map builder
+directly. A source-level regression gate rejects future imports of the raw
+primitives outside the security implementation and CLI.
 
 ## Network boundary
 
@@ -52,14 +59,17 @@ The M1 static gate rejects:
 - wildcards and scheme-wide sources;
 - paths, queries, fragments, user information and trailing-dot hostnames;
 - remote plaintext HTTP;
-- private or link-local IP literals, including metadata-service ranges;
+- non-public/reserved IPv4, IPv6 and IPv4-mapped IPv6 literals;
+- localhost names outside the explicit development profile;
+- alternative noncanonical numeric IP spellings;
 - duplicates and origins not present in the deployment approval set;
 - runtime widening from user input.
 
 Plain HTTP is restricted to explicit `localhost`, `127.0.0.1` and `::1`
 development origins. The full MCP endpoint URL, redirects, DNS resolution,
 private-network transitions, CORS and authorization remain separate ADR-003
-runtime obligations. Static string validation cannot prevent DNS rebinding.
+runtime obligations. Static string validation cannot prevent DNS rebinding or a
+public hostname resolving to a private address.
 
 ## Static-SPA constraint
 
@@ -73,22 +83,64 @@ therefore permits only:
 Supporting arbitrary remote origins by changing the policy to `https:` or `*`
 is prohibited.
 
+## Provisional capability budget
+
+The current pre-runtime baseline still provisionally allows several same-origin
+surfaces: form submission, `data:` images, fonts, a web-app manifest and workers.
+Their presence is **not** evidence that the product needs them and must not be
+copied into a release unchanged by default.
+
+ADR-004 must evaluate each capability separately and apply a
+**remove-unless-proven** rule:
+
+| Capability | Current token | Required evidence before release |
+|---|---|---|
+| Forms | `form-action 'self'` | The chosen top task requires native form navigation rather than controlled `fetch` |
+| Inline image data | `img-src 'self' data:` | Measured asset need and hostile SVG/data-URL tests |
+| Fonts | `font-src 'self'` | Self-hosted font requirement, licensing and performance evidence |
+| Manifest | `manifest-src 'self'` | Explicit installability/PWA product decision |
+| Workers/service workers | `worker-src 'self'` | Explicit worker/PWA decision, cache/update/rollback and offline-threat analysis |
+
+If evidence is absent, the directive must be changed to `'none'` or the source
+removed before the first application release. Service workers receive particular
+scrutiny because they can persist beyond a page load and mediate later requests.
+
 ## Enforced header profile
 
 | Header | M1 value or rule |
 |---|---|
 | `Content-Security-Policy` | Generated from `directives` only; exact M1 contract |
-| `Strict-Transport-Security` | `max-age` at least one year and `includeSubDomains`; `preload` blocked pending operations approval |
+| `Strict-Transport-Security` | Exactly `max-age=63072000; includeSubDomains`; `preload` forbidden |
 | `X-Content-Type-Options` | Exactly `nosniff` |
-| `Referrer-Policy` | Canonical safe allowlist; baseline `no-referrer` |
-| `Permissions-Policy` | Reviewed powerful-feature deny set, each exactly `()` |
+| `Referrer-Policy` | Exactly `no-referrer` |
+| `Permissions-Policy` | Exact reviewed feature set, canonical order, each value `()` |
 | `Cross-Origin-Opener-Policy` | Exactly `same-origin` |
 | `Cross-Origin-Embedder-Policy` | Exactly `require-corp` |
 | `Cross-Origin-Resource-Policy` | Exactly `same-origin` |
 | `X-Frame-Options` | Exactly `DENY` |
 
-`Access-Control-Allow-Origin` is deliberately absent and forbidden in this app
-response profile. Outbound MCP target origins and inbound application-response
+The exact Privacy and HSTS values are contract values, not merely lower bounds.
+For example, changing `no-referrer` to `strict-origin-when-cross-origin`, or
+reducing HSTS from two years to one year, now requires a reviewed policy change
+rather than passing as "still reasonably safe".
+
+## Forbidden final-response headers
+
+The final in-process response gate rejects additional headers that reverse M1
+trust directions, create state, emit sensitive browser reports or expose
+implementation details. This includes:
+
+- every `Access-Control-*` response header;
+- `Content-Security-Policy-Report-Only`;
+- `Report-To`, `Reporting-Endpoints` and `NEL`;
+- `Timing-Allow-Origin`;
+- `Set-Cookie` and `Set-Cookie2`;
+- `Server` and `X-Powered-By`.
+
+CSP and network-error reports can contain request and violation context and cause
+the browser to transmit data to configured reporting endpoints. Reporting is
+therefore a separate, privacy-reviewed operational feature, not an arbitrary
+extra header. Likewise, outbound MCP target origins and inbound application
 CORS permissions are opposite trust directions. MCP endpoint CORS belongs to
 the server compatibility profile in ADR-003.
 
@@ -116,7 +168,8 @@ upgrade-insecure-requests
 The header disables a curated set of powerful features, including capture,
 credentials, hardware, local-network, storage-access and XR surfaces. The
 validator requires exact lowercase feature names, exactly one declaration per
-feature, no unreviewed extras and an empty allowlist `()`.
+feature, no unreviewed extras, an empty allowlist `()` and the canonical reviewed
+serialization.
 
 This is not a universal browser capability sandbox. Permissions Policy has
 uneven and evolving browser support; unsupported directives may be ignored.
@@ -126,9 +179,9 @@ scope.
 
 ## HSTS and preload
 
-M1 sends a long `max-age` with `includeSubDomains`. This affects every HTTPS
-subdomain once cached and therefore still requires domain inventory and rollback
-planning.
+M1 sends exactly two years of `max-age` with `includeSubDomains`. This affects
+every HTTPS subdomain once cached and therefore still requires domain inventory
+and rollback planning.
 
 The `preload` token is intentionally rejected. Browser preload lists are an
 external, long-lived operational commitment and removal is not immediate. It may
@@ -151,12 +204,14 @@ The implementation rejects:
 - unknown directives, non-array values, unsafe tokens and injection characters;
 - CSP and Report-Only overrides in `additional_headers`;
 - missing, duplicate, unexpected or weakened security headers;
-- malformed or weak HSTS and premature `preload`;
-- weak/noncanonical Referrer-Policy values;
-- malformed, mixed-case, duplicate, missing, granted or unreviewed
+- any non-exact HSTS or Referrer-Policy value and premature `preload`;
+- malformed, mixed-case, duplicate, missing, granted, reordered or unreviewed
   Permissions-Policy features;
-- invalid, duplicate, noncanonical, plaintext-remote or private-IP origins;
-- a final response map with missing, changed or duplicate protected headers.
+- invalid, duplicate, noncanonical, plaintext-remote or non-public origins;
+- unknown or drifted baseline metadata;
+- a final response map with missing, changed or duplicate protected headers;
+- security-sensitive reporting, CORS, cookie and implementation-disclosure
+  headers added after the baseline map.
 
 A failing baseline cannot be serialized or served through the hardened entry
 point.
@@ -164,15 +219,17 @@ point.
 ## Final response and deployed-edge verification
 
 `applyHardenedSecurityHeaders()` applies the map and immediately verifies
-`getHeaders()` on the response object. `validateServedHeaderMap()` can validate a
-captured final in-process map and permits unrelated operational headers while
-requiring every protected value exactly.
+`getHeaders()` on the response object. `validateServedHeaderMap()` validates a
+captured final in-process map, permits ordinary operational headers and rejects
+security-sensitive extras while requiring every protected value exactly.
 
 These checks cannot detect mutations after they run. Release evidence must also
 capture the actual staging and production response after all middleware, proxy,
 CDN and hosting transformations, then verify browser-observed policy behavior.
+Raw wire headers should be retained because high-level header APIs can merge or
+normalize duplicate fields.
 
-## Deterministic verification
+## Deterministic verification and evidence scope
 
 ```bash
 npm run toolchain:check
@@ -184,9 +241,23 @@ npm test
 npm run csp:json
 ```
 
-The CI runtime, npm version and documentation tools are exact-version locked.
-The evidence manifest records source SHA, tested SHA, Node/npm versions and
-hashes of `package.json`, `package-lock.json` and the SPDX SBOM.
+The Node/npm versions, public npm registry, lifecycle-script policy and
+documentation tools are exact-version/configuration checked. GitHub jobs use the
+`ubuntu-24.04` runner family instead of the moving `ubuntu-latest` alias.
+
+The security evidence artifact now retains for 90 days:
+
+- the machine-readable npm audit snapshot;
+- the SPDX SBOM;
+- a manifest binding source SHA and tested merge SHA;
+- Node, npm and registry identity;
+- runner OS, architecture, image metadata, kernel and Git version;
+- hashes of `.npmrc`, `package.json`, `package-lock.json`, audit output and SBOM.
+
+This is strong traceability, not a claim of bit-for-bit reproducibility. GitHub's
+hosted runner image, the live advisory database and timestamped SBOM/evidence
+fields can change between reruns of the same commit. Reproducible release builds
+and independent digest comparison remain separate release gates.
 
 ## Runtime requirements after ADR-003
 
@@ -213,6 +284,8 @@ The future application must verify that:
   `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy`
 - MDN HSTS:
   `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Strict-Transport-Security`
+- MDN Referrer-Policy:
+  `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy`
 - MDN COOP and COEP:
   `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Opener-Policy`
   and
