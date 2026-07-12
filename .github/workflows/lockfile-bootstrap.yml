@@ -1,0 +1,53 @@
+# One-shot lockfile bootstrap for PR #17. Remove after the generated lockfile is committed.
+name: lockfile-bootstrap
+
+on:
+  push:
+    branches: ["fix/header-validation-roadmap-refresh"]
+    paths:
+      - package.json
+      - .github/workflows/lockfile-bootstrap.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lockfile-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate-lockfile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: fix/header-validation-roadmap-refresh
+          persist-credentials: true
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: "22.23.1"
+          cache: npm
+      - name: verify bundled toolchain
+        run: npm run toolchain:check
+      - name: generate frozen public-registry-neutral lockfile
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --audit=false --fund=false \
+            --omit-lockfile-registry-resolved=true
+          npm ci --ignore-scripts --audit=false --fund=false
+          npm run audit:ci
+          git diff --exit-code -- package.json
+      - name: commit generated lockfile to this branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "package-lock.json already current"
+            exit 0
+          fi
+          git commit -m "build(ci): regenerate locked documentation toolchain"
+          git push origin HEAD:fix/header-validation-roadmap-refresh
