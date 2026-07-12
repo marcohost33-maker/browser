@@ -1,7 +1,7 @@
 # security-ci — enforce the APP-01 static security foundation.
 #
-# Evidence produced by this workflow is bound to both the source head and the
-# actual checkout SHA (an ephemeral merge commit for pull_request events).
+# Evidence is bound to both the source head and the actual checkout SHA. For
+# pull_request events the latter is GitHub's ephemeral merge commit.
 name: security-ci
 
 on:
@@ -20,10 +20,11 @@ jobs:
   csp-enforcement:
     name: hardened policy gate + security tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     env:
+      CI: "true"
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       TESTED_SHA: ${{ github.sha }}
     steps:
@@ -32,10 +33,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
-          node-version: "22"
+          node-version: "22.23.1"
           cache: npm
+      - name: verify exact Node and npm toolchain
+        run: npm run toolchain:check
+      - name: verify frozen lockfile invariants
+        run: npm run lockfile:check
       - name: deterministic install with lifecycle scripts disabled
         run: npm ci --ignore-scripts --audit=false --fund=false
+      - name: dependency vulnerability gate
+        run: npm run audit:ci
       - name: CSP, endpoint and security-header fail-closed gate
         run: npm run csp:check
       - name: serializer, served-header and regression tests
@@ -49,10 +56,21 @@ jobs:
           const { createHash } = require('node:crypto');
           const { readFileSync, writeFileSync } = require('node:fs');
 
-          const bytes = readFileSync('sbom.spdx.json');
-          const sbom = JSON.parse(bytes.toString('utf8'));
+          const hash = (path) => {
+            const bytes = readFileSync(path);
+            return {
+              path,
+              bytes,
+              sha256: createHash('sha256').update(bytes).digest('hex'),
+            };
+          };
+
+          const sbomFile = hash('sbom.spdx.json');
+          const packageFile = hash('package.json');
+          const lockFile = hash('package-lock.json');
+          const sbom = JSON.parse(sbomFile.bytes.toString('utf8'));
           const evidence = {
-            schema_version: '1.0',
+            schema_version: '1.1',
             repository: process.env.GITHUB_REPOSITORY,
             event_name: process.env.GITHUB_EVENT_NAME,
             source_sha: process.env.SOURCE_SHA,
@@ -65,9 +83,13 @@ jobs:
               node: process.version,
               npm: execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(),
             },
+            inputs: {
+              package_json_sha256: packageFile.sha256,
+              package_lock_sha256: lockFile.sha256,
+            },
             sbom: {
-              path: 'sbom.spdx.json',
-              sha256: createHash('sha256').update(bytes).digest('hex'),
+              path: sbomFile.path,
+              sha256: sbomFile.sha256,
               spdx_version: sbom.spdxVersion,
               document_name: sbom.name,
               package_count: Array.isArray(sbom.packages) ? sbom.packages.length : null,
@@ -77,10 +99,19 @@ jobs:
           if (!evidence.source_sha || !evidence.tested_sha) {
             throw new Error('source/tested commit identity is missing');
           }
+          if (evidence.tools.node !== 'v22.23.1' || evidence.tools.npm !== '10.9.8') {
+            throw new Error(`unexpected evidence toolchain: ${JSON.stringify(evidence.tools)}`);
+          }
           if (evidence.sbom.spdx_version !== 'SPDX-2.3') {
             throw new Error(`unexpected SPDX version: ${evidence.sbom.spdx_version}`);
           }
+          if (!Number.isInteger(evidence.sbom.package_count) || evidence.sbom.package_count < 1) {
+            throw new Error('SBOM package inventory is empty or malformed');
+          }
 
+          delete sbomFile.bytes;
+          delete packageFile.bytes;
+          delete lockFile.bytes;
           writeFileSync('security-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`);
           NODE
       - name: upload immutable security evidence
@@ -91,4 +122,4 @@ jobs:
             sbom.spdx.json
             security-evidence.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
