@@ -1,56 +1,73 @@
 # APP-01 Browser
 
-Privacy-first public MCP client webapp foundation for the Vero/Nigin system.
+Repository foundation for a proposed privacy-first public MCP client web
+application in the Vero/Nigin system.
 
 This repository is **`marcohost33-maker/browser`**. It is not `browser-nigin`
 and does not contain the Engine/Wasmtime/WIT/CAS platform track.
 
 ## Current state
 
-APP-01 is **not yet a functioning MCP web client and is not production-ready**.
-The repository currently contains architecture, security, governance and CI
-foundations. Product validation, endpoint/deployment acceptance, a signed ENG-01
-contract and the TypeScript runtime remain open gates.
+APP-01 is **not a functioning MCP web client and is not production-ready**. The
+repository contains architecture, static security-policy, governance and CI
+evidence foundations. Product validation, endpoint/deployment acceptance, a
+signed ENG-01 contract, application runtime, browser verification and operations
+remain open gates.
 
-See [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) for the
-precise current state.
+PR #17 is intentionally Draft until branch protection and independent final-head
+review are completed or explicitly dispositioned.
+
+See [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) and
+[`docs/verification/PRODUCTION_READINESS_MATRIX.md`](docs/verification/PRODUCTION_READINESS_MATRIX.md)
+for the precise evidence state.
 
 ## Scope
 
 APP-01 will consume a signed and versioned MCP contract from ENG-01. It does not
-define the protocol or contract.
+define the protocol or producer contract.
 
 The first runtime slice, after its gates pass, is one explicit read-only user
 action against an approved endpoint with visible consent, cancellation, bounded
 results and privacy-safe session clearing.
 
-## Security foundation
+## Static security foundation
 
-The repository enforces:
+The repository currently enforces and tests:
 
-- restrictive CSP generated from one machine-readable baseline;
+- CSP emitted from one machine-readable baseline plus an independent exact M1
+  contract that prevents silent data-only widening;
 - exact-origin `connect-src` policy;
 - HTTPS remote origins with explicit loopback-only HTTP development support;
-- complete fail-closed M1 security-header validation;
-- regression tests for injection, duplicate/casing and downgrade bypasses;
-- deterministic installation and an SPDX SBOM CI artifact;
-- least-privilege, SHA-pinned GitHub Actions with a workflow security audit.
+- rejection of unapproved, noncanonical and private/link-local IP-literal origins;
+- a reviewed fail-closed M1 static security-header contract;
+- blocked HSTS preload until deployment and rollback approval;
+- regression tests for injection, drift, duplicate/casing and downgrade bypasses;
+- final in-process response-header readback;
+- deterministic installation, vulnerability audit, SPDX SBOM and evidence
+  manifest;
+- least-privilege, SHA-pinned GitHub Actions with workflow security audit.
+
+These controls do not prove deployed edge behavior, browser compatibility,
+runtime input safety, SSRF resistance, privacy or production readiness.
 
 Security policy and private vulnerability reporting are documented in
 [`SECURITY.md`](SECURITY.md).
 
 ## Local verification
 
-Requirements: Node.js 22 or newer and npm compatible with lockfile version 3.
+Required toolchain: exactly Node.js `22.23.1` and npm `10.9.8`.
 
 ```bash
+npm run toolchain:check
+npm run lockfile:check
 npm ci --ignore-scripts --audit=false --fund=false
+npm run audit:ci
 npm run csp:check
 npm test
 npm run csp:json
 ```
 
-No lifecycle script is required for the current security foundation.
+No lifecycle script is required or permitted by the current locked tool graph.
 
 ## Decision order
 
@@ -78,20 +95,26 @@ contract or authorization assumption.
 - [`docs/security/`](docs/security/) — threat and header policy
 - [`docs/research/PRODUCT_DISCOVERY_PROTOCOL.md`](docs/research/PRODUCT_DISCOVERY_PROTOCOL.md)
   — falsifiable product discovery
+- [`docs/verification/PRODUCTION_READINESS_MATRIX.md`](docs/verification/PRODUCTION_READINESS_MATRIX.md)
+  — requirement/evidence/blocker matrix
 - [`contracts/`](contracts/) — consumer profile; future verified ENG-01 input
-- [`src/security/`](src/security/) — current policy enforcement
+- [`src/security/`](src/security/) — current static policy enforcement
 - [`tests/security/`](tests/security/) — positive, negative and HTTP tests
 
 ## Governance
 
-- Critical paths are covered by `.github/CODEOWNERS`.
-- Dependency and GitHub Actions updates use Dependabot release cooldowns.
-- Pull requests must link evidence and preserve fail-closed negative tests.
-- The default branch still requires an enforced repository ruleset/branch
-  protection before production or public-release claims.
+- Critical paths are listed in `.github/CODEOWNERS`; enforcement still requires
+  issue #18.
+- Independent review of the final PR #17 head is tracked in issue #20.
+- Dependency and GitHub Actions updates use Dependabot release cooldowns; the
+  first scheduled post-merge cycle remains operational evidence.
+- Pull requests must link exact-head evidence and preserve fail-closed negative
+  tests.
+- No production or public-release claim is permitted while the matrix production
+  gate is open.
 
 ## License and visibility
 
-The repository is currently private and licensed under MIT. A public/open-source
-release requires explicit approval and all security, privacy, accessibility,
+The repository is private and licensed under MIT. A public/open-source release
+requires explicit approval and all applicable security, privacy, accessibility,
 legal, supply-chain and operational gates.
