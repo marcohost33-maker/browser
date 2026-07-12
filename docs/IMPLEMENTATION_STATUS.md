@@ -29,10 +29,10 @@
 - strict COOP, COEP, CORP, MIME and framing values;
 - canonical approved-origin validation;
 - HTTPS remote origins and explicit loopback-only HTTP development origins;
-- private/link-local IP-literal and trailing-dot host rejection;
+- non-public/reserved IPv4, IPv6, mapped-address and localhost rejection;
 - final in-process protected-header readback;
 - negative tests for drift, casing, duplicates, malformed values, downgrades,
-  private origins and final-response mutation.
+  non-public origins and final-response mutation.
 
 These controls do not verify DNS resolution, redirects, DNS rebinding, deployed
 edge transformations or supported-browser behavior.
@@ -64,25 +64,22 @@ edge transformations or supported-browser behavior.
 - issue #18 for enforced branch protection;
 - issue #20 for independent final-head review.
 
-## Verified current candidate
+## Evidence protocol
 
-Candidate head:
+The repository intentionally does not hard-code a "current final SHA" in this
+file: changing the file would immediately create a different SHA. Exact candidate
+identity and artifact digest are recorded outside the candidate tree in the PR,
+GitHub Actions run, evidence artifact and independent review.
 
-`db82c81cc016b559715f675dde3ea9dcf2596ab6`
+For every candidate head:
 
-On that exact head:
-
-- security CI passed every toolchain, lockfile, install, audit, policy, test, SBOM
-  and artifact step;
-- Markdown lint and tracked-link checks passed;
-- workflow security audit passed;
-- evidence artifact
-  `app-01-security-evidence-db82c81cc016b559715f675dde3ea9dcf2596ab6`
-  was created with a GitHub artifact digest.
-
-A later commit invalidates this exact-head evidence and must repeat all gates.
-Documentation-only follow-up commits still require fresh docs/workflow checks and
-must not silently inherit prior code evidence.
+- security CI must pass toolchain, lockfile, install, audit, policy, tests, SBOM
+  generation and evidence upload;
+- Markdown lint and tracked-link checks must pass;
+- workflow security audit must pass;
+- the evidence artifact name, manifest and GitHub digest must bind to that head;
+- any subsequent commit invalidates the prior candidate and requires fresh gates;
+- independent review must name the exact final SHA it approved.
 
 ## Open P0 promotion gates for this foundation PR
 
