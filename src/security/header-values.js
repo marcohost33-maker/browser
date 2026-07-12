@@ -13,18 +13,12 @@ import {
   validateBaseline,
 } from './csp.js';
 
-const HSTS_MAX_AGE_FLOOR = 31536000;
-
-const ALLOWED_REFERRER_POLICIES = new Set([
-  'no-referrer',
-  'same-origin',
-  'strict-origin',
-  'strict-origin-when-cross-origin',
-]);
+const REQUIRED_HSTS_VALUE = 'max-age=63072000; includeSubDomains';
+const REQUIRED_REFERRER_POLICY = 'no-referrer';
 
 // Curated M1 deny set. Permissions Policy remains defense in depth: browser
 // support differs and must be verified by the ADR-004 browser/E2E matrix.
-const REQUIRED_DISABLED_PERMISSIONS = new Set([
+const REQUIRED_DISABLED_PERMISSIONS = [
   'accelerometer',
   'autoplay',
   'bluetooth',
@@ -49,7 +43,11 @@ const REQUIRED_DISABLED_PERMISSIONS = new Set([
   'storage-access',
   'usb',
   'xr-spatial-tracking',
-]);
+];
+const REQUIRED_DISABLED_PERMISSION_SET = new Set(REQUIRED_DISABLED_PERMISSIONS);
+const REQUIRED_PERMISSIONS_POLICY = REQUIRED_DISABLED_PERMISSIONS
+  .map((feature) => `${feature}=()`)
+  .join(', ');
 
 const REQUIRED_EXACT_HEADERS = new Map([
   ['x-content-type-options', 'nosniff'],
@@ -70,6 +68,21 @@ const REQUIRED_HEADER_NAMES = new Set([
   'x-frame-options',
 ]);
 
+// Headers that reverse M1 trust directions, emit sensitive browser reports,
+// introduce state, or disclose implementation details. These remain forbidden
+// even when supplied after the baseline-derived map has been applied.
+const FORBIDDEN_SERVED_HEADER_NAMES = new Set([
+  'content-security-policy-report-only',
+  'report-to',
+  'reporting-endpoints',
+  'nel',
+  'timing-allow-origin',
+  'set-cookie',
+  'set-cookie2',
+  'server',
+  'x-powered-by',
+]);
+
 const REQUIRED_EXACT_DIRECTIVES = new Map([
   ['default-src', ["'none'"]],
   ['base-uri', ["'none'"]],
@@ -86,11 +99,114 @@ const REQUIRED_EXACT_DIRECTIVES = new Map([
   ['upgrade-insecure-requests', []],
 ]);
 
+const REQUIRED_TOP_LEVEL_KEYS = new Set([
+  '$schema-note',
+  'version',
+  'date',
+  'directives',
+  'connect_src_policy',
+  'additional_headers',
+]);
+
+const REQUIRED_CONNECT_SRC_POLICY = {
+  seed: ["'self'"],
+  append_only_from: 'approved-endpoint-set',
+  forbidden_tokens: [
+    '*',
+    'https:',
+    'http:',
+    'data:',
+    'blob:',
+    "'unsafe-inline'",
+    "'unsafe-eval'",
+  ],
+  match: 'exact-canonical-origin',
+};
+
 function arraysEqual(actual, expected) {
   return (
     actual.length === expected.length &&
     actual.every((value, index) => value === expected[index])
   );
+}
+
+function validateBaselineMetadata(baseline) {
+  if (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)) {
+    return ['baseline must be an object'];
+  }
+
+  const errors = [];
+  for (const key of REQUIRED_TOP_LEVEL_KEYS) {
+    if (!Object.hasOwn(baseline, key)) {
+      errors.push(`baseline is missing required top-level key ${JSON.stringify(key)}`);
+    }
+  }
+  for (const key of Object.keys(baseline)) {
+    if (!REQUIRED_TOP_LEVEL_KEYS.has(key)) {
+      errors.push(`baseline contains unreviewed top-level key ${JSON.stringify(key)}`);
+    }
+  }
+
+  if (typeof baseline['$schema-note'] !== 'string' || baseline['$schema-note'].trim() === '') {
+    errors.push('baseline $schema-note must be a non-empty string');
+  }
+  if (typeof baseline.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(baseline.version)) {
+    errors.push(`baseline version must be exact semantic version, got ${JSON.stringify(baseline.version)}`);
+  }
+  if (typeof baseline.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(baseline.date)) {
+    errors.push(`baseline date must be YYYY-MM-DD, got ${JSON.stringify(baseline.date)}`);
+  }
+
+  const policy = baseline.connect_src_policy;
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+    errors.push('baseline connect_src_policy must be an object');
+    return errors;
+  }
+
+  const allowedPolicyKeys = new Set([
+    'seed',
+    'append_only_from',
+    'forbidden_tokens',
+    'match',
+    'note',
+  ]);
+  for (const key of Object.keys(policy)) {
+    if (!allowedPolicyKeys.has(key)) {
+      errors.push(`connect_src_policy contains unreviewed key ${JSON.stringify(key)}`);
+    }
+  }
+  for (const key of allowedPolicyKeys) {
+    if (!Object.hasOwn(policy, key)) {
+      errors.push(`connect_src_policy is missing required key ${JSON.stringify(key)}`);
+    }
+  }
+
+  if (!Array.isArray(policy.seed) || !arraysEqual(policy.seed, REQUIRED_CONNECT_SRC_POLICY.seed)) {
+    errors.push(`connect_src_policy.seed must equal ${JSON.stringify(REQUIRED_CONNECT_SRC_POLICY.seed)}`);
+  }
+  if (policy.append_only_from !== REQUIRED_CONNECT_SRC_POLICY.append_only_from) {
+    errors.push(
+      `connect_src_policy.append_only_from must equal ${JSON.stringify(REQUIRED_CONNECT_SRC_POLICY.append_only_from)}`,
+    );
+  }
+  if (
+    !Array.isArray(policy.forbidden_tokens) ||
+    !arraysEqual(policy.forbidden_tokens, REQUIRED_CONNECT_SRC_POLICY.forbidden_tokens)
+  ) {
+    errors.push(
+      `connect_src_policy.forbidden_tokens must equal ${JSON.stringify(REQUIRED_CONNECT_SRC_POLICY.forbidden_tokens)}`,
+    );
+  }
+  if (policy.match !== REQUIRED_CONNECT_SRC_POLICY.match) {
+    errors.push(
+      `connect_src_policy.match must equal ${JSON.stringify(REQUIRED_CONNECT_SRC_POLICY.match)}`,
+    );
+  }
+  if (typeof policy.note !== 'string' || policy.note.trim() === '') {
+    errors.push('connect_src_policy.note must be a non-empty string');
+  }
+
+  return errors;
 }
 
 function validateHsts(value) {
@@ -144,10 +260,8 @@ function validateHsts(value) {
 
   if (!seen.has('max-age')) {
     errors.push('Strict-Transport-Security must contain exactly one max-age directive');
-  } else if (maxAge < HSTS_MAX_AGE_FLOOR) {
-    errors.push(
-      `Strict-Transport-Security max-age=${maxAge} is below floor ${HSTS_MAX_AGE_FLOOR}`,
-    );
+  } else if (maxAge !== 63072000) {
+    errors.push('Strict-Transport-Security max-age must remain exactly 63072000 seconds');
   }
   if (!includeSubDomains) {
     errors.push('Strict-Transport-Security must include includeSubDomains');
@@ -155,14 +269,19 @@ function validateHsts(value) {
   if (preload) {
     errors.push('Strict-Transport-Security preload is blocked until the deployment/rollback gate is accepted');
   }
+  if (value !== REQUIRED_HSTS_VALUE) {
+    errors.push(
+      `Strict-Transport-Security must use canonical M1 value ${JSON.stringify(REQUIRED_HSTS_VALUE)}`,
+    );
+  }
 
   return errors;
 }
 
 function validateReferrerPolicy(value) {
-  if (!ALLOWED_REFERRER_POLICIES.has(value)) {
+  if (value !== REQUIRED_REFERRER_POLICY) {
     return [
-      `Referrer-Policy must be one of ${[...ALLOWED_REFERRER_POLICIES].join(', ')}, got ${JSON.stringify(value)}`,
+      `Referrer-Policy must remain exactly ${JSON.stringify(REQUIRED_REFERRER_POLICY)}, got ${JSON.stringify(value)}`,
     ];
   }
   return [];
@@ -192,7 +311,7 @@ function validatePermissionsPolicy(value) {
     const feature = match[1];
     const allowlist = match[2].trim();
 
-    if (!REQUIRED_DISABLED_PERMISSIONS.has(feature)) {
+    if (!REQUIRED_DISABLED_PERMISSION_SET.has(feature)) {
       errors.push(
         `Permissions-Policy feature ${JSON.stringify(feature)} is not in the reviewed M1 deny set`,
       );
@@ -216,6 +335,9 @@ function validatePermissionsPolicy(value) {
         `Permissions-Policy is missing required disabled feature ${JSON.stringify(feature)}`,
       );
     }
+  }
+  if (value !== REQUIRED_PERMISSIONS_POLICY) {
+    errors.push('Permissions-Policy must use the canonical reviewed M1 ordering and serialization');
   }
 
   return errors;
@@ -482,6 +604,7 @@ export function validateHardenedBaseline(
   const endpointErrors = validateApprovedEndpointOrigins(approvedEndpoints);
   const safeApprovedEndpoints = Array.isArray(approvedEndpoints) ? approvedEndpoints : [];
   return [
+    ...validateBaselineMetadata(baseline),
     ...validateBaseline(baseline, { approvedEndpoints: safeApprovedEndpoints }),
     ...validateSecurityDirectiveProfile(baseline, {
       approvedEndpoints: safeApprovedEndpoints,
@@ -508,7 +631,8 @@ function normalizeHeaderEntries(headers) {
 /**
  * Verify protected headers at the final response boundary.
  * Extra operational headers are allowed, but protected values cannot be absent,
- * duplicated or changed. Deployment/edge E2E is still required after this call.
+ * duplicated or changed. Security-sensitive extra headers remain forbidden.
+ * Deployment/edge E2E is still required after this call.
  */
 export function validateServedHeaderMap(headers, baseline, options = {}) {
   const entries = normalizeHeaderEntries(headers);
@@ -535,6 +659,9 @@ export function validateServedHeaderMap(headers, baseline, options = {}) {
       continue;
     }
     const lower = name.toLowerCase();
+    if (FORBIDDEN_SERVED_HEADER_NAMES.has(lower) || lower.startsWith('access-control-')) {
+      errors.push(`served response contains forbidden M1 header ${JSON.stringify(name)}`);
+    }
     if (actualByLowerName.has(lower)) {
       errors.push(`served headers contain duplicate case-insensitive name ${JSON.stringify(lower)}`);
       continue;
