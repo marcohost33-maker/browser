@@ -7,12 +7,16 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const SRC = join(ROOT, 'src');
 
+// Match every executable source extension, not only .js, so a future
+// TypeScript bootstrap cannot import the raw primitives past this gate.
+const SOURCE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'];
+
 function filesBelow(directory) {
   const result = [];
   for (const name of readdirSync(directory)) {
     const path = join(directory, name);
     if (statSync(path).isDirectory()) result.push(...filesBelow(path));
-    else if (path.endsWith('.js')) result.push(path);
+    else if (SOURCE_EXTENSIONS.some((ext) => path.endsWith(ext))) result.push(path);
   }
   return result;
 }

@@ -42,7 +42,16 @@ jobs:
       - name: deterministic install with lifecycle scripts disabled
         run: npm ci --ignore-scripts --audit=false --fund=false
       - name: dependency vulnerability gate and snapshot
+        id: audit
         run: npm run audit:ci
+      - name: preserve dependency audit snapshot even when the gate fails
+        if: ${{ !cancelled() && steps.audit.conclusion != 'skipped' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: app-01-dependency-audit-${{ env.SOURCE_SHA }}
+          path: npm-audit.json
+          if-no-files-found: error
+          retention-days: 90
       - name: CSP, endpoint and security-header fail-closed gate
         run: npm run csp:check
       - name: serializer, served-header and regression tests

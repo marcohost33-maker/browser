@@ -34,6 +34,7 @@ jobs:
         continue-on-error: true
         uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa  # v0.5.7
         with:
+          version: "1.26.1"  # pin the audit engine so the same commit is always audited by the same binary
           persona: regular
           advanced-security: false
           annotations: true

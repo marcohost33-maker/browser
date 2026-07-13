@@ -388,45 +388,114 @@ function isNonPublicIpv4(octets) {
   );
 }
 
-function mappedIpv4FromIpv6(hostname) {
+/**
+ * Expand an IPv6 literal to exactly eight 16-bit groups, resolving `::`
+ * compression and a trailing dotted-quad IPv4 tail. Returns null when the
+ * input is not a syntactically valid IPv6 address. Prefixes/scopes (`%zone`)
+ * are rejected so canonicalization stays unambiguous.
+ */
+function expandIpv6(hostname) {
   const normalized = hostname
     .replace(/^\[/, '')
     .replace(/\]$/, '')
     .toLowerCase();
-  if (!normalized.startsWith('::ffff:')) return null;
+  if (!normalized.includes(':') || normalized.includes('%')) return null;
+  if ((normalized.match(/::/g) || []).length > 1) return null;
 
-  const tail = normalized.slice('::ffff:'.length).split(':');
-  if (tail.length !== 2 || tail.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) {
-    return null;
+  const [headPart, tailPart, ...extra] = normalized.split('::');
+  if (extra.length > 0) return null;
+  const hasCompression = tailPart !== undefined;
+
+  const head = headPart === '' ? [] : headPart.split(':');
+  const tail = !hasCompression ? [] : tailPart === '' ? [] : tailPart.split(':');
+
+  // A trailing dotted-quad IPv4 tail contributes two 16-bit groups.
+  const groups = [];
+  const consume = (segments, dest) => {
+    for (let i = 0; i < segments.length; i += 1) {
+      const seg = segments[i];
+      if (seg.includes('.')) {
+        if (i !== segments.length - 1) return false;
+        const octets = parseCanonicalIpv4(seg);
+        if (!octets) return false;
+        dest.push((octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]);
+      } else {
+        if (!/^[0-9a-f]{1,4}$/.test(seg)) return false;
+        dest.push(Number.parseInt(seg, 16));
+      }
+    }
+    return true;
+  };
+
+  const headGroups = [];
+  const tailGroups = [];
+  if (!consume(head, headGroups)) return null;
+  if (!consume(tail, tailGroups)) return null;
+
+  if (hasCompression) {
+    const fill = 8 - headGroups.length - tailGroups.length;
+    if (fill < 1) return null;
+    groups.push(...headGroups, ...new Array(fill).fill(0), ...tailGroups);
+  } else {
+    groups.push(...headGroups);
   }
-  const high = Number.parseInt(tail[0], 16);
-  const low = Number.parseInt(tail[1], 16);
-  return [high >> 8, high & 0xff, low >> 8, low & 0xff];
+  if (groups.length !== 8) return null;
+  return groups;
+}
+
+/**
+ * Return the embedded IPv4 octets when the IPv6 address carries one in a
+ * transition range that aliases an IPv4 host, so a private target cannot be
+ * smuggled past the allowlist by spelling it as IPv6. Handled forms:
+ *   - IPv4-mapped        `::ffff:0:0/96`   (RFC 4291)
+ *   - IPv4-compatible    `::/96`           (deprecated, RFC 4291)
+ *   - NAT64 well-known   `64:ff9b::/96`    (RFC 6052)
+ *   - 6to4               `2002::/16`       (RFC 3056) — the only transition
+ *     form that sits inside accept-by-default global unicast, so it is the
+ *     one residual embedding risk for an allowlist.
+ * Known residual limitations (exotic / obfuscated encodings, not decoded
+ * here): Teredo `2001:0::/32` (XOR-obfuscated), ISATAP `::5efe:a.b.c.d`, and
+ * NAT64 local-use `64:ff9b:1::/48`. A browser cannot resolve DNS, so the
+ * defence-in-depth stops at literal decoding; revisit if a resolved-IP check
+ * is ever added. See docs/research + Codex PR#17 review.
+ */
+function embeddedIpv4FromIpv6(groups) {
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups;
+  const zeroTo5 = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0;
+  const isMapped = zeroTo5 && g5 === 0xffff;
+  const isCompatible = zeroTo5 && g5 === 0;
+  const isNat64 = g0 === 0x0064 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0;
+  if (isMapped || isCompatible || isNat64) {
+    return [g6 >> 8, g6 & 0xff, g7 >> 8, g7 & 0xff];
+  }
+  if (g0 === 0x2002) {
+    // 6to4: the IPv4 address occupies the two groups after the 2002 prefix.
+    return [g1 >> 8, g1 & 0xff, g2 >> 8, g2 & 0xff];
+  }
+  return null;
 }
 
 function isNonPublicAddressLiteral(hostname) {
   const ipv4 = parseCanonicalIpv4(hostname);
   if (ipv4) return isNonPublicIpv4(ipv4);
 
-  const normalized = hostname
-    .replace(/^\[/, '')
-    .replace(/\]$/, '')
-    .toLowerCase();
-  if (!normalized.includes(':')) return false;
+  const groups = expandIpv6(hostname);
+  if (!groups) return false;
 
-  const mapped = mappedIpv4FromIpv6(hostname);
-  if (mapped) return isNonPublicIpv4(mapped);
+  const embedded = embeddedIpv4FromIpv6(groups);
+  if (embedded) return isNonPublicIpv4(embedded);
 
+  const [g0, g1] = groups;
+  const isUnspecified = groups.every((group) => group === 0);
+  const isLoopback = groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1;
   return (
-    normalized === '::' ||
-    normalized === '::1' ||
-    normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    /^fe[89ab]/.test(normalized) ||
-    /^fe[c-f]/.test(normalized) ||
-    normalized.startsWith('ff') ||
-    normalized.startsWith('2001:db8:') ||
-    normalized === '2001:db8::'
+    isUnspecified || // ::/128
+    isLoopback || // ::1/128
+    (g0 & 0xfe00) === 0xfc00 || // fc00::/7 unique local
+    (g0 & 0xffc0) === 0xfe80 || // fe80::/10 link-local
+    (g0 & 0xffc0) === 0xfec0 || // fec0::/10 site-local (deprecated)
+    (g0 & 0xff00) === 0xff00 || // ff00::/8 multicast
+    (g0 === 0x2001 && g1 === 0x0db8) // 2001:db8::/32 documentation
   );
 }
 

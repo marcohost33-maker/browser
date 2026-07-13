@@ -83,6 +83,60 @@ test('alternative numeric IPv4 spellings fail canonical-origin validation', () =
   }
 });
 
+test('canonical IPv6 literals with embedded or reserved non-public addresses hit the non-public gate', () => {
+  for (const origin of [
+    'https://[::c0a8:101]', // IPv4-compatible ::/96 form of 192.168.1.1 (Codex bypass)
+    'https://[::ffff:c0a8:101]', // IPv4-mapped 192.168.1.1
+    'https://[64:ff9b::c0a8:101]', // NAT64 well-known prefix embedding 192.168.1.1
+    'https://[::ffff:7f00:1]', // IPv4-mapped 127.0.0.1
+    'https://[fc00::1]', // unique local
+    'https://[fd12:3456::1]', // unique local
+    'https://[fe80::1]', // link-local
+    'https://[fec0::1]', // deprecated site-local
+    'https://[ff02::1]', // multicast
+    'https://[2001:db8::1]', // documentation
+    'https://[2002:c0a8:101::]', // 6to4 embedding private 192.168.1.1
+    'https://[2002:7f00:1::]', // 6to4 embedding loopback 127.0.0.1
+    'https://[::]', // unspecified
+    'https://[::1]', // loopback
+  ]) {
+    const errors = validateApprovedEndpointOrigins([origin]);
+    assert.ok(
+      errors.some((error) => /non-public\/reserved/.test(error)),
+      `expected ${origin} to be rejected as a non-public/reserved literal (got ${JSON.stringify(errors)})`,
+    );
+  }
+});
+
+test('dotted-quad IPv6 spellings of non-public hosts are rejected (canonicalized before allowlisting)', () => {
+  for (const origin of [
+    'https://[::192.168.1.1]', // IPv4-compatible dotted-quad → canonicalizes to ::c0a8:101
+    'https://[::ffff:192.168.1.1]', // IPv4-mapped dotted-quad
+    'https://[64:ff9b::192.168.1.1]', // NAT64 dotted-quad
+  ]) {
+    const errors = validateApprovedEndpointOrigins([origin]);
+    assert.ok(
+      errors.length >= 1,
+      `expected ${origin} to be rejected (got ${JSON.stringify(errors)})`,
+    );
+  }
+});
+
+test('canonical public IPv6 origins remain accepted', () => {
+  for (const origin of [
+    'https://[2606:4700:4700::1111]',
+    'https://[2001:4860:4860::8888]',
+    'https://[2620:fe::fe]',
+    'https://[2002:808:808::]', // 6to4 embedding public 8.8.8.8 stays accepted
+  ]) {
+    assert.deepEqual(
+      validateApprovedEndpointOrigins([origin]),
+      [],
+      `expected ${origin} to remain accepted`,
+    );
+  }
+});
+
 test('only explicit plain-HTTP loopback development origins are accepted', () => {
   for (const origin of [
     'http://localhost:3000',
