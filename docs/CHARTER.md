@@ -1,17 +1,41 @@
-# CHARTER — APP-01 `browser`
+# CHARTER — `browser`
 
-- Status: ACTIVE
+- Status: ACTIVE (product reframed 2026-07-14)
 - Scope confirmed: 2026-07-10
-- Updated: 2026-07-11
+- Updated: 2026-07-14
 - Repository: `marcohost33-maker/browser`
+
+> **PRODUCT REFRAME (2026-07-14) — read first.** Marco's decision of 2026-07-14
+> resets the north star: `browser` is a **native, offline-capable browser/webapp
+> runtime program** that executes arbitrary foreign web applications **locally**,
+> replacing cloud hosting, and running **without any AI layer**. It is one layer of
+> a three-layer stack: **`browser` (runtime) · `nigin-engine` (contract core) ·
+> `browser-nigin` (AI layer)**. Capability is delivered in staged trust classes —
+> **T1** (owner-controlled packages) → **T2** (curated third-party) → **T3**
+> (arbitrary foreign web content); the accepted north star is **T3**. The binding
+> reframe record is **ADR-005** (offline runtime trust classes), **ADR-006**
+> (runtime evaluation protocol) and **ADR-007** (signed package evaluation); see
+> PR #22 — not duplicated here. Runtime-direction consideration for T3: a
+> Chromium-based engine (CEF/Electron) is favoured for inherited site-isolation and
+> a maintained engine security-patch path over a Tauri/system-WebView approach; the
+> engine security-patch SLA is a central cut criterion. The binding runtime-framework
+> choice is deferred to the measured comparison in ADR-006 — no framework is accepted
+> here. Everything below that describes `browser` as a "public MCP client webapp
+> consuming remote endpoints" is **superseded product framing**, retained because
+> its security/privacy/governance substance stays valid; it is overruled by
+> ADR-005/006/007 where the two conflict.
 
 ## Purpose
 
-APP-01 is the public, privacy-first browser application and MCP client of the
-Vero/Nigin system. It consumes a versioned MCP contract supplied by ENG-01 and
-does not define or own that contract.
+`browser` is a native, offline-capable runtime that executes locally installed web
+applications, staged from owner-controlled (T1) toward arbitrary foreign web
+content (T3). It replaces cloud/edge hosting for those apps and runs without an AI
+layer. It is not `browser-nigin` (the AI layer) and does not define or own the
+contract core (`nigin-engine`).
 
-This repository is not `browser-nigin` and is not an engine/platform runtime.
+> Historical framing (superseded 2026-07-14): "`browser` is the public,
+> privacy-first browser application and MCP client of the Vero/Nigin system,
+> consuming a versioned MCP contract supplied by ENG-01." Retained for provenance.
 
 ## Product principles
 

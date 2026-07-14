@@ -1,8 +1,17 @@
-# OPEN DECISIONS — APP-01 `browser`
+# OPEN DECISIONS — `browser`
 
-- Status: ACTIVE REGISTER
-- Updated: 2026-07-11
+- Status: ACTIVE REGISTER (product reframed 2026-07-14)
+- Updated: 2026-07-14
 - Source of implementation work: GitHub issues in `marcohost33-maker/browser`
+
+> **PRODUCT REFRAME (2026-07-14).** `browser` is reframed into a native,
+> offline-capable browser/webapp runtime that runs foreign web apps locally (staged
+> T1 → T2 → T3; north star **T3**), replacing cloud hosting and running without an AI
+> layer, inside the stack `browser` (runtime) · `nigin-engine` (core) · `browser-nigin`
+> (AI). The binding decision record for the reframe is **ADR-005/006/007** (PR #22),
+> not this register. Decisions below that assume the "MCP client webapp / remote
+> endpoint" product are superseded by that canon; their security substance is
+> retained.
 
 ## Decision states
 
@@ -11,13 +20,19 @@
 - `OPEN`: alternatives or required evidence are still incomplete.
 - `BLOCKED`: an external artifact or preceding decision is missing.
 
-## D1 — Repository scope — RESOLVED
+## D1 — Repository scope — RESOLVED (reframed 2026-07-14)
 
-APP-01 is the public privacy-first MCP client webapp. Wasmtime, WIT, WASI, CAS,
-engine fabric, solver and orchestrator work belong to ENG-01. This repository is
-not `browser-nigin`.
+`browser` is a native, offline-capable browser/webapp runtime program that runs
+foreign web apps locally (staged T1 → T2 → T3; north star T3), replacing cloud
+hosting and running without an AI layer. Engine/contract work (`nigin-engine`) and
+the AI layer (`browser-nigin`) are separate repositories. This repository is not
+`browser-nigin` and not `nigin-engine`.
 
-Evidence: Charter, ADR-001 and the 2026-07-10 scope decision.
+Evidence: Charter, ADR-005/006/007 (PR #22), Marco decision 2026-07-14.
+
+> Superseded framing (pre-2026-07-14): "APP-01 is the public privacy-first MCP
+> client webapp; Wasmtime/WIT/WASI/CAS/engine work belongs to ENG-01." Retained for
+> provenance.
 
 ## D2 — M1 primary user and top task — OPEN / P0
 
@@ -32,11 +47,17 @@ Required decision:
 
 No feature expansion may substitute for this evidence.
 
-## D3 — Endpoint trust, browser transport and deployment — PROPOSED / P0
+## D3 — Endpoint trust, browser transport and deployment — SUPERSEDED by ADR-005
 
-Owner issue: #13. Proposed design: ADR-003.
+Owner issue: #13. Former proposed design: ADR-003 (now SUPERSEDED). The
+remote-MCP-endpoint transport/deployment product model is obsolete under the
+2026-07-14 reframe. Its network-security substance (egress origin allowlist,
+exact-origin `connect-src`, redirect/DNS-rebinding/private-network/metadata
+rejection) is framing-neutral and applies to the network egress of locally hosted
+apps; it is retained in `docs/security/*`. Runtime trust classes and the runtime
+security boundary are now governed by ADR-005/006/007 (PR #22).
 
-Current recommendation for testing:
+Former recommendation (superseded, retained for provenance):
 
 - curated deploy-time HTTPS endpoint set for M1;
 - arbitrary remote user-entered origins prohibited;

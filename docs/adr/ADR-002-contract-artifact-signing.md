@@ -1,10 +1,21 @@
 # ADR-002 — Contract Artifact Signature and Provenance
 
-- Status: ACCEPTED TARGET DESIGN
+- Status: ACCEPTED TARGET DESIGN (product framing realigned 2026-07-14)
 - Decision date: 2026-07-10
 - Revalidated: 2026-07-11
-- Implementation: BLOCKED on ENG-01 contract publication
-- Scope: how APP-01 establishes trust in the ENG-01 MCP contract artifact
+- Realigned: 2026-07-14
+- Implementation: BLOCKED on `nigin-engine` contract publication
+- Scope: how `browser` establishes trust in the `nigin-engine` contract artifact
+
+> **Framing realignment (2026-07-14).** The signature/SLSA-provenance/immutable-pin
+> substance of this ADR is retained and unchanged — it is the correct trust model
+> for consuming any signed engine contract artifact. Only the product framing is
+> realigned to the 2026-07-14 reframe (ADR-005/006/007, PR #22): the contract
+> producer is `nigin-engine` (the contract core of the three-layer stack `browser`
+> runtime · `nigin-engine` core · `browser-nigin` AI layer). Read "MCP contract"
+> below as "the signed, versioned `nigin-engine` contract artifact". The same
+> signature verification, provenance and digest-lock discipline also governs the
+> signed offline app packages evaluated under ADR-007.
 
 ## Context
 

@@ -2,8 +2,11 @@
 
 - Status: ENFORCED STATIC FOUNDATION / RUNTIME AND EDGE EVIDENCE OPEN
 - Updated: 2026-07-12
-- Scope: APP-01 `browser`
-- Runtime endpoint synchronization: blocked on ADR-003 and the MCP client
+- Scope: `browser`
+- Runtime egress synchronization: the exact-origin allowlist applies to any
+  approved network egress target (remote endpoint or a locally hosted app's egress);
+  runtime binding follows the reframed runtime design (ADR-005/006/007, PR #22 —
+  ADR-003 superseded)
 - Emitted-value source: [`csp-baseline.json`](./csp-baseline.json)
 
 ## Security objective and maturity boundary

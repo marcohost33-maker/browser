@@ -1,18 +1,28 @@
-# APP-01 Browser
+# `browser`
 
-Repository foundation for a proposed privacy-first public MCP client web
-application in the Vero/Nigin system.
+Repository foundation for a native, offline-capable browser/webapp **runtime
+program** that executes foreign web applications locally, staged from
+owner-controlled (T1) toward arbitrary foreign web content (T3; the north star),
+replacing cloud hosting and running without an AI layer.
 
-This repository is **`marcohost33-maker/browser`**. It is not `browser-nigin`
-and does not contain the Engine/Wasmtime/WIT/CAS platform track.
+This repository is **`marcohost33-maker/browser`**. It is one layer of a
+three-layer stack — `browser` (runtime) · `nigin-engine` (contract core) ·
+`browser-nigin` (AI layer). It is not `browser-nigin` and not `nigin-engine`.
+
+> **Product reframe (2026-07-14).** `browser` was previously framed as a public
+> MCP-client web application. Per Marco's 2026-07-14 decision it is reframed into
+> the runtime program described above. The binding reframe record is
+> **ADR-005/006/007** (see PR #22). The security/governance/CI foundation in this
+> repository is framing-neutral and retained.
 
 ## Current state
 
-APP-01 is **not a functioning MCP web client and is not production-ready**. The
+`browser` is **not a functioning runtime and is not production-ready** (no runtime
+product code exists under either the prior or the reframed framing). The
 repository contains architecture, static security-policy, governance and CI
-evidence foundations. Product validation, endpoint/deployment acceptance, a
-signed ENG-01 contract, application runtime, browser verification and operations
-remain open gates.
+evidence foundations. Product validation, the runtime/trust-class design
+(ADR-005/006/007), a signed `nigin-engine` contract, application runtime, browser
+verification and operations remain open gates.
 
 PR #17 is intentionally Draft until branch protection and independent final-head
 review are completed or explicitly dispositioned.
@@ -23,12 +33,16 @@ for the precise evidence state.
 
 ## Scope
 
-APP-01 will consume a signed and versioned MCP contract from ENG-01. It does not
-define the protocol or producer contract.
+`browser` will consume a signed and versioned contract from `nigin-engine` (the
+contract core). It does not define that contract and is not the AI layer
+(`browser-nigin`).
 
-The first runtime slice, after its gates pass, is one explicit read-only user
-action against an approved endpoint with visible consent, cancellation, bounded
-results and privacy-safe session clearing.
+The runtime is delivered in staged trust classes — T1 (owner-controlled packages)
+→ T2 (curated third-party) → T3 (arbitrary foreign web content; north star) — per
+ADR-005/006/007. The binding runtime-framework choice (a Chromium engine such as
+CEF/Electron is favoured for inherited site-isolation and a maintained engine
+security-patch path over Tauri) is deferred to the measured comparison in ADR-006.
+No framework is accepted yet.
 
 ## Static security foundation
 

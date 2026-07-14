@@ -1,9 +1,28 @@
 # ADR-001 — M1 Browser Application Boundaries
 
-- Status: ACCEPTED
+- Status: SUPERSEDED by ADR-005 (offline runtime trust classes)
 - Decision date: 2026-07-10
 - Revalidated: 2026-07-11
+- Superseded: 2026-07-14
 - Scope: APP-01 `browser` only
+
+> **SUPERSEDED (2026-07-14).** Marco's product decision of 2026-07-14 sets the
+> north star for `browser` to a native, offline-capable browser/webapp **runtime
+> program** that executes arbitrary foreign web applications locally (trust-class
+> target **T3**), replaces cloud hosting, and runs without any AI layer — inside a
+> three-layer stack: `browser` (runtime) · `nigin-engine` (contract core) ·
+> `browser-nigin` (AI layer). That reframe is canonized in **ADR-005** (offline
+> runtime trust classes), **ADR-006** (runtime evaluation protocol) and **ADR-007**
+> (signed package evaluation), which are the binding reframe record (see PR #22;
+> ADR-005 is under cross-family review / Vero adjudication and is not yet ACCEPTED).
+> This ADR's product framing — APP-01 as a public, browser-based MCP *client*
+> webapp that consumes remote MCP endpoints — is therefore obsolete. The text below
+> is retained unchanged for historical readability and because its
+> enforcement-boundary substance (dependencies point inward, presentation cannot
+> call a transport directly, capability deny-by-default, fail-closed policy) remains
+> largely framing-neutral. Where it asserts the MCP-client-webapp product form, it
+> is overruled by ADR-005/006/007. Do not treat the "M1 slice" or "MCP adapter"
+> product statements below as current.
 
 ## Decision
 

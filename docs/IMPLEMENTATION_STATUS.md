@@ -1,10 +1,21 @@
-# APP-01 Browser — Implementation Status
+# `browser` — Implementation Status
 
-- Updated: 2026-07-12
+- Updated: 2026-07-14
 - Repository: `marcohost33-maker/browser`
-- Intended product scope: public privacy-first MCP client web application
+- Intended product scope: native, offline-capable browser/webapp **runtime program**
+  (runs foreign web apps locally; staged T1 → T2 → T3; north star **T3**) — reframed
+  2026-07-14 (ADR-005/006/007, PR #22)
 - Current change set: Draft PR #17
-- Overall state: static security/governance/evidence foundation; MCP runtime absent
+- Overall state: static security/governance/evidence foundation; **no runtime
+  implemented** (neither the prior MCP-client webapp nor the reframed runtime)
+
+> **PRODUCT REFRAME (2026-07-14).** `browser` is reframed from a public MCP-client
+> webapp into a native, offline-capable runtime that executes foreign web apps
+> locally (three-layer stack: `browser` runtime · `nigin-engine` core · `browser-nigin`
+> AI layer). Binding record: ADR-005/006/007 (PR #22). The security/governance/
+> evidence foundation described below is real and framing-neutral; the
+> "MCP client / remote endpoint" product wording is superseded. **No runtime product
+> code exists** — do not read any item below as an implemented runtime capability.
 
 ## Merged foundation
 
@@ -73,8 +84,8 @@ reruns of the same source commit.
 ### Governance and operations foundation
 
 - active Charter and decision register;
-- accepted ADR-001 boundaries and ADR-002 target trust design;
-- proposed ADR-003 endpoint/CORS/deployment decision;
+- ADR-001 enforcement boundaries (**SUPERSEDED by ADR-005**; boundary substance retained) and ADR-002 target trust design (framing realigned to `nigin-engine`);
+- ADR-003 endpoint/CORS/deployment decision (**SUPERSEDED by ADR-005**; network-security substance retained in `docs/security/*`);
 - falsifiable product-discovery protocol for issue #14;
 - SECURITY.md vulnerability-reporting process;
 - expanded CODEOWNERS coverage for security, workflows, npm policy and evidence

@@ -1,10 +1,26 @@
-# APP-01 `browser` — Master Roadmap v2
+# `browser` — Master Roadmap v2
 
-- Status: ACTIVE / evidence-gated
-- Updated: 2026-07-11
+- Status: ACTIVE / evidence-gated (product reframed 2026-07-14)
+- Updated: 2026-07-14
 - Repository: `marcohost33-maker/browser`
-- Scope: public privacy-first MCP client webapp
-- Explicit exclusion: this is **not** `browser-nigin`
+- Scope: native, offline-capable browser/webapp **runtime program** (executes
+  foreign web apps locally; T1 → T2 → T3; north star **T3**)
+- Explicit exclusion: this is **not** `browser-nigin` (the AI layer) and not
+  `nigin-engine` (the contract core)
+
+> **PRODUCT REFRAME (2026-07-14) — read first.** Per Marco's 2026-07-14 decision,
+> `browser` is a native, offline-capable **runtime program** that runs arbitrary
+> foreign web applications locally (staged T1 → T2 → T3; north star **T3**),
+> replaces cloud hosting and runs without any AI layer, inside the three-layer stack
+> `browser` (runtime) · `nigin-engine` (contract core) · `browser-nigin` (AI layer).
+> The binding reframe record is **ADR-005/006/007** (PR #22) — not duplicated here.
+> Runtime direction for T3: a Chromium engine (CEF/Electron) is favoured for
+> inherited site-isolation and a maintained engine security-patch path over Tauri;
+> the framework decision is deferred to the measured comparison in ADR-006. The
+> "MCP client webapp / remote endpoint" narrative throughout this roadmap is
+> **superseded product framing**; the workstream/gate/evidence *discipline* below
+> stays valid and is being re-pointed at the runtime product. Do not read any
+> milestone below as a claim of implemented runtime behaviour.
 
 ## 1. Production objective
 
@@ -54,10 +70,13 @@ No lower level may be described as a higher one.
 
 Identifiers are unique and immutable:
 
-- **ADR-001** — APP-01 architecture boundary and M1 slice.
-- **ADR-002** — contract artifact signature and provenance.
-- **ADR-003** — endpoint trust model, browser transport and deployment topology (#13).
-- **ADR-004** — framework/build/browser matrix and PWA decision (#7).
+- **ADR-001** — APP-01 architecture boundary and M1 slice. **SUPERSEDED by ADR-005.**
+- **ADR-002** — contract artifact signature and provenance (substance retained; framing realigned to `nigin-engine`).
+- **ADR-003** — endpoint trust model, browser transport and deployment topology (#13). **SUPERSEDED by ADR-005** (network-security substance retained in `docs/security/*`).
+- **ADR-004** — framework/build/browser matrix and PWA decision (#7). *Runtime-framework choice now governed by ADR-006.*
+- **ADR-005** — offline runtime trust classes (T1/T2/T3). **Binding reframe record** (PR #22).
+- **ADR-006** — runtime evaluation protocol (measured runtime-framework comparison; binding runtime-framework decision) (PR #22).
+- **ADR-007** — signed package evaluation gate (PR #22).
 - Later decisions use the next free number; identifiers are never reused.
 
 ## 4. Critical path

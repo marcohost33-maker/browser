@@ -1,10 +1,26 @@
 # ADR-003 — Endpoint Trust, Browser Transport and Deployment
 
-- Status: PROPOSED
+- Status: SUPERSEDED by ADR-005 (offline runtime trust classes)
 - Date: 2026-07-11
+- Superseded: 2026-07-14
 - Scope: APP-01 `browser` M1
 - Owner issue: #13
 - Blocked by: #14 product evidence and representative endpoint spike
+
+> **SUPERSEDED (2026-07-14).** This ADR was drafted (Status: PROPOSED — never
+> ACCEPTED) around the obsolete product framing of `browser` as a browser-based MCP
+> *client* that connects to a curated set of **remote** HTTPS MCP endpoints. Marco's
+> 2026-07-14 decision reframes `browser` into a native, offline-capable runtime that
+> executes arbitrary foreign web apps **locally** (trust-class target **T3**),
+> replacing cloud hosting and running without any AI layer. The binding reframe
+> record is **ADR-005/006/007** (see PR #22). The remote-endpoint-marketplace and
+> direct-browser-transport product model below is therefore obsolete. Its
+> *network-security substance* — egress origin allowlist, exact-origin `connect-src`,
+> separation of endpoint URL vs. canonical origin, redirect/DNS-rebinding/
+> private-network/metadata-service rejection, fail-closed on unapproved origins —
+> remains framing-neutral and applies equally to the network egress of locally
+> hosted apps; that substance is preserved and lives on in `docs/security/*`. Do not
+> treat the "curated remote endpoint" product decision below as current.
 
 ## Context
 

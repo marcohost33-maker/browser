@@ -1,8 +1,17 @@
-# APP-01 Threat Model — M1
+# `browser` Threat Model — M1
 
 - Status: GOOD-DRAFT
 - Date: 2026-07-10
-- Applies to: public MCP-client webapp
+- Applies to: `browser` network/egress and rendering security surface
+
+> **Framing note (2026-07-14).** `browser` is reframed into a native, offline-capable
+> runtime (ADR-005/006/007, PR #22). This threat model is retained because its
+> substance is framing-neutral: the egress origin allowlist, exact-origin
+> `connect-src`, untrusted-content rendering and deny-by-default posture apply
+> whether the target is a remote MCP endpoint or the network egress of a locally
+> hosted app. Read "MCP endpoint/server" below as "an approved network egress
+> target". The reframed runtime adds further trust-class (T1/T2/T3) boundaries
+> governed by ADR-005/006/007.
 
 ## Assets
 

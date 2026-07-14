@@ -1,9 +1,21 @@
-# APP-01 Production Readiness Matrix
+# `browser` Production Readiness Matrix
 
-- Status: ACTIVE
-- Updated: 2026-07-12
+- Status: ACTIVE (product reframed 2026-07-14)
+- Updated: 2026-07-14
 - Scope: `marcohost33-maker/browser`
 - Current evidence branch: Draft PR #17
+
+> **PRODUCT REFRAME (2026-07-14).** `browser` is reframed into a native,
+> offline-capable browser/webapp runtime that runs foreign web apps locally (staged
+> T1 → T2 → T3; north star **T3**). Binding record: ADR-005/006/007 (PR #22). The
+> gate structure and evidence discipline below (G0–G9, status vocabulary,
+> exact-candidate evidence rule) is framing-neutral and retained. Rows that name
+> "MCP contract / remote endpoint" (esp. G2 END-*/AUTH-* and G3 MCP-*) describe the
+> superseded product framing; the runtime product adds trust-class isolation,
+> per-app data domain, capability broker, navigation/download/external-protocol
+> policy and a runtime security-patch SLA as new gate requirements to be defined
+> against ADR-005/006/007. The current conclusion (**NOT PRODUCTION-READY**) is
+> unchanged and, if anything, stronger: no runtime exists under either framing.
 
 ## Status vocabulary
 

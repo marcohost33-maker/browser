@@ -1,9 +1,20 @@
-# APP-01 M1 Product Discovery Protocol
+# `browser` M1 Product Discovery Protocol
 
-- Status: READY FOR EXECUTION
-- Date: 2026-07-11
+- Status: READY FOR EXECUTION — persona/task scope to be re-based on the runtime product
+- Date: 2026-07-14
 - Owner issue: #14
-- Decision supported: go, pivot or stop for the first public browser slice
+- Decision supported: go, pivot or stop for the first `browser` runtime slice
+
+> **PRODUCT REFRAME (2026-07-14).** `browser` is reframed into a native,
+> offline-capable browser/webapp runtime that runs foreign web apps locally (staged
+> T1 → T2 → T3; north star **T3**), not a public MCP-client webapp. Binding record:
+> ADR-005/006/007 (PR #22). The empirical discovery *method* below (pre-registered
+> falsifiable hypothesis, 5–8 sessions, comprehension checks, contradictory
+> evidence, go/pivot/stop record) is retained and framing-neutral. The candidate
+> personas, tasks and consent questions phrased around "remote MCP endpoint /
+> operator" are superseded and must be re-based on the runtime product (which app
+> package is installed, its trust class T1/T2/T3, its local data domain and its
+> network egress) before the protocol is executed.
 
 ## Purpose
 
