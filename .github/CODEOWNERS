@@ -1,0 +1,18 @@
+# Default owner
+* @marcohost33-maker
+
+# Security-critical implementation, tests and policy
+/src/security/ @marcohost33-maker
+/tests/security/ @marcohost33-maker
+/docs/security/ @marcohost33-maker
+/scripts/ @marcohost33-maker
+
+# Architecture, contracts, build and release gates
+/docs/adr/ @marcohost33-maker
+/contracts/ @marcohost33-maker
+/.github/workflows/ @marcohost33-maker
+/.github/dependabot.yml @marcohost33-maker
+/.npmrc @marcohost33-maker
+/SECURITY.md @marcohost33-maker
+/package.json @marcohost33-maker
+/package-lock.json @marcohost33-maker

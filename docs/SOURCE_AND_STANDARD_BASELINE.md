@@ -1,110 +1,161 @@
 # Source and Standards Baseline
 
-- Status: WORKING
-- Date: 2026-07-10
+- Status: ACTIVE WORKING BASELINE (product reframed 2026-07-14)
+- Updated: 2026-07-14
+- Repository: `marcohost33-maker/browser`
+- Source verification date: 2026-07-11 UTC
+
+> **Framing note (2026-07-14).** `browser` is reframed into a native, offline-capable
+> browser/webapp runtime program (ADR-005/006/007, PR #22). The source-hierarchy and
+> traceability discipline below is framing-neutral and retained. Constraints phrased
+> around a "static SPA / public browser client consuming remote MCP endpoints"
+> reflect the superseded architecture; the runtime product's architecture and its
+> runtime-framework choice are governed by ADR-005/006 (no framework accepted yet).
+> Read those lines as historical baseline, not current architecture.
 
 ## Purpose
 
-Prevent roadmap, architecture and security claims from relying on secondary summaries, stale versions or unreviewed research. This file defines the source hierarchy and the minimum primary-source set for APP-01.
+Prevent roadmap, architecture and security claims from relying on secondary summaries, stale versions or unreviewed research. Normative requirements must be traceable to a versioned primary source or reproducible project evidence.
 
 ## Source hierarchy
 
-1. Normative specifications and RFCs
-2. Official implementation/security guidance from the specification owner
-3. Accepted project ADRs and pinned ENG-01 contract artifacts
-4. Reproducible test evidence and release artifacts
-5. Official standards implementation guidance
-6. Peer-reviewed or preprint research, treated as advisory until reproduced or mapped to a concrete control
-7. Blogs, media, encyclopedias and vendor commentary, used only for discovery, never as sole evidence for a production requirement
+1. Normative specifications and RFCs.
+2. Official security and implementation guidance from the specification owner.
+3. Accepted APP-01 ADRs and the pinned external contract artifact.
+4. Reproducible tests, CI logs and release artifacts.
+5. Official standards implementation guidance.
+6. Peer-reviewed or preprint research, treated as advisory until reproduced or mapped to a concrete APP-01 control.
+7. Blogs, media, encyclopedias and vendor commentary, used only for discovery and never as sole production evidence.
 
-## Required primary-source families
+## Locked primary-source register
 
-### MCP
+### Model Context Protocol
 
-- Official MCP specification revision selected by ENG-01
-- Official MCP security best practices
-- Official authorization specification when OAuth is enabled
-- Official transport and lifecycle requirements
-- Official tool/resource/prompt semantics used by the selected slice
+- Current published MCP protocol revision re-verified on 2026-07-11 UTC: `2025-11-25`.
+- Versioning: `https://modelcontextprotocol.io/docs/learn/versioning`
+- Specification: `https://modelcontextprotocol.io/specification/2025-11-25`
+- Security best practices: `https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices`
+- Authorization: use the authorization section belonging to the protocol revision selected by the contract owner.
 
-Rules:
+Project rules:
 
-- Record exact protocol revision and retrieval date.
-- Do not copy future or experimental requirements into the production profile without an ADR.
-- Capability metadata and annotations remain untrusted input even when protocol-valid.
-- Reject unsupported security-critical semantics; do not reject harmless extension fields merely because they are unknown.
+- The current upstream revision is a research reference, not an automatic runtime upgrade.
+- APP-01 implements only the revision explicitly pinned by its accepted contract/compatibility ADR.
+- Client and server must negotiate one compatible revision during initialization.
+- User consent, data privacy and tool safety remain explicit host/client responsibilities.
+- Tool descriptions, annotations, resource content and remote URLs are untrusted input even when protocol-valid.
+- Token passthrough is forbidden; sessions are not authentication.
+- Authorization and approved remote endpoint URLs require HTTPS in production.
+- Plain HTTP is restricted to explicit `localhost`, `127.0.0.1` or `::1` development origins.
+- Unknown mandatory or security-relevant semantics fail closed. Harmless extensions follow the documented compatibility policy.
+
+### OAuth and browser authorization
+
+- OAuth 2.0 Security Best Current Practice: RFC 9700, January 2025.
+  - `https://www.rfc-editor.org/rfc/rfc9700`
+- Proof Key for Code Exchange: RFC 7636.
+  - `https://www.rfc-editor.org/rfc/rfc7636`
+
+Project rules when OAuth is enabled:
+
+- Authorization Code flow with PKCE for a public browser client.
+- Exact redirect URI matching; no wildcards.
+- State/issuer validation and protection against mix-up and code injection.
+- Audience-restricted access tokens; no token passthrough.
+- No access tokens in URLs, browser history, logs or persistent web storage.
+- Memory-only storage reduces persistence exposure but does not protect against XSS or compromised dependencies.
+- A backend-for-frontend is a separate architecture option, not an implicit assumption.
 
 ### Web platform security
 
-- CSP specification and MDN/W3C-compatible implementation guidance
-- Fetch, CORS and browser storage behavior relevant to the chosen topology
-- OAuth 2.0 Security Best Current Practice and PKCE requirements when authorization is enabled
-- OWASP ASVS/client-side guidance as a control checklist, not a replacement for protocol-specific analysis
+Primary sources and implementation references:
 
-Rules:
+- Permissions Policy Editor's Draft, retrieved 2026-07-11 UTC:
+  - `https://w3c.github.io/webappsec-permissions-policy/`
+- MDN Permissions-Policy reference:
+  - `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy`
+- OWASP HTTP Headers Cheat Sheet:
+  - `https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html`
+- GitHub Actions secure-use guidance:
+  - `https://docs.github.com/en/actions/reference/security/secure-use`
 
-- A static SPA cannot assume arbitrary remote MCP endpoints are reachable: CORS, credentials, redirects and CSP are architectural constraints.
-- `connect-src` policy must follow the endpoint model; it cannot be finalized before that decision.
-- Memory-only tokens reduce persistence risk but do not mitigate XSS or malicious dependencies.
+Status rule:
+
+- The Permissions Policy Editor's Draft is work in progress and is used for current grammar and processing behavior, not as a claim of stable W3C Recommendation status.
+
+Project rules:
+
+- A static SPA cannot assume arbitrary remote MCP endpoints are reachable; CORS, credentials, redirects and CSP are architecture constraints.
+- `connect-src` follows the approved endpoint model and must not be widened to `*`, `https:` or `http:`.
+- Approved origins use canonical exact-origin serialization; HTTPS is mandatory except for explicit loopback development origins.
+- Permissions-Policy feature identifiers are emitted and validated as exact lowercase tokens. Unknown or differently cased dictionary members may be ignored by user agents and therefore cannot satisfy required disablement controls.
+- Required powerful features are explicitly disabled with the canonical empty inner list `()`.
+- CSP is defense in depth, not a substitute for safe rendering, input validation or authorization.
+- Security headers are generated from a machine-readable baseline and must fail CI on unsafe structural, casing, duplicate-name or value-level changes.
+- HSTS requires a valid `max-age` at or above the project floor and `includeSubDomains`; preload remains an explicit deployment commitment.
 
 ### Accessibility
 
-- W3C WCAG 2.2 Recommendation
-- WAI-ARIA Authoring Practices only where native HTML cannot provide the needed semantics
+- W3C Web Content Accessibility Guidelines 2.2 Recommendation:
+  - `https://www.w3.org/TR/WCAG22/`
+- WAI-ARIA Authoring Practices are used only when native HTML cannot provide the required semantics.
 
-Rules:
+Project rules:
 
-- Automated scanners are partial evidence.
+- Automated scanners provide partial evidence only.
 - Manual keyboard, focus, zoom/reflow and assistive-technology tests are required for the critical flow.
-- Do not claim WCAG conformance without a complete scoped conformance evaluation.
+- APP-01 must not claim full WCAG conformance without a complete, scoped conformance evaluation.
 
 ### Secure development and supply chain
 
-- NIST SP 800-218 SSDF
-- SLSA provenance requirements
-- SPDX or CycloneDX specifications for SBOM format
-- GitHub official security-hardening guidance for Actions used by the repository
+- NIST SP 800-218, Secure Software Development Framework 1.1:
+  - `https://csrc.nist.gov/pubs/sp/800/218/final`
+- SLSA Provenance specification 1.2:
+  - `https://slsa.dev/spec/v1.2/provenance`
+- SBOM format: an explicitly selected SPDX or CycloneDX version, pinned in the release ADR.
 
-Rules:
+Project rules:
 
 - SBOM existence is not equivalent to completeness or release integrity.
 - Provenance, pinned dependencies/actions, vulnerability response and reproducible verification are separate controls.
-- CI evidence must identify tool versions, environment and artifact digest.
+- CI evidence records tool versions, runtime, source commit and artifact digest.
+- Public GitHub Actions are pinned to immutable commit SHAs where practical and run with minimum permissions.
 
 ## Research use
 
-Research papers may identify new threats or candidate controls. Before a paper-derived control becomes mandatory:
+Before a paper-derived control becomes mandatory:
 
-1. State the paper's claim and limitations.
-2. Verify whether the threat applies to APP-01's selected architecture.
-3. Reproduce a minimal attack or test vector when feasible.
-4. Map the result to a requirement, control and acceptance test.
-5. Mark unresolved findings as research risk, not established fact.
+1. State the claim, architecture assumptions and limitations.
+2. Verify whether the threat applies to APP-01's chosen endpoint and deployment model.
+3. Reproduce a minimal attack or negative test when feasible.
+4. Map the result to a requirement, control, test and evidence artifact.
+5. Mark unresolved findings as research risk rather than established protocol fact.
 
 ## Citation and freshness policy
 
-Every normative requirement in an ADR or security profile must include:
+Every normative requirement in an ADR, security profile or release gate records:
 
-- source title;
+- source title and URL;
 - exact version/revision;
-- publication or revision date;
-- retrieval date;
-- affected requirement IDs;
+- publication/revision date;
+- retrieval date and timezone;
+- affected requirement or risk IDs;
 - supersession review trigger.
 
 Review triggers:
 
-- MCP revision change;
-- ENG-01 contract release;
-- OAuth or endpoint-model change;
-- browser-support change;
-- major dependency/toolchain upgrade;
-- public-release preparation.
+- MCP revision or selected contract version changes;
+- endpoint/deployment/OAuth model changes;
+- Permissions Policy grammar, feature registry or supported browser behavior changes;
+- supported browser matrix changes;
+- major runtime, dependency or CI-tool upgrade;
+- public-release preparation;
+- newly disclosed vulnerability affecting a selected component.
 
-## Corrections to prior analysis
+## Corrections retained from prior reviews
 
-- Secondary Wikipedia summaries are removed as authoritative support for WCAG or CSP.
-- Unreproduced MCP security papers remain useful threat-discovery inputs, not normative protocol facts.
-- "Fail closed on unknown fields" is narrowed to unknown mandatory or security-relevant semantics; forward-compatible extensions require deliberate schema policy.
-- "Memory-only credentials" is classified as one control, not a complete browser authorization design.
-- "Production-ready" remains prohibited until implementation, verification, deployment and operational gates pass.
+- Secondary summaries are not authoritative support for WCAG, CSP, OAuth or MCP requirements.
+- Unreproduced MCP security papers are threat-discovery inputs, not normative facts.
+- Fail-closed applies to unsupported mandatory/security-relevant semantics, not every harmless extension field.
+- Memory-only credentials are one control, not a complete browser authorization design.
+- Production-ready remains prohibited until implementation, verification, deployment, rollback and operational gates pass.

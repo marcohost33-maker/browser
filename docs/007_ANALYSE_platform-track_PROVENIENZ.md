@@ -8,7 +8,8 @@
 > **ACHTUNG — Zuordnung:** Diese Analyse (cwzl 2026-07-10-001) betrifft den
 > **ENGINE-/PLATTFORM-Track** (Wasmtime-Host / WIT / offline-core), der laut
 > Verosystem-Landkarte v0.2 zu **nigin-engine (ENG-01)** gehoert, **NICHT** zu
-> **APP-01 `browser`** (oeffentliche MCP-Client-Webapp).
+> **APP-01 `browser`** (natives, offline-faehiges Browser-/Webapp-Runtime-Programm;
+> reframed 2026-07-14, ADR-005/006/007).
 >
 > Sie ist hier **ausschliesslich als Provenienz** abgelegt, weil das cwzl-Doc unter
 > dem Namen "browser-repo" gefuehrt wurde (Namenskollision, Landkarte R4). Der Inhalt

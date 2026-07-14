@@ -1,13 +1,7 @@
-# security-ci — enforce the CSP + security-header profile (M1B).
+# security-ci — enforce the APP-01 static security foundation.
 #
-# Turns docs/security/csp-baseline.json from "specified" into "enforced":
-#   1. connect-src exfil-boundary gate (build fails on */https:/http:/non-allowlisted origin)
-#   2. serializer + header-served integration tests (node --test, zero deps)
-#
-# Hardening mirrors docs-ci.yml: top-level empty permissions (least privilege;
-# each job opts in), SHA-pinned public actions, persist-credentials: false,
-# pinned tool version (Node 22, local<->CI parity). Inline on purpose (a
-# private coworkerz-ci reusable breaks under the default GITHUB_TOKEN).
+# Evidence is bound to both the source head and the actual checkout SHA. For
+# pull_request events the latter is GitHub's ephemeral merge commit.
 name: security-ci
 
 on:
@@ -18,20 +12,157 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: security-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   csp-enforcement:
-    name: CSP connect-src gate + header tests
-    runs-on: ubuntu-latest
+    name: hardened policy gate + security tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
+    env:
+      CI: "true"
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      TESTED_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
-          node-version: "22"
-      - name: connect-src exfil-boundary gate (fails on wildcard/scheme/non-allowlisted origin)
-        run: node src/security/serialize-cli.js --check
-      - name: serializer + header-served integration tests
+          node-version: "22.23.1"
+          cache: npm
+      - name: verify exact Node, npm, registry and lifecycle policy
+        run: npm run toolchain:check
+      - name: verify frozen lockfile invariants
+        run: npm run lockfile:check
+      - name: deterministic install with lifecycle scripts disabled
+        run: npm ci --ignore-scripts --audit=false --fund=false
+      - name: dependency vulnerability gate and snapshot
+        id: audit
+        run: npm run audit:ci
+      - name: preserve dependency audit snapshot even when the gate fails
+        if: ${{ !cancelled() && steps.audit.conclusion != 'skipped' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: app-01-dependency-audit-${{ env.SOURCE_SHA }}
+          path: npm-audit.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: CSP, endpoint and security-header fail-closed gate
+        run: npm run csp:check
+      - name: serializer, served-header and regression tests
         run: npm test
+      - name: generate SPDX SBOM and evidence manifest
+        run: |
+          set -euo pipefail
+          npm sbom --sbom-format=spdx > sbom.spdx.json
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { createHash } = require('node:crypto');
+          const { readFileSync, writeFileSync } = require('node:fs');
+
+          const hash = (path) => {
+            const bytes = readFileSync(path);
+            return {
+              path,
+              bytes,
+              sha256: createHash('sha256').update(bytes).digest('hex'),
+            };
+          };
+
+          const sbomFile = hash('sbom.spdx.json');
+          const auditFile = hash('npm-audit.json');
+          const packageFile = hash('package.json');
+          const lockFile = hash('package-lock.json');
+          const npmrcFile = hash('.npmrc');
+          const sbom = JSON.parse(sbomFile.bytes.toString('utf8'));
+          const audit = JSON.parse(auditFile.bytes.toString('utf8'));
+          const vulnerabilities = audit.metadata?.vulnerabilities;
+
+          const evidence = {
+            schema_version: '1.2',
+            repository: process.env.GITHUB_REPOSITORY,
+            event_name: process.env.GITHUB_EVENT_NAME,
+            source_sha: process.env.SOURCE_SHA,
+            tested_sha: process.env.TESTED_SHA,
+            workflow: process.env.GITHUB_WORKFLOW,
+            run_id: process.env.GITHUB_RUN_ID,
+            run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+            generated_at: new Date().toISOString(),
+            runner: {
+              os: process.env.RUNNER_OS,
+              arch: process.env.RUNNER_ARCH,
+              image_os: process.env.ImageOS || null,
+              image_version: process.env.ImageVersion || null,
+              kernel: execFileSync('uname', ['-srmo'], { encoding: 'utf8' }).trim(),
+              git: execFileSync('git', ['--version'], { encoding: 'utf8' }).trim(),
+            },
+            tools: {
+              node: process.version,
+              npm: execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(),
+              registry: execFileSync('npm', ['config', 'get', 'registry'], { encoding: 'utf8' }).trim(),
+            },
+            inputs: {
+              package_json_sha256: packageFile.sha256,
+              package_lock_sha256: lockFile.sha256,
+              npmrc_sha256: npmrcFile.sha256,
+            },
+            audit: {
+              path: auditFile.path,
+              sha256: auditFile.sha256,
+              report_version: audit.auditReportVersion,
+              vulnerabilities,
+            },
+            sbom: {
+              path: sbomFile.path,
+              sha256: sbomFile.sha256,
+              spdx_version: sbom.spdxVersion,
+              document_name: sbom.name,
+              package_count: Array.isArray(sbom.packages) ? sbom.packages.length : null,
+            },
+          };
+
+          if (!evidence.source_sha || !evidence.tested_sha) {
+            throw new Error('source/tested commit identity is missing');
+          }
+          if (evidence.tools.node !== 'v22.23.1' || evidence.tools.npm !== '10.9.8') {
+            throw new Error(`unexpected evidence toolchain: ${JSON.stringify(evidence.tools)}`);
+          }
+          if (evidence.tools.registry !== 'https://registry.npmjs.org/') {
+            throw new Error(`unexpected npm registry: ${evidence.tools.registry}`);
+          }
+          if (evidence.runner.os !== 'Linux' || evidence.runner.arch !== 'X64') {
+            throw new Error(`unexpected runner platform: ${JSON.stringify(evidence.runner)}`);
+          }
+          if (audit.auditReportVersion !== 2 || !vulnerabilities) {
+            throw new Error('npm audit snapshot is missing expected schema metadata');
+          }
+          if ((vulnerabilities.high ?? 0) > 0 || (vulnerabilities.critical ?? 0) > 0) {
+            throw new Error(`high/critical vulnerabilities present: ${JSON.stringify(vulnerabilities)}`);
+          }
+          if (evidence.sbom.spdx_version !== 'SPDX-2.3') {
+            throw new Error(`unexpected SPDX version: ${evidence.sbom.spdx_version}`);
+          }
+          if (!Number.isInteger(evidence.sbom.package_count) || evidence.sbom.package_count < 1) {
+            throw new Error('SBOM package inventory is empty or malformed');
+          }
+
+          for (const file of [sbomFile, auditFile, packageFile, lockFile, npmrcFile]) {
+            delete file.bytes;
+          }
+          writeFileSync('security-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`);
+          NODE
+      - name: upload immutable security evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: app-01-security-evidence-${{ env.SOURCE_SHA }}
+          path: |
+            npm-audit.json
+            sbom.spdx.json
+            security-evidence.json
+          if-no-files-found: error
+          retention-days: 90
