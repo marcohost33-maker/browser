@@ -5,7 +5,12 @@
 - Intended product scope: native, offline-capable browser/webapp **runtime program**
   (runs foreign web apps locally; staged T1 → T2 → T3; north star **T3**) — reframed
   2026-07-14 (ADR-005/006/007, PR #22)
-- Current change set: Draft PR #17
+- Trust-scope decision: **DECIDED T3 (staged)** — Marco G1 (2026-07-14): T1 → T2 → T3
+  maturation with T3 (arbitrary foreign content) as the target state. **ADR-005 ACCEPTED**;
+  ADR-006 (runtime) and ADR-007 (package) remain PROPOSED pending measured spikes. For the
+  T3 target the APP-01 runtime shortlist is Chromium-based (Electron/CEF) with a shippable
+  engine security-patch path as a hard cut criterion. First shipping increment is T1.
+- Change set merged: PR #17 (static security/evidence foundation) + PR #22 (reframe trust-class ADRs)
 - Overall state: static security/governance/evidence foundation; **no runtime
   implemented** (neither the prior MCP-client webapp nor the reframed runtime)
 
