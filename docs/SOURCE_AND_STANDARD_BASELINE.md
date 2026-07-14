@@ -1,9 +1,17 @@
 # Source and Standards Baseline
 
-- Status: ACTIVE WORKING BASELINE
-- Updated: 2026-07-11
+- Status: ACTIVE WORKING BASELINE (product reframed 2026-07-14)
+- Updated: 2026-07-14
 - Repository: `marcohost33-maker/browser`
 - Source verification date: 2026-07-11 UTC
+
+> **Framing note (2026-07-14).** `browser` is reframed into a native, offline-capable
+> browser/webapp runtime program (ADR-005/006/007, PR #22). The source-hierarchy and
+> traceability discipline below is framing-neutral and retained. Constraints phrased
+> around a "static SPA / public browser client consuming remote MCP endpoints"
+> reflect the superseded architecture; the runtime product's architecture and its
+> runtime-framework choice are governed by ADR-005/006 (no framework accepted yet).
+> Read those lines as historical baseline, not current architecture.
 
 ## Purpose
 

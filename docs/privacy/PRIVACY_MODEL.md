@@ -1,11 +1,18 @@
-# APP-01 Privacy Model — M1
+# `browser` Privacy Model — M1
 
-- Status: GOOD-DRAFT
+- Status: GOOD-DRAFT (product reframed 2026-07-14)
 - Date: 2026-07-10
+
+> **Framing note (2026-07-14).** `browser` is reframed into a native, offline-capable
+> runtime (ADR-005/006/007, PR #22). This privacy model is framing-neutral and
+> retained: data minimization, local transparency, no default telemetry and
+> egress-before-transmission disclosure apply whether the target is a remote endpoint
+> or the network egress of a locally hosted app. Read "endpoint" below as "network
+> egress target".
 
 ## Default posture
 
-Data minimization, local transparency and no telemetry by default. APP-01 must show what endpoint receives which data before transmission.
+Data minimization, local transparency and no telemetry by default. `browser` must show what network egress target receives which data before transmission.
 
 ## Data classes
 
