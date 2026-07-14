@@ -1,91 +1,153 @@
 # APP-01 CSP and Security-Header Profile — M1
 
-- Status: GOOD-DRAFT (specification). Build/CI enforcement landed in M1B (#10):
-  serializer + `connect-src` negative test + header-served integration test,
-  wired as the `security-ci` gate. **Runtime-blocked residue** (see #11 / M1C):
-  the dynamic per-endpoint `connect-src` injection and the UI↔policy sync depend
-  on the not-yet-existing MCP client runtime and are intentionally out of scope
-  here — the static/baseline-driven boundary is enforced now.
-- Date: 2026-07-10
-- Applies to: public MCP-client webapp (APP-01)
-- Machine-readable baseline: [`csp-baseline.json`](./csp-baseline.json)
+- Status: ENFORCED STATIC FOUNDATION / RUNTIME AND EDGE EVIDENCE OPEN
+- Updated: 2026-07-12
+- Scope: `browser`
+- Runtime egress synchronization: the exact-origin allowlist applies to any
+  approved network egress target (remote endpoint or a locally hosted app's egress);
+  runtime binding follows the reframed runtime design (ADR-005/006/007, PR #22 —
+  ADR-003 superseded)
+- Emitted-value source: [`csp-baseline.json`](./csp-baseline.json)
 
-## Why `connect-src` is the crown-jewel control here
+## Security objective and maturity boundary
 
-APP-01 handles prompts, resources, tool arguments and results, plus
-authorization material. The single highest-value exfiltration control for a
-browser MCP client is the CSP `connect-src` directive: it governs every
-outbound request channel a script can use — `fetch()`, `XMLHttpRequest`,
-`WebSocket`, `EventSource`, `<a ping>`, and `navigator.sendBeacon()`
-([content-security-policy.com/connect-src](https://content-security-policy.com/connect-src/),
-confidence: high; corroborated by
-[MDN CSP reference](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy)).
+The M1 foundation constrains document, script, resource, permission and network
+surfaces before application runtime exists. The committed baseline is validated
+fail closed, serialized, tested through a Node response boundary and checked in
+CI.
 
-Consequence: even if an attacker achieves script execution (XSS, or injected
-instructions rendered from untrusted MCP content), a correctly pinned
-`connect-src` prevents that script from shipping stolen credentials or content
-to an attacker-controlled origin. It is the enforcement backstop behind the
-ASI02 endpoint allowlist and the SSRF controls in the threat model.
+This is **not** proof of deployed enforcement or production readiness. A CDN,
+reverse proxy, application middleware, service worker or hosting platform can
+still remove, combine or replace headers after the in-process check. Staging and
+production responses therefore require independent browser/edge evidence.
 
-## Core rule: `connect-src` is pinned to the approved-endpoint set
+CSP and browser headers are defense in depth. They do not replace runtime schema
+validation, safe rendering, authorization, dependency integrity, SSRF controls,
+privacy tests or correct server-side policy.
 
-`connect-src` MUST enumerate exactly the origins APP-01 is permitted to reach:
-`'self'` plus the specific, approved MCP endpoint origin(s). It MUST NOT use
-`*`, `https:`, `data:`, `blob:` or any scheme-wildcard. An explicit
-per-origin allowlist — not a permissive pattern — is what makes the directive
-an exfiltration boundary
-([OWASP CSP Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html),
-confidence: high).
+## Policy data versus policy contract
 
-### The static-SPA tension (stated honestly)
+There is one source of **emitted values**:
+`docs/security/csp-baseline.json`. No application or deployment file may maintain
+another CSP string.
 
-A CSP delivered with the document cannot be *loosened* at runtime: additional
-policies only ever intersect (tighten), never widen
-([MDN CSP: multiple policies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy),
-confidence: high). A purely static SPA therefore cannot inject a
-user-typed endpoint origin into its own served `connect-src` after load.
-Three admissible resolutions, in order of preference:
+`src/security/header-values.js` is deliberately independent contract code, not a
+second emitted policy. It encodes the reviewed M1 invariants so a data-only edit
+cannot silently widen the baseline. A legitimate policy change must update, in
+one reviewed change:
 
-1. **Same-origin proxy** — all MCP traffic flows through a same-origin
-   backend; `connect-src` stays `'self'`. (Out of M1 scope: ADR-001 defers
-   server-side proxying; listed here as the strongest long-term option.)
-2. **Curated allowlist compiled into the deployed policy** — a vetted set of
-   MCP endpoint origins is baked into the served CSP at build/deploy time
-   (see the ASI02 allowlist mechanic in the threat model). User selection is
-   restricted to this set.
-3. **Per-deployment policy generation** — the operator regenerates the CSP
-   for their own endpoint set at deploy time from `csp-baseline.json`.
+1. the machine-readable baseline;
+2. the independent contract;
+3. positive and negative tests;
+4. this rationale and the applicable ADR/risk record.
 
-Forbidden non-resolution: widening `connect-src` to `https:` or `*` to
-"support any endpoint". That converts the crown-jewel control into a no-op.
+The validator also checks the baseline's top-level metadata and
+`connect_src_policy` object. Unknown keys, malformed versions/dates or drifted
+policy metadata fail closed instead of becoming unaudited prose beside the real
+controls.
 
-### Fail-closed coupling with the UI
+Application code uses `buildHardenedHeaderMap()` or
+`applyHardenedSecurityHeaders()`, never the low-level serializer or map builder
+directly. A source-level regression gate rejects future imports of the raw
+primitives outside the security implementation and CLI.
 
-The served `connect-src` allowlist is the single source of truth. If a user
-approves an endpoint in the UI whose origin is **not** in the served policy,
-the connection MUST fail closed with a visible error — never a silent widening
-of the exfiltration surface. UI approval state and CSP allowlist are kept in
-sync by construction, not by hope.
+## Network boundary
 
-## Full baseline header set (M1, before any endpoint is approved)
+`connect-src` is the browser-side exfiltration backstop. The baseline is
+`'self'` only. A deployment may append only canonical origins from a reviewed
+set.
 
-The baseline below assumes a same-origin-only application shell with no
-approved remote MCP endpoint yet. Approving an endpoint adds *only* that
-origin to `connect-src` (via one of the three resolutions above).
+The M1 static gate rejects:
 
-| Header | Baseline value | Purpose |
+- wildcards and scheme-wide sources;
+- paths, queries, fragments, user information and trailing-dot hostnames;
+- remote plaintext HTTP;
+- non-public/reserved IPv4, IPv6 and IPv4-mapped IPv6 literals;
+- localhost names outside the explicit development profile;
+- alternative noncanonical numeric IP spellings;
+- duplicates and origins not present in the deployment approval set;
+- runtime widening from user input.
+
+Plain HTTP is restricted to explicit `localhost`, `127.0.0.1` and `::1`
+development origins. The full MCP endpoint URL, redirects, DNS resolution,
+private-network transitions, CORS and authorization remain separate ADR-003
+runtime obligations. Static string validation cannot prevent DNS rebinding or a
+public hostname resolving to a private address.
+
+## Static-SPA constraint
+
+A CSP delivered with the document cannot be loosened by application code. M1
+therefore permits only:
+
+1. a same-origin gateway with `connect-src 'self'`;
+2. a curated origin set compiled into deployment policy;
+3. per-deployment generation from the validated baseline.
+
+Supporting arbitrary remote origins by changing the policy to `https:` or `*`
+is prohibited.
+
+## Provisional capability budget
+
+The current pre-runtime baseline still provisionally allows several same-origin
+surfaces: form submission, `data:` images, fonts, a web-app manifest and workers.
+Their presence is **not** evidence that the product needs them and must not be
+copied into a release unchanged by default.
+
+ADR-004 must evaluate each capability separately and apply a
+**remove-unless-proven** rule:
+
+| Capability | Current token | Required evidence before release |
 |---|---|---|
-| `Content-Security-Policy` | see `csp-baseline.json` | XSS + exfiltration boundary |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | HTTPS pinning |
-| `X-Content-Type-Options` | `nosniff` | MIME-sniffing defense |
-| `Referrer-Policy` | `no-referrer` | prevent endpoint/URL leakage |
-| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()` | disable unused powerful features |
-| `Cross-Origin-Opener-Policy` | `same-origin` | process isolation |
-| `Cross-Origin-Embedder-Policy` | `require-corp` | isolation / Spectre defense |
-| `Cross-Origin-Resource-Policy` | `same-origin` | limit cross-origin embedding |
-| `X-Frame-Options` | `DENY` | clickjacking (legacy backstop to `frame-ancestors`) |
+| Forms | `form-action 'self'` | The chosen top task requires native form navigation rather than controlled `fetch` |
+| Inline image data | `img-src 'self' data:` | Measured asset need and hostile SVG/data-URL tests |
+| Fonts | `font-src 'self'` | Self-hosted font requirement, licensing and performance evidence |
+| Manifest | `manifest-src 'self'` | Explicit installability/PWA product decision |
+| Workers/service workers | `worker-src 'self'` | Explicit worker/PWA decision, cache/update/rollback and offline-threat analysis |
 
-The CSP itself (baseline) is:
+If evidence is absent, the directive must be changed to `'none'` or the source
+removed before the first application release. Service workers receive particular
+scrutiny because they can persist beyond a page load and mediate later requests.
+
+## Enforced header profile
+
+| Header | M1 value or rule |
+|---|---|
+| `Content-Security-Policy` | Generated from `directives` only; exact M1 contract |
+| `Strict-Transport-Security` | Exactly `max-age=63072000; includeSubDomains`; `preload` forbidden |
+| `X-Content-Type-Options` | Exactly `nosniff` |
+| `Referrer-Policy` | Exactly `no-referrer` |
+| `Permissions-Policy` | Exact reviewed feature set, canonical order, each value `()` |
+| `Cross-Origin-Opener-Policy` | Exactly `same-origin` |
+| `Cross-Origin-Embedder-Policy` | Exactly `require-corp` |
+| `Cross-Origin-Resource-Policy` | Exactly `same-origin` |
+| `X-Frame-Options` | Exactly `DENY` |
+
+The exact Privacy and HSTS values are contract values, not merely lower bounds.
+For example, changing `no-referrer` to `strict-origin-when-cross-origin`, or
+reducing HSTS from two years to one year, now requires a reviewed policy change
+rather than passing as "still reasonably safe".
+
+## Forbidden final-response headers
+
+The final in-process response gate rejects additional headers that reverse M1
+trust directions, create state, emit sensitive browser reports or expose
+implementation details. This includes:
+
+- every `Access-Control-*` response header;
+- `Content-Security-Policy-Report-Only`;
+- `Report-To`, `Reporting-Endpoints` and `NEL`;
+- `Timing-Allow-Origin`;
+- `Set-Cookie` and `Set-Cookie2`;
+- `Server` and `X-Powered-By`.
+
+CSP and network-error reports can contain request and violation context and cause
+the browser to transmit data to configured reporting endpoints. Reporting is
+therefore a separate, privacy-reviewed operational feature, not an arbitrary
+extra header. Likewise, outbound MCP target origins and inbound application
+CORS permissions are opposite trust directions. MCP endpoint CORS belongs to
+the server compatibility profile in ADR-003.
+
+The baseline CSP is:
 
 ```text
 default-src 'none';
@@ -104,66 +166,132 @@ require-trusted-types-for 'script';
 upgrade-insecure-requests
 ```
 
-Notes:
+## Permissions-Policy limitation
 
-- No `unsafe-eval`, no `unsafe-inline` (ADR-001 release blocker). Any inline
-  need uses a per-response nonce, not `unsafe-inline`.
-- `require-trusted-types-for 'script'` hardens DOM-XSS sinks — appropriate
-  because APP-01 renders untrusted MCP result content.
-- `connect-src 'self'` is the baseline; **only** an approved endpoint origin
-  is appended, and nothing else.
+The header disables a curated set of powerful features, including capture,
+credentials, hardware, local-network, storage-access and XR surfaces. The
+validator requires exact lowercase feature names, exactly one declaration per
+feature, no unreviewed extras, an empty allowlist `()` and the canonical reviewed
+serialization.
 
-## Executable artifact
+This is not a universal browser capability sandbox. Permissions Policy has
+uneven and evolving browser support; unsupported directives may be ignored.
+ADR-004 must therefore verify behavior in every supported browser, and runtime
+code must not request or depend on capabilities outside the accepted product
+scope.
 
-`csp-baseline.json` is a machine-readable directive→sources map. A build/CI
-step (M1B) will serialize it into the header string above and a test will
-assert: (a) no forbidden token (`*`, `https:`, `http:`, `unsafe-eval`,
-`unsafe-inline`) appears in `connect-src`/`script-src`; (b) `connect-src`
-contains only `'self'` plus origins present in the approved-endpoint set. That
-test is the executable form of the rules in this document.
+## HSTS and preload
 
-**Enforced (M1B, #10):**
+M1 sends exactly two years of `max-age` with `includeSubDomains`. This affects
+every HTTPS subdomain once cached and therefore still requires domain inventory
+and rollback planning.
 
-- Serializer: [`src/security/csp.js`](../../src/security/csp.js) emits the served
-  header set from `csp-baseline.json` (single source of truth — no second CSP
-  definition). CLI: `node src/security/serialize-cli.js [--json|--check]`.
-- `connect-src` negative test + header-served integration test:
-  [`tests/security/`](../../tests/security/) (`npm test`, zero deps —
-  Node's built-in `node --test`).
-- CI gate: [`.github/workflows/security-ci.yml`](../../.github/workflows/security-ci.yml)
-  runs the `connect-src` gate (`--check`) and the tests on every push/PR.
+The `preload` token is intentionally rejected. Browser preload lists are an
+external, long-lived operational commitment and removal is not immediate. It may
+only be introduced after an explicit deployment ADR confirms all subdomains,
+redirect behavior, ownership, removal procedure and rollback constraints.
 
-## Verification plan (M1B/M1D)
+## COOP and COEP compatibility
 
-- Integration test asserts the exact header set is served (ADR-001 quality
-  gate).
-- Negative test: a baseline that would emit an unsafe served policy fails the
-  build (silent-failure gate). The check is **validate-then-serialize over the
-  whole served surface** — every directive and every additional header — not
-  just the `connect-src` array. Concretely it rejects: forbidden tokens /
-  wildcards / scheme-sources / non-allowlisted origins in any fetch or
-  navigation directive (`connect-src`, `script-src`, `img-src`, `form-action`,
-  `base-uri`, …); `;`/whitespace/control-char **injection** in any source token
-  (which would otherwise smuggle an extra widening directive into the emitted
-  string); unknown directive names; duplicate directives; and weakened or
-  unexpected `additional_headers`. `additional_headers` is restricted to a
-  **name allowlist**: a `Content-Security-Policy` /
-  `Content-Security-Policy-Report-Only` key (any case) is rejected — the served
-  CSP comes **only** from `directives` and cannot be overridden or shadowed via
-  an additional header. Value checks: HSTS below a 1-year floor,
-  `Access-Control-Allow-Origin` outside the approved-origin set, weakened
-  COOP/COEP/CORP/XFO, and CRLF/control chars in a header value all fail. This
-  closes the Aegis PoCs (2026-07-10 `;`-injection in `default-src` + HSTS
-  `max-age=0`; 2026-07-11 `additional_headers` CSP-override) that passed
-  earlier, narrower checks.
-- E2E: with only `'self'` in `connect-src`, an attempt to `fetch()` an
-  un-approved origin is blocked by the browser and surfaced as a normalized
-  error.
+`COOP: same-origin` and `COEP: require-corp` establish a strong isolation target,
+but they can break OAuth popup communication and third-party/cross-origin
+resources that do not opt in correctly. Their presence is a static target, not a
+compatibility claim. ADR-003/ADR-004 must test the selected authorization flow,
+resource graph and supported browsers before release.
 
-## Sources
+## Fail-closed validation
 
-- CSP `connect-src` semantics — <https://content-security-policy.com/connect-src/> (high)
-- MDN Content-Security-Policy reference — <https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy> (high)
-- OWASP CSP Cheat Sheet — <https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html> (high)
-- Deploying CSP in SPAs (Auth0) — <https://auth0.com/blog/deploying-csp-in-spa/> (medium)
-- MCP Security Best Practices (recommends CSP for web MCP clients) — <https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices> (high)
+The implementation rejects:
+
+- missing, reordered or drifted M1 CSP directives;
+- unknown directives, non-array values, unsafe tokens and injection characters;
+- CSP and Report-Only overrides in `additional_headers`;
+- missing, duplicate, unexpected or weakened security headers;
+- any non-exact HSTS or Referrer-Policy value and premature `preload`;
+- malformed, mixed-case, duplicate, missing, granted, reordered or unreviewed
+  Permissions-Policy features;
+- invalid, duplicate, noncanonical, plaintext-remote or non-public origins;
+- unknown or drifted baseline metadata;
+- a final response map with missing, changed or duplicate protected headers;
+- security-sensitive reporting, CORS, cookie and implementation-disclosure
+  headers added after the baseline map.
+
+A failing baseline cannot be serialized or served through the hardened entry
+point.
+
+## Final response and deployed-edge verification
+
+`applyHardenedSecurityHeaders()` applies the map and immediately verifies
+`getHeaders()` on the response object. `validateServedHeaderMap()` validates a
+captured final in-process map, permits ordinary operational headers and rejects
+security-sensitive extras while requiring every protected value exactly.
+
+These checks cannot detect mutations after they run. Release evidence must also
+capture the actual staging and production response after all middleware, proxy,
+CDN and hosting transformations, then verify browser-observed policy behavior.
+Raw wire headers should be retained because high-level header APIs can merge or
+normalize duplicate fields.
+
+## Deterministic verification and evidence scope
+
+```bash
+npm run toolchain:check
+npm run lockfile:check
+npm ci --ignore-scripts --audit=false --fund=false
+npm run audit:ci
+npm run csp:check
+npm test
+npm run csp:json
+```
+
+The Node/npm versions, public npm registry, lifecycle-script policy and
+documentation tools are exact-version/configuration checked. GitHub jobs use the
+`ubuntu-24.04` runner family instead of the moving `ubuntu-latest` alias.
+
+The security evidence artifact now retains for 90 days:
+
+- the machine-readable npm audit snapshot;
+- the SPDX SBOM;
+- a manifest binding source SHA and tested merge SHA;
+- Node, npm and registry identity;
+- runner OS, architecture, image metadata, kernel and Git version;
+- hashes of `.npmrc`, `package.json`, `package-lock.json`, audit output and SBOM.
+
+This is strong traceability, not a claim of bit-for-bit reproducibility. GitHub's
+hosted runner image, the live advisory database and timestamped SBOM/evidence
+fields can change between reruns of the same commit. Reproducible release builds
+and independent digest comparison remain separate release gates.
+
+## Runtime requirements after ADR-003
+
+The future application must verify that:
+
+- each selectable endpoint maps to an origin present in the served CSP;
+- unapproved selections fail visibly without policy widening;
+- CORS, redirects, DNS resolution and authorization match the endpoint profile;
+- token passthrough is prohibited and OAuth audience/issuer/state/PKCE controls
+  are verified where OAuth is used;
+- timeout, abort, byte/depth/item limits and reconnect semantics are deterministic;
+- browser E2E proves unapproved exfiltration is blocked;
+- hostile MCP text, Markdown and URLs render without code/instruction execution;
+- sensitive canaries do not reach storage, URL, history, DOM, logs or diagnostics.
+
+## Primary sources
+
+- CSP Level 3: `https://www.w3.org/TR/CSP3/`
+- MDN Content-Security-Policy:
+  `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy`
+- W3C Permissions Policy Editor's Draft:
+  `https://w3c.github.io/webappsec-permissions-policy/`
+- MDN Permissions-Policy:
+  `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy`
+- MDN HSTS:
+  `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Strict-Transport-Security`
+- MDN Referrer-Policy:
+  `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy`
+- MDN COOP and COEP:
+  `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Opener-Policy`
+  and
+  `https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Embedder-Policy`
+- MCP security best practices:
+  `https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices`

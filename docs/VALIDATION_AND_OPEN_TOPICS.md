@@ -79,7 +79,7 @@ A digest detects drift but does not replace authorization or user approval.
 
 ### OT-06 Product value and primary user
 
-The repository describes a public MCP client but has not yet proven who needs it, why existing clients are insufficient, or which single outcome justifies public release. Product discovery is therefore a blocking research stream, not optional polish.
+The repository describes a native, offline-capable browser/webapp runtime program (reframed 2026-07-14; ADR-005/006/007, PR #22) but has not yet proven who needs it, why existing runtimes/hosting are insufficient, or which single outcome justifies public release. Product discovery is therefore a blocking research stream, not optional polish.
 
 ### OT-07 Deployment topology
 
