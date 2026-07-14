@@ -9,9 +9,12 @@
 - [ ] `browser` is defined as a native offline runtime, not a public MCP webapp.
 - [ ] `nigin-engine` remains the engine/contract core.
 - [ ] `browser-nigin` remains an optional later AI layer.
-- [ ] v1 trust class is explicitly selected from ADR-005.
-- [ ] Arbitrary foreign navigation is either excluded or funded as a separate
-      browser-grade programme.
+- [x] Trust-class staging is decided — Marco G1 (2026-07-14): DECIDED T3
+      (staged) — T1 → T2 → T3 with T3 (arbitrary foreign content) as the target
+      state; ADR-005 ACCEPTED.
+- [x] Arbitrary foreign content is the accepted target state (T3), reached via
+      the staged T1 → T2 → T3 maturation, not excluded and not a separate
+      product.
 
 ## B. Reuse from PR #17
 
@@ -108,4 +111,6 @@
 2. Neither package verifier track has been implemented.
 3. T2 curated third-party admission policy is undefined.
 4. PR #17 still carries the old product premise.
-5. Vero cross-family adjudication and owner decision remain open.
+5. The trust-class staging owner decision is made (Marco G1, 2026-07-14: T3
+   staged). Vero cross-family adjudication and the remaining owner decisions
+   (runtime in ADR-006, package format in ADR-007) remain open.

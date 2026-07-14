@@ -2,20 +2,27 @@
 
 - Updated: 2026-07-14
 - Repository: `marcohost33-maker/browser`
-- Product direction: native, offline-capable host for locally installed webapps
-- Current trust-scope proposal: T1 owner-controlled packages only
+- Product direction: native, offline-capable host for webapps; committed target
+  state is running arbitrary foreign webapps
+- Trust-scope decision: DECIDED T3 (staged) — Marco G1 (2026-07-14): T1 → T2 →
+  T3 maturation with T3 (arbitrary foreign content) as the target state; ADR-005
+  ACCEPTED. First shipping increment is T1.
 - Status: static security foundation exists; runtime and package architecture are not selected or implemented
 
 ## Owner decision and reframe
 
 The prior public MCP-client webapp premise is superseded by the 2026-07-14
 product direction. `browser` is now intended to provide the native offline
-runtime foundation. `nigin-engine` remains the engine/contract core, while
+runtime foundation whose committed end state is running arbitrary foreign
+webapps, reached via the staged T1 → T2 → T3 maturation (Marco G1, 2026-07-14;
+ADR-005 ACCEPTED). `nigin-engine` remains the engine/contract core, while
 `browser-nigin` remains an optional later AI layer.
 
-The exact runtime, package format and curated third-party policy remain open
-architecture decisions. Draft PR #22 contains proposed evidence gates; it is not
-an accepted ADR or release decision.
+The trust-class staging is decided (ADR-005 ACCEPTED). The exact runtime
+(ADR-006) and package format (ADR-007) remain open architecture decisions and
+their ADRs stay PROPOSED pending measured spikes. Draft PR #22 contains the
+accepted trust-class ADR plus proposed evidence gates; it is not a runtime,
+package or release decision.
 
 ## Implemented and merged foundation
 
@@ -42,8 +49,12 @@ transplanted only after the reframe decisions are accepted.
 
 ## Open P0 decisions
 
-1. Accept or reject the T1/T2/T3 trust classes in ADR-005.
-2. Execute the common Tauri/Electron/WebView2 runtime evaluation in ADR-006.
+1. Trust-class staging: DECIDED (Marco G1, 2026-07-14; ADR-005 ACCEPTED) —
+   T1 → T2 → T3 with T3 as the target state. Vero cross-family adjudication of
+   the ADR remains open.
+2. Execute the common runtime evaluation in ADR-006; for the T3 target the
+   APP-01 shortlist focus is Chromium-based (Electron/CEF) with a shippable
+   engine security-patch path as a hard cut criterion.
 3. Execute the `.swbn` and minimal-package verifier comparison in ADR-007.
 4. Define per-app identity, storage/profile separation and capability brokering.
 5. Specify manual install, optional updates, rollback, revocation and key rotation.

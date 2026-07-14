@@ -5,6 +5,12 @@
 - Depends on: ADR-005
 - Decision owner: Marco
 
+This ADR remains PROPOSED: it defines the two-track verifier spike and does not
+select a package format. ADR-005 (ACCEPTED) makes T3 (arbitrary foreign content)
+the target state; because foreign publishers then need verifiable provenance, the
+`.swbn`/IWA track (Track A) gains weight relative to the T1-oriented minimal
+manifest (Track B). Both tracks remain in the spike; nothing is decided here.
+
 ## Correction of prior recommendations
 
 Two premature conclusions are rejected:

@@ -5,11 +5,17 @@
 - Depends on: ADR-005
 - Decision owner: Marco
 
+This ADR remains PROPOSED: it defines the measured spike and does not itself
+select a runtime. ADR-005 (ACCEPTED) sets the T1 → T2 → T3 target; this protocol
+measures which runtime can carry the programme to the T3 target state.
+
 ## Question
 
 Which runtime can host T1 owner-controlled offline webapps with the smallest
 maintainable attack surface while preserving required compatibility on Windows,
-macOS and Linux?
+macOS and Linux, and — because T3 (arbitrary foreign content) is the accepted
+target state — can also inherit process-level site isolation and ship engine
+security patches on the project's own cadence?
 
 ## Candidates
 
@@ -23,10 +29,15 @@ as an isolation solution.
 
 ## No preselected winner
 
-Tauri is the preferred lightweight hypothesis, not an accepted decision.
-Electron is the compatibility/control hypothesis, not automatically the secure
-choice. The spike must compare observable properties instead of framework
-marketing claims.
+No runtime is decided here; the spike compares observable properties instead of
+framework marketing claims. Given the accepted T3 target (ADR-005), the shortlist
+focus for APP-01 hostile-content isolation is Chromium-based (Electron or CEF),
+which inherits process-level site isolation and a project-controlled patch
+cadence. Electron is the compatibility/control hypothesis, not automatically the
+secure choice, and must still pass every security cut criterion. Tauri remains a
+candidate for the owner-controlled AI shell (APP-02), not for APP-01 T3, because
+a system WebView does not provide equivalent cross-origin process isolation for
+arbitrary foreign content.
 
 ## Common test app
 
@@ -89,11 +100,25 @@ cut criteria separately from preferences.
 - No assumption that one WebView equals one renderer process.
 - ProcessFailed, cleanup and profile deletion behaviour tested.
 
+## Hard cut criteria
+
+A candidate that fails any of these is rejected regardless of its other scores:
+
+- a shippable engine security-patch path: the project can deliver an upstream
+  engine security fix to users on its own release cadence (for a bundled
+  Chromium, by rebuilding and re-releasing; a system WebView whose patch latency
+  is bound to the host OS vendor fails this criterion for the T3 target);
+- process-level, per-origin site isolation available for the T3 hostile-content
+  target, not only default-deny IPC;
+- every app-context security gate below passing on all supported platforms.
+
 ## Decision rule
 
-A candidate may be accepted for T1 only if all security cut criteria pass on all
-supported platforms. If Tauri fails compatibility but Electron passes, choose
-Electron for T1 rather than weakening isolation. If no candidate passes, reduce
+A candidate may be accepted for T1 only if all hard cut criteria and security cut
+criteria pass on all supported platforms, and only if it also keeps a credible
+path to the T3 target (site isolation and engine patch cadence). If Tauri fails
+compatibility or the T3 site-isolation/patch-path criteria but Electron passes,
+choose Electron rather than weakening isolation. If no candidate passes, reduce
 platform scope or app capability; do not relabel missing evidence as acceptable
 risk.
 
