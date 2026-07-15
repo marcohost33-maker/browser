@@ -1,6 +1,10 @@
 # Browser Reframe Evidence Hardening — 2026-07-15
 
-- Status: REVIEW CANDIDATE
+- Status: REVIEWED / RE-LANDED (Vero 2026-07-16) — technical corrections checked
+  against primary sources (Chromium site-vs-origin isolation, Electron support
+  window, CEF candidate gap) and found sound; re-landed as a corrective overlay
+  after the 2026-07-15 revert (`3fe912d`, "unreviewed on main"). Owner ratification
+  into the source ADRs remains separate.
 - Scope: corrective addendum for ADR-005, ADR-006, ADR-007 and the reframe
   checklist
 - Authority: evidence proposal only; no runtime, package-format or release
