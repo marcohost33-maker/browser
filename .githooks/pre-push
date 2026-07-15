@@ -1,0 +1,12 @@
+#!/bin/sh
+# pre-push — run the local CI-parity gates before any push, so we never push code
+# that would fail CI (and waste GitHub Actions minutes). Opt-in:
+#
+#   git config core.hooksPath .githooks
+#
+# Bypass once (e.g. docs-only emergency):  git push --no-verify
+set -e
+
+echo "[pre-push] running verify:local (CI-parity gate)…"
+npm run verify:local
+echo "[pre-push] verify:local passed — proceeding with push."
