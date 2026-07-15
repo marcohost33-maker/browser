@@ -24,8 +24,9 @@ security lessons and supply-chain patterns) — **not** an architectural stack a
 product code exists under either the prior or the reframed framing). The
 repository contains architecture, static security-policy, governance and CI
 evidence foundations. Product validation, the runtime/trust-class design
-(ADR-005/006/007), a signed `nigin-engine` contract, application runtime, browser
-verification and operations remain open gates.
+(ADR-005/006/007), application runtime, browser verification and operations remain
+open gates. MCP consumption is an internal, optional capability off the T1 critical
+path (ADR-008) — not a gate and not blocked on an external `nigin-engine` producer.
 
 PR #17 is intentionally Draft until branch protection and independent final-head
 review are completed or explicitly dispositioned.

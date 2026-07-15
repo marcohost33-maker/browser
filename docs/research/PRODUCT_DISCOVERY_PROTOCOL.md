@@ -8,7 +8,9 @@
 > **PRODUCT REFRAME (2026-07-14).** `browser` is reframed into a native,
 > offline-capable browser/webapp runtime that runs foreign web apps locally (staged
 > T1 → T2 → T3; north star **T3**), not a public MCP-client webapp. Binding record:
-> ADR-005/006/007 (PR #22). The empirical discovery *method* below (pre-registered
+> ADR-005/006/007 (PR #22); `browser` is standalone and MCP consumption is an
+> internal, optional capability off the T1 critical path (ADR-008). The empirical
+> discovery *method* below (pre-registered
 > falsifiable hypothesis, 5–8 sessions, comprehension checks, contradictory
 > evidence, go/pivot/stop record) is retained and framing-neutral. The candidate
 > personas, tasks and consent questions phrased around "remote MCP endpoint /

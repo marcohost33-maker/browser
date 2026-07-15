@@ -11,8 +11,9 @@
 > **PRODUCT REFRAME (2026-07-14) — read first.** Per Marco's 2026-07-14 decision,
 > `browser` is a native, offline-capable **runtime program** that runs arbitrary
 > foreign web applications locally (staged T1 → T2 → T3; north star **T3**),
-> replaces cloud hosting and runs without any AI layer, inside the three-layer stack
-> `browser` (runtime) · `nigin-engine` (contract core) · `browser-nigin` (AI layer).
+> replaces cloud hosting and runs without any AI layer. `browser` is **standalone**
+> (ADR-008, 2026-07-16): `nigin-engine` and `browser-nigin` are separate, independent
+> repositories linked only by knowledge transfer (not dependencies).
 > The binding reframe record is **ADR-005/006/007** (PR #22) — not duplicated here.
 > Runtime direction for T3: a Chromium engine (CEF/Electron) is favoured for
 > inherited site-isolation and a maintained engine security-patch path over Tauri;
@@ -71,7 +72,7 @@ No lower level may be described as a higher one.
 Identifiers are unique and immutable:
 
 - **ADR-001** — APP-01 architecture boundary and M1 slice. **SUPERSEDED by ADR-005.**
-- **ADR-002** — contract artifact signature and provenance (substance retained; framing realigned to `nigin-engine`).
+- **ADR-002** — contract artifact signature and provenance (substance retained; producer-neutral, no external `nigin-engine` producer assumed, ADR-008).
 - **ADR-003** — endpoint trust model, browser transport and deployment topology (#13). **SUPERSEDED by ADR-005** (network-security substance retained in `docs/security/*`).
 - **ADR-004** — framework/build/browser matrix and PWA decision (#7). *Runtime-framework choice now governed by ADR-006.*
 - **ADR-005** — offline runtime trust classes (T1/T2/T3). **Binding reframe record** (PR #22).

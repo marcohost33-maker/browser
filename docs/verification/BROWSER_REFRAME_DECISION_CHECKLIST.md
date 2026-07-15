@@ -7,8 +7,9 @@
 ## A. Product identity
 
 - [ ] `browser` is defined as a native offline runtime, not a public MCP webapp.
-- [ ] `nigin-engine` remains the engine/contract core.
-- [ ] `browser-nigin` remains an optional later AI layer.
+- [ ] `browser` is standalone; `nigin-engine` and `browser-nigin` are separate,
+      independent repositories linked only by knowledge transfer, not dependencies
+      (ADR-008).
 - [x] Trust-class staging is decided — Marco G1 (2026-07-14): DECIDED T3
       (staged) — T1 → T2 → T3 with T3 (arbitrary foreign content) as the target
       state; ADR-005 ACCEPTED.

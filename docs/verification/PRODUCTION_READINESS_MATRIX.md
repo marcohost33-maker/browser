@@ -16,6 +16,14 @@
 > policy and a runtime security-patch SLA as new gate requirements to be defined
 > against ADR-005/006/007. The current conclusion (**NOT PRODUCTION-READY**) is
 > unchanged and, if anything, stronger: no runtime exists under either framing.
+>
+> **Standalone (ADR-008, 2026-07-16).** `browser` is standalone; `nigin-engine` and
+> `browser-nigin` are separate, independent repositories linked only by knowledge
+> transfer (not dependencies). MCP consumption is an internal, optional `browser`
+> capability off the T1 critical path; any signed contract may be sourced internally
+> or from any signed producer. The G3 (`MCP-*`) and related rows are therefore
+> **optional/internal and not blocked on an external `nigin-engine` producer** — the
+> ADR-002 signature/provenance-verification discipline is retained but producer-neutral.
 
 ## Status vocabulary
 
@@ -63,18 +71,18 @@ candidate, built artifact and deployed instance.
 | END-03 | Static origin gate rejects plaintext remote, localhost misuse and non-public/reserved address literals | PASS-CI (PR #17) | exact-origin and mapped-address regressions |
 | END-04 | Representative endpoint passes browser CORS profile | NOT-TESTED | preflight/method/header/credential evidence required |
 | END-05 | Redirect, DNS rebinding, resolved private-network and metadata-service policy tested | NOT-TESTED | string validation cannot prove runtime resolution; ADR-003 spike |
-| AUTH-01 | Explicit no-OAuth or accepted OAuth profile | BLOCKED | ENG-01 contract + ADR-003 |
+| AUTH-01 | Explicit no-OAuth or accepted OAuth profile | BLOCKED | ADR-003 open; no external `nigin-engine` producer assumed (ADR-008) |
 | AUTH-02 | PKCE, redirect, issuer/state/audience and popup/isolation compatibility verified when OAuth enabled | BLOCKED | no OAuth implementation; COOP compatibility open |
 
 ## G3 — MCP contract and conformance
 
 | ID | Requirement | Current status | Evidence / blocker |
 |---|---|---|---|
-| MCP-01 | MCP revision and transport profile pinned | BLOCKED | ENG-01 artifact absent |
-| MCP-02 | Signed artifact, Sigstore bundle, provenance and digest lock | BLOCKED | ADR-002 accepted target design; producer artifact absent |
+| MCP-01 | MCP revision and transport profile pinned | NOT-TESTED | Optional/internal capability off the T1 critical path (ADR-008); no external producer assumed |
+| MCP-02 | Signed artifact, Sigstore bundle, provenance and digest lock | NOT-TESTED | ADR-002 signature/provenance discipline retained but producer-neutral (ADR-008); no external producer assumed |
 | MCP-03 | Signature identity/provenance verifier implemented | NOT-TESTED | future workflow |
-| MCP-04 | Positive/negative fixtures and deterministic conformance | BLOCKED | ENG-01 input absent |
-| MCP-05 | Compatibility/deprecation policy | BLOCKED | contract publication |
+| MCP-04 | Positive/negative fixtures and deterministic conformance | NOT-TESTED | Optional/internal capability off the T1 critical path (ADR-008); no external producer assumed |
+| MCP-05 | Compatibility/deprecation policy | NOT-TESTED | Optional/internal capability off the T1 critical path (ADR-008); no external producer assumed |
 
 ## G4 — Repository and build foundation
 
@@ -141,7 +149,7 @@ candidate, built artifact and deployed instance.
 | SUP-02 | Evidence manifest binds source/tested SHA, tools, registry, runner facts and package/lock/npmrc/audit/SBOM digests | PASS-CI (PR #17 foundation) | security evidence schema 1.2, 90-day artifact |
 | SUP-03 | Release artifact provenance/attestation | BLOCKED | release build absent |
 | SUP-04 | Bit-for-bit reproducible candidate build and independent digest comparison | BLOCKED | hosted image, live advisory DB, timestamps and application build remain uncontrolled |
-| SUP-05 | Contract provenance verified before trust | BLOCKED | ENG-01 artifact/verifier absent |
+| SUP-05 | Contract provenance verified before trust | BLOCKED | provenance verifier absent; producer-neutral, no external `nigin-engine` producer assumed (ADR-008) |
 | SUP-06 | Dependency licenses/notices reviewed against exact release graph | BLOCKED | final application graph absent |
 | LEGAL-01 | Repository license explicit | IMPLEMENTED (PR #17) | MIT LICENSE |
 

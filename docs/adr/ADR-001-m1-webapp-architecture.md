@@ -9,9 +9,10 @@
 > **SUPERSEDED (2026-07-14).** Marco's product decision of 2026-07-14 sets the
 > north star for `browser` to a native, offline-capable browser/webapp **runtime
 > program** that executes arbitrary foreign web applications locally (trust-class
-> target **T3**), replaces cloud hosting, and runs without any AI layer — inside a
-> three-layer stack: `browser` (runtime) · `nigin-engine` (contract core) ·
-> `browser-nigin` (AI layer). That reframe is canonized in **ADR-005** (offline
+> target **T3**), replaces cloud hosting, and runs without any AI layer. `browser`
+> is **standalone** (ADR-008, 2026-07-16): `nigin-engine` and `browser-nigin` are
+> separate, independent repositories linked only by knowledge transfer (not
+> dependencies). That reframe is canonized in **ADR-005** (offline
 > runtime trust classes), **ADR-006** (runtime evaluation protocol) and **ADR-007**
 > (signed package evaluation), which are the binding reframe record (see PR #22;
 > ADR-005 is under cross-family review / Vero adjudication and is not yet ACCEPTED).

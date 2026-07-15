@@ -7,8 +7,10 @@
 > **PRODUCT REFRAME (2026-07-14).** `browser` is reframed into a native,
 > offline-capable browser/webapp runtime that runs foreign web apps locally (staged
 > T1 → T2 → T3; north star **T3**), replacing cloud hosting and running without an AI
-> layer, inside the stack `browser` (runtime) · `nigin-engine` (core) · `browser-nigin`
-> (AI). The binding decision record for the reframe is **ADR-005/006/007** (PR #22),
+> layer. `browser` is **standalone** (ADR-008, 2026-07-16): `nigin-engine` and
+> `browser-nigin` are separate, independent repositories linked only by knowledge
+> transfer (not dependencies). The binding decision record for the reframe is
+> **ADR-005/006/007** (PR #22),
 > not this register. Decisions below that assume the "MCP client webapp / remote
 > endpoint" product are superseded by that canon; their security substance is
 > retained.
@@ -70,14 +72,19 @@ Former recommendation (superseded, retained for provenance):
 Acceptance remains blocked on product evidence and a representative endpoint
 spike.
 
-## D4 — MCP contract revision and conformance artifact — BLOCKED / P0
+## D4 — MCP contract revision and conformance artifact — RESOLVED (optional/internal, off T1 path, ADR-008)
 
-ENG-01 must publish the selected revision, schemas/types, positive and negative
-fixtures, limits, compatibility policy and signed provenance artifact.
+MCP consumption is an internal, optional `browser` capability off the T1 critical
+path (ADR-008); it is **not** a P0 prerequisite and is **not** blocked on an external
+`nigin-engine` producer. If `browser` chooses to consume a signed MCP contract, the
+selected revision, schemas/types, positive and negative fixtures, limits,
+compatibility policy and signed provenance artifact come from whatever producer
+`browser` consumes — sourced internally or from any signed producer, with no named
+external producer assumed.
 
-APP-01 must verify signature, provenance, source identity and digest before
-production use. Hash-only or manually copied artifacts are mock/development
-inputs, not production trust anchors.
+The verification discipline is retained but producer-neutral: `browser` must verify
+signature, provenance, source identity and digest before production use. Hash-only or
+manually copied artifacts are mock/development inputs, not production trust anchors.
 
 ## D5 — Application framework, build and browser matrix — OPEN
 
@@ -89,8 +96,10 @@ bundle, dependency, testability and maintenance constraints.
 
 ## D6 — OAuth and credential architecture — BLOCKED
 
-OAuth remains disabled until D3 selects the topology and ENG-01 publishes the
-authorization profile and fixtures. Any future browser public-client flow must
+OAuth remains disabled until D3 selects the topology and any authorization profile
+and fixtures are available from whatever signed contract `browser` may consume
+(producer-neutral; no external `nigin-engine` producer assumed, ADR-008). Any future
+browser public-client flow must
 use Authorization Code with PKCE, exact redirect matching, issuer/state checks,
 audience-restricted tokens and no token persistence in prohibited sinks.
 
