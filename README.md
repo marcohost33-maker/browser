@@ -5,9 +5,12 @@ program** that executes foreign web applications locally, staged from
 owner-controlled (T1) toward arbitrary foreign web content (T3; the north star),
 replacing cloud hosting and running without an AI layer.
 
-This repository is **`marcohost33-maker/browser`**. It is one layer of a
-three-layer stack — `browser` (runtime) · `nigin-engine` (contract core) ·
-`browser-nigin` (AI layer). It is not `browser-nigin` and not `nigin-engine`.
+This repository is **`marcohost33-maker/browser`** and is **standalone**. It is
+buildable, shippable and useful on its own. `nigin-engine` and `browser-nigin` are
+**separate, independent repositories linked only by knowledge transfer** (shared
+security lessons and supply-chain patterns) — **not** an architectural stack and
+**not** dependencies of `browser`. Per **ADR-008 (2026-07-16)** any remaining
+"three-layer stack" wording below is superseded.
 
 > **Product reframe (2026-07-14).** `browser` was previously framed as a public
 > MCP-client web application. Per Marco's 2026-07-14 decision it is reframed into
@@ -33,9 +36,11 @@ for the precise evidence state.
 
 ## Scope
 
-`browser` will consume a signed and versioned contract from `nigin-engine` (the
-contract core). It does not define that contract and is not the AI layer
-(`browser-nigin`).
+MCP consumption is an **internal, optional capability** of `browser` (per ADR-008),
+not an external dependency: it is off the T1 critical path, and any signed contract
+`browser` may later consume can be sourced internally or from any signed producer —
+it is **not**, by architecture, a `nigin-engine` artifact. `browser` is not the AI
+layer (`browser-nigin`).
 
 The runtime is delivered in staged trust classes — T1 (owner-controlled packages)
 → T2 (curated third-party) → T3 (arbitrary foreign web content; north star) — per

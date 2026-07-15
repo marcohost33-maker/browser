@@ -8,9 +8,10 @@
 > **PRODUCT REFRAME (2026-07-14) — read first.** Marco's decision of 2026-07-14
 > resets the north star: `browser` is a **native, offline-capable browser/webapp
 > runtime program** that executes arbitrary foreign web applications **locally**,
-> replacing cloud hosting, and running **without any AI layer**. It is one layer of
-> a three-layer stack: **`browser` (runtime) · `nigin-engine` (contract core) ·
-> `browser-nigin` (AI layer)**. Capability is delivered in staged trust classes —
+> replacing cloud hosting, and running **without any AI layer**. `browser` is
+> **standalone** (ADR-008, 2026-07-16): `nigin-engine` and `browser-nigin` are
+> **separate independent repositories linked only by knowledge transfer**, not an
+> architectural stack and not dependencies. Capability is delivered in staged trust classes —
 > **T1** (owner-controlled packages) → **T2** (curated third-party) → **T3**
 > (arbitrary foreign web content); the accepted north star is **T3**. The binding
 > reframe record is **ADR-005** (offline runtime trust classes), **ADR-006**
@@ -49,8 +50,11 @@ contract core (`nigin-engine`).
   practical; select a framework only with measured evidence.
 - **Low operating cost.** The default product should avoid unnecessary paid
   APIs and infrastructure, without weakening security or reliability.
-- **Contract consumer, not owner.** ENG-01 supplies the signed, versioned MCP
-  contract artifact, fixtures and conformance expectations.
+- **MCP is internal and optional (ADR-008).** MCP consumption belongs in `browser`
+  as an internal, optional capability, off the T1 critical path. Any signed contract
+  it consumes may be sourced internally or from any signed producer — no external
+  `nigin-engine` dependency is assumed. Signature/provenance-verification discipline
+  is retained and re-pointed at "whatever signed contract `browser` consumes".
 - **Evidence before claims.** Designed, implemented, verified and
   production-ready are separate states.
 - **Open-source candidate.** Public release occurs only after security, privacy,
