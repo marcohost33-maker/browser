@@ -148,7 +148,7 @@ Method:
 Gate G1:
 
 - One primary persona, task and measurable success definition.
-- Product form and endpoint class are aligned with ADR-003.
+- Product form and trust class are aligned with ADR-005/008 (runtime product).
 - Feature expansion is blocked until the decision is recorded.
 
 ### WS-2 — Runtime navigation and network policy (re-scoped from #13 / ADR-003)
@@ -181,8 +181,8 @@ Required evidence:
 
 Gate G2:
 
-- ADR-003 accepted.
-- Supported endpoint class and trust tier are explicit.
+- Runtime navigation/network policy accepted (ADR-005/008; supersedes ADR-003).
+- Supported trust tier and default-deny egress/navigation surface are explicit.
 - No wildcard/scheme-wide CSP fallback.
 - Real endpoint integration remains blocked until this gate passes.
 
@@ -226,7 +226,7 @@ Compare at least a minimal standards-first TypeScript option and one mature fram
 
 Measure:
 
-- compatibility with ADR-003;
+- compatibility with the runtime navigation/network policy (ADR-005/008);
 - CSP without `unsafe-eval`;
 - dependency/transitive dependency count;
 - bundle and parse cost;

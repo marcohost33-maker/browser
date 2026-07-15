@@ -11,9 +11,9 @@
   from the Aegis-driven fixes), markdownlint **0 errors** across 29 docs (Node 24; the
   repo's exact Node 22.23.1 CI gate is a separate strict gate and does not block local
   test runs).
-- Branch = **8 commits** on top of `3fe912d`. Deep-quality pass added: standalone doc
-  sweep (13 files), a security audit (Aegis) with code fixes, and a primary-source
-  runtime/package research (Quella) folded into ADR-006/007. See §10.
+- Branch = **one reviewable local branch** on top of `3fe912d` (not pushed). Deep-quality
+  pass added: standalone doc sweep (13 docs), a security audit (Aegis) with code fixes,
+  and primary-source runtime/package research (Quella) folded into ADR-006/007. See §10.
 
 ---
 
@@ -203,7 +203,7 @@ is BLOCKED purely because the runtime does not exist yet.
 
 ## 7. What I changed this session (local, not pushed)
 
-Branch `vero/2026-07-16-standalone-reframe-and-report` (**8 commits** on top of `3fe912d`):
+Branch `vero/2026-07-16-standalone-reframe-and-report` (all local, not pushed) on top of `3fe912d`:
 
 1. **ADR-008** — browser is standalone; MCP internal/optional — new ADR + README/CHARTER.
 2. **Evidence-hardening addendum** re-landed (reviewed, Marco-authored `e74221f`) +
