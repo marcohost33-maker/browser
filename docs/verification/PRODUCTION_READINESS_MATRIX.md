@@ -64,6 +64,15 @@ candidate, built artifact and deployed instance.
 
 ## G2 — Endpoint, transport and authorization architecture
 
+> **Re-scoped to runtime navigation/network policy (ADR-005/008).** The END-*/AUTH-*
+> rows below describe the superseded remote-MCP-endpoint framing (#13 / ADR-003, now
+> superseded). For the runtime product this gate is re-pointed at the runtime's
+> **default-deny navigation/popup/download/external-protocol allowlist and per-app
+> network egress policy** (MASTER_ROADMAP WS-2); OAuth is off the T1 path. Status
+> tokens are unchanged; the evidence/blocker column carries the re-scope. Rows are
+> retained (not deleted) for provenance until the runtime navigation-policy gate is
+> defined against ADR-005/006/007.
+
 | ID | Requirement | Current status | Evidence / blocker |
 |---|---|---|---|
 | END-01 | Supported endpoint class and trust tier accepted | BLOCKED | ADR-003 proposed; #13 open |

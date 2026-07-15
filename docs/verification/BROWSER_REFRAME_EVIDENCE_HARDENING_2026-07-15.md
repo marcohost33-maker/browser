@@ -27,6 +27,10 @@ Chromium's standard isolation boundary is a **site**, normally scheme plus
 registrable domain, not every origin. Two same-site origins can therefore share a
 renderer unless stricter origin isolation is enabled and demonstrated.
 
+> Quella's primary-source review (2026-07-16) **confirms** this: the site boundary is
+> scheme + eTLD+1, and per-origin isolation requires Origin-Agent-Cluster
+> (origin-keyed, now default). See ADR-006 "Primary-source landscape".
+
 Required correction:
 
 - replace every use of "per-origin site isolation" with separate requirements
@@ -42,6 +46,13 @@ Required correction:
 Bundling Chromium gives the project control over rebuild and release timing, but
 it does not prove fast patch delivery. A system WebView delegates engine delivery
 to the platform vendor, but that alone does not prove unacceptable latency.
+
+> Quella's primary-source review (2026-07-16) **precises** this addendum's earlier
+> wording: a system WebView (e.g. WebView2) is **not** categorically "without
+> isolation" — WebView2 *inherits* Chromium site isolation. The defensible exclusion
+> grounds for the T3 target are **patch control** (Evergreen/vendor-driven, not
+> owner-controlled) and **platform inconsistency** (WebKit ≠ site-per-process), not
+> an absence of isolation. See ADR-006 "Primary-source landscape".
 
 Required correction:
 

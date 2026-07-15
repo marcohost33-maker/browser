@@ -25,7 +25,15 @@
 
 ## 1. Production objective
 
-Deliver a public browser application that connects only through an explicitly selected and verified MCP endpoint model, consumes a pinned protocol/contract profile, exposes no capability without informed user approval, treats all remote content as untrusted, and can be built, tested, deployed, monitored and rolled back with reproducible evidence.
+Deliver a native, offline-capable **runtime program** that executes foreign web
+applications locally (staged T1 → T2 → T3; north star **T3** = arbitrary foreign
+web content), replacing cloud hosting and running without any AI layer. The first
+shipping increment is **T1**: run owner-controlled, signed offline packages with a
+minimal, auditable attack surface — process/site isolation, per-app data-domain
+separation, a default-deny navigation/download/external-protocol policy, an
+owner-controlled engine security-patch path, and reproducible build, test, deploy,
+monitoring and rollback evidence. MCP consumption is an **internal, optional**
+capability off the T1 critical path (ADR-008), **not** a required MCP endpoint.
 
 Four maturity levels are distinct:
 
@@ -82,18 +90,23 @@ Identifiers are unique and immutable:
 
 ## 4. Critical path
 
+T1-first, no external contract gate (ADR-005/008). Identical to the report
+`docs/reports/2026-07-16_STATE_OF_BROWSER_report.md` §4:
+
 ```text
-#14 product evidence
-  -> #13 ADR-003 endpoint/trust/deployment decision
-  -> pinned MCP contract + conformance fixtures
-  -> #7 ADR-004 stack decision
-  -> #4 secure application bootstrap
-  -> #2 mock vertical slice + #5 hostile corpus
-  -> real contract adapter + #11 runtime exfil/injection E2E
-  -> privacy/accessibility/reliability verification
-  -> #6 staging, rollback and incident gate
-  -> narrow public release
+#14 product discovery (primary user + one read-only task + go/pivot/stop)
+  -> ADR-006 runtime spike (#23)  +  ADR-007 package spike (#24)
+  -> secure app/runtime bootstrap
+  -> T1 owner-controlled offline vertical slice (run a signed local webapp)
+  -> browser / privacy / accessibility / security verification
+  -> reproducible build, staging, provenance, rollback + incident gate
+  -> narrow release  ... then T2 (curated) ... then T3 (arbitrary foreign content)
 ```
+
+ADR-003 / #13 (endpoint/trust/deployment) is **no longer on the critical path** —
+superseded by ADR-005/008; its network-security substance is retained in
+`docs/security/*`. MCP is **off the T1 path** (internal/optional, ADR-008): T1 needs
+no MCP endpoint, no remote contract and no external `nigin-engine` artifact.
 
 Static security work may proceed in parallel only when it does not encode an unresolved endpoint, transport or authorization assumption.
 
@@ -138,7 +151,17 @@ Gate G1:
 - Product form and endpoint class are aligned with ADR-003.
 - Feature expansion is blocked until the decision is recorded.
 
-### WS-2 — Endpoint, trust and deployment architecture (#13 / ADR-003)
+### WS-2 — Runtime navigation and network policy (re-scoped from #13 / ADR-003)
+
+> **Re-scoped (ADR-005/008).** The original endpoint/transport architecture (#13 /
+> ADR-003) is **superseded** for the runtime product. This workstream is re-pointed
+> at the **runtime navigation and network policy**: a **default-deny** navigation,
+> popup, download and external-protocol allowlist granted **per app**, plus per-app
+> network egress scoping. `connect-src` remains the fetch-class egress control but
+> does **not** cover navigation-based exfiltration (see
+> `docs/security/THREAT_MODEL.md`, residual-risk note). The CORS/redirect/URL-scheme
+> and CSP-feasibility evidence below is retained and re-applied to the runtime's
+> per-app network policy rather than to a single remote MCP endpoint.
 
 Evaluate:
 
@@ -163,7 +186,15 @@ Gate G2:
 - No wildcard/scheme-wide CSP fallback.
 - Real endpoint integration remains blocked until this gate passes.
 
-### WS-3 — MCP contract and conformance
+### WS-3 — MCP contract and conformance (re-scoped: optional/internal, off T1)
+
+> **Re-scoped (ADR-008).** MCP consumption is an **internal, optional** `browser`
+> capability and is **not a prerequisite** for T1. This workstream is **not on the
+> T1 critical path**. Any signed contract `browser` chooses to consume may be sourced
+> internally or from any signed producer — **no external `nigin-engine` producer is
+> assumed**. The ADR-002 signature/provenance-verification discipline below is
+> retained but producer-neutral. Execute this workstream only if/when MCP is added,
+> after T1.
 
 Required input:
 

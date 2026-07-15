@@ -87,6 +87,41 @@ update model can be independently audited.
 No format is accepted before the spike. The label "de-facto standard" is not a
 substitute for supported consumer implementations and maintained verifier code.
 
+## Primary-source landscape (Quella 2026-07-16)
+
+This ADR stays **PROPOSED**; the review below focuses the two-track spike and decides
+nothing. Confidence markers carried over honestly.
+
+- **IWA / `.swbn` is 2026-confirmed Enterprise/ChromeOS-only** — the initial release
+  and its high-trust APIs are available only to Chrome-Enterprise-administered ChromeOS
+  devices and select development partners; unmanaged cross-platform expansion is
+  "in the future" with **no date**. It is **not** a portable cross-platform format in
+  2026. The format's building blocks are: Ed25519 or ECDSA P-256 signatures →
+  Web-Bundle-ID → app identity; `isolated-app://` origin bound to the signing key
+  (not a domain); Integrity Block updated to **v2** (v1 bundles no longer installed
+  since ~M129). Architecturally this is the right model; interoperability value today
+  is low, reference-architecture value high. `[strong evidence]`
+- **Pragmatically best T1 solution today (recommendation, not decision):** an
+  **Electron bundle + an own signed Ed25519 / Merkle-SHA256 manifest** (over the root
+  hash) **+ OS code-signing** of the bundle, reproducing the IWA *semantics*
+  (key-bound app identity, signed offline package) without waiting for IWA's immature
+  cross-platform delivery. Ship this as T1; **observe IWA/`.swbn` as the target
+  architecture**, do not ship it in 2026. `[building blocks strong; overall
+  recommendation plausible]` — this is a recommendation for the spike to test, not an
+  accepted decision.
+- **Honest gaps to close before STABLE (carried from Quella):** Electron
+  `asar integrity` and the Tauri updater signature model were documented from
+  secondary snippets, not primary-fetched this session — look them up in the primary
+  docs before any STABLE claim. IWA v1-deprecation timing (M129) is plausible but
+  should be reconfirmed against the Chromium source before it is load-bearing.
+
+Primary sources (from the Quella 2026-07-16 deliverable):
+
+- IWA / `.swbn`: <https://developer.chrome.com/docs/iwa/introduction> ·
+  <https://chromeos.dev/en/tutorials/getting-started-with-isolated-web-apps/2>
+- Signing/identity building blocks: IWA Introduction (Ed25519/ECDSA-P256,
+  `isolated-app://`, Integrity Block v2), primary-fetched 2026-07-16.
+
 ## Deliverables
 
 - [ ] exact parser/verifier dependencies and licenses
