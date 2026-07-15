@@ -7,9 +7,13 @@
 - Canonical head at report time: `origin/main` @ `3fe912d`
 - Work branch produced this session (local, **not pushed** — GitHub budget freeze):
   `vero/2026-07-16-standalone-reframe-and-report`
-- Verification run locally this session: **179/179 security tests pass**, markdownlint
-  **0 errors** across 28 docs (Node 24; the repo's exact Node 22.23.1 CI gate is a
-  separate strict gate and does not block local test runs).
+- Verification run locally this session: **185/185 security tests pass** (was 179; +6
+  from the Aegis-driven fixes), markdownlint **0 errors** across 29 docs (Node 24; the
+  repo's exact Node 22.23.1 CI gate is a separate strict gate and does not block local
+  test runs).
+- Branch = **8 commits** on top of `3fe912d`. Deep-quality pass added: standalone doc
+  sweep (13 files), a security audit (Aegis) with code fixes, and a primary-source
+  runtime/package research (Quella) folded into ADR-006/007. See §10.
 
 ---
 
@@ -26,8 +30,12 @@ unblock the first shippable increment (T1: run owner-controlled offline webapps)
 
 This session I: verified the build locally, decoded the branch/PR topology (no lost
 work), recorded Marco's **standalone** decision as **ADR-008**, re-landed a reviewed
-evidence-hardening addendum, reframed the highest-visibility docs, and produced this
-report — all locally, ready for a single push when the budget returns.
+evidence-hardening addendum, ran a **full standalone doc sweep** (13 files), added a
+**local CI-parity gate** (`verify:local`), commissioned a **security audit** (Aegis —
+no reachable P0; a real P1 threat-model overclaim + P2/P3 fixed with tests) and
+**primary-source research** (Quella) that now grounds ADR-006/007, and produced this
+report — all locally, ready for a single push when the budget returns. Deep-pass detail
+in §10.
 
 ---
 
@@ -66,7 +74,7 @@ Designed → Implemented → Verified → Production-ready.
 
 **What genuinely exists and is verified (PASS-CI / locally re-verified):**
 
-- **Static browser security foundation** (`src/security/*.js`, 13 test files, **179
+- **Static browser security foundation** (`src/security/*.js`, 13 test files, **185
   tests**): CSP emitted from one machine-readable baseline + independent exact M1
   contract; exact-origin `connect-src` allowlist; HTTPS-only remote + loopback-only
   HTTP dev; rejection of non-public / reserved / IPv6-mapped / localhost-misused
@@ -173,8 +181,8 @@ is BLOCKED purely because the runtime does not exist yet.
    CHARTER, ROADMAP, MASTER_ROADMAP, OPEN_DECISIONS, IMPLEMENTATION_STATUS,
    PRODUCTION_READINESS_MATRIX, ADR-001, ADR-002, reframe checklist, product-discovery
    protocol, VALIDATION_AND_OPEN_TOPICS). Contradicts Marco's standalone decision.
-   → **Fixed at the source with ADR-008 (tie-breaker) + README/CHARTER banners; full
-   mechanical sweep tracked as remaining work.**
+   → **FIXED: ADR-008 (tie-breaker) + full mechanical sweep across 13 files. 0
+   substantive "three-layer" refs remain (git grep); markdownlint 0 errors.**
 2. **Superseded issues left open** (#13 ADR-003, #2 MCP-client-webapp) — stale product
    framing presented as live work. → disposition table §5.
 3. **Parked reverted addendum** (`agent/browser-reframe-evidence-hardening-20260715`)
@@ -182,8 +190,8 @@ is BLOCKED purely because the runtime does not exist yet.
    corrections silently lost. → **reviewed + re-landed** this session.
 4. **Local-dev friction / CI-parity gap.** The toolchain gate demands **exactly Node
    22.23.1 / npm 10.9.8**; Marco's machine runs Node 24 → `toolchain:check` fails
-   locally even though tests pass. For a "more local, less CI" future this is a
-   papercut. → lever in §8 (documented local-CI path + optional nvm pin).
+   locally even though tests pass. → **FIXED: `npm run verify:local`** runs the CI
+   gates locally with the exact-version gate as advisory (§8/§10).
 5. **Stale merged branches** clutter origin (`fix/header-validation-roadmap-refresh`
    =PR#17, `agent/browser-reframe-crossfamily-gates` =PR#22, `feat/cwzl-m0-browser`
    =PR#1). Harmless but noisy; delete needs a push → deferred under freeze.
@@ -195,16 +203,21 @@ is BLOCKED purely because the runtime does not exist yet.
 
 ## 7. What I changed this session (local, not pushed)
 
-Branch `vero/2026-07-16-standalone-reframe-and-report` (3 commits on top of `3fe912d`):
+Branch `vero/2026-07-16-standalone-reframe-and-report` (**8 commits** on top of `3fe912d`):
 
-1. `docs(reframe): ADR-008 browser is standalone; MCP internal/optional` — new
-   `docs/adr/ADR-008-...md` + README + CHARTER banner/principle updates.
-2. `docs: add browser reframe evidence hardening addendum` — cherry-pick of the
-   reviewed, Marco-authored addendum (`e74221f`) back onto the line.
-3. `docs: mark evidence-hardening addendum reviewed/re-landed` — honest provenance.
-4. This report (`docs/reports/2026-07-16_STATE_OF_BROWSER_report.md`).
+1. **ADR-008** — browser is standalone; MCP internal/optional — new ADR + README/CHARTER.
+2. **Evidence-hardening addendum** re-landed (reviewed, Marco-authored `e74221f`) +
+   honest provenance note.
+3. **This report** + the readable HTML in `zum Lesen`.
+4. **`build(dev)` CI-parity** — `npm run verify:local` + opt-in `.githooks/pre-push`
+   (package.json + scripts/verify-local.js + hook).
+5. **Full standalone doc sweep** (13 files) — 0 substantive three-layer refs left.
+6. **`fix(security)`** — Aegis code fixes: serializeCsp directive-name validation,
+   192.0.0.0/24 correction, trailing-dot origin rejection (+6 tests → **185 pass**).
+7. **ADR-006/007 enrichment** (Quella primary-source landscape) + **threat-model fix**
+   (fetch-class exfil + runtime threat surface) + **MASTER_ROADMAP** runtime alignment.
 
-No source/test/workflow files touched → **179 tests still pass, lint clean**. One push
+Verification: **185/185 tests pass**, markdownlint **0 errors** (29 files). One push
 lands the whole thing when budget returns.
 
 ---
@@ -220,31 +233,30 @@ Options, cheapest first:
 
 1. **Local-only (what we're doing).** Commit + local merges on a branch, push nothing.
    **Zero cost.** One push later = one CI run for the whole batch. Best under freeze.
-2. **Local CI parity (recommended lever).** Run the exact CI steps locally so we get
-   verification without Actions: `npm test` (✓ 179 pass), `npm run csp:check`,
-   `lockfile:check`, `audit:ci`, markdownlint. Add a `verify:local` script + optional
-   pre-push hook. This makes "more local, less CI" safe.
+2. **Local CI parity — BUILT this session.** `npm run verify:local` runs the exact CI
+   gates locally (lockfile / CSP / **185 tests** / markdownlint required; exact-Node
+   gate advisory since local Node differs; audit `--with-network`). Opt-in
+   `.githooks/pre-push` (`git config core.hooksPath .githooks`). Zero cost.
 3. **Push without CI when needed:** `[skip ci]` / `[ci skip]` in the commit subject
    skips workflow runs; push to backup/collaborate without burning minutes.
-4. **Structural CI-cost cuts (do once, save forever):**
-   - trigger CI on **PR-to-main only**, not every push;
-   - **path filters** — skip CI for docs-only changes (this repo is 90% docs right now,
-     so this alone would have avoided most recent burn);
-   - `concurrency: cancel-in-progress` to kill superseded runs;
-   - trim the job matrix; cache npm.
-5. **Self-hosted runner (structural fix for cost anxiety).** Run Actions on Marco's own
-   PC — **self-hosted minutes are not billed**. These repos are private, so the usual
-   "never on untrusted PRs" caveat is manageable. Eliminates the Actions-minute cost
-   entirely for our own work.
-6. **Stay under the free tier.** Private repos include a monthly free Actions
-   allotment; the $50 was overage. Options 3–4 keep us under it sustainably. *(Exact
-   free-minute numbers depend on the plan — verify in GitHub Billing before relying on
-   a figure.)*
+4. **Structural CI-cost cuts (do once, save forever)** — ready patch in §10 / handoff:
+   - **path filters** — skip CI for docs-only changes (this repo is ~90 % docs, so this
+     alone would have avoided most of the recent burn);
+   - `concurrency: cancel-in-progress` **scoped to PRs only** (never cancel `main`);
+   - `on: pull_request` to avoid double push+PR runs.
+   ⚠️ **Phantom-required-check trap:** a `paths-ignore` on a workflow that later becomes
+   a *required* status check (branch protection #18) makes docs-only PRs hang "pending"
+   forever. Land path-filters and #18 coherently (details in §10).
+5. **Self-hosted runner (structural fix).** Run Actions on Marco's PC — **self-hosted
+   minutes are free** (the planned $0.002/min fee was postponed Dec 2025, never took
+   effect). Private-repo caveat: harden with runner-groups; never on public repos.
+6. **Free tier:** private Free repos include **2,000 Linux Actions-min/month**; the $50
+   was overage. Options 3–5 keep us under it sustainably. *(GitHub Billing docs, 2026.)*
 
-**Recommendation:** keep working **local-only** now (option 1) + add **local CI parity**
-(option 2). When budget returns, land option 4 (path filters + PR-only) in the first
-push so future cost stays near zero — then a self-hosted runner (5) if we want CI
-without ever touching the budget again.
+**Recommendation:** keep working **local-only** now (1) + **local CI parity** (2, done).
+When budget returns: land option 4 (path filters + PR-only, respecting the phantom-check
+trap) in the first push; then a **self-hosted runner** (5) to decouple CI from the
+budget entirely.
 
 ---
 
@@ -253,13 +265,66 @@ without ever touching the budget again.
 - **Read first:** this report → `docs/adr/ADR-008` (standalone decision) →
   `docs/IMPLEMENTATION_STATUS.md` + `docs/verification/PRODUCTION_READINESS_MATRIX.md`
   (honest evidence state) → `docs/MASTER_ROADMAP.md`.
-- **Truth is standalone:** ignore any lingering "three-layer stack" / "requires
-  `nigin-engine` contract" wording — ADR-008 overrules it until the sweep lands.
-- **Next real work (in order):** #14 product discovery · ADR-006 runtime spike (#23) ·
-  ADR-007 package spike (#24) → then the first **T1 owner-controlled offline vertical
-  slice**. Static security is *done enough*; do not add more of it before the runtime
-  exists.
-- **Pending mechanical work:** full reframe doc-sweep (12 files, §6.1); batched issue
-  disposition (§5); branch cleanup (§6.5) — all need a push, deferred under freeze.
-- **Nothing is lost or broken.** Build is green locally; all changes are on one
-  reviewable branch awaiting a single push.
+- **Truth is standalone:** the doc sweep is done; ADR-008 remains the tie-breaker if
+  any provenance-quoted "three-layer stack" wording surfaces.
+- **Next real work (in order):** #14 product discovery · ADR-006 runtime spike (#23,
+  now grounded by §10 research → measure Electron/CEF) · ADR-007 package spike (#24 →
+  Electron + signed Ed25519/Merkle manifest) → then the first **T1 owner-controlled
+  offline vertical slice**. Static security is *done enough*; do not add more before the
+  runtime exists.
+- **Pending (needs a push, deferred under freeze):** batched issue disposition (§5);
+  branch cleanup (§6.5); the CI-cost patch (§10) landed coherently with #18.
+- **Nothing is lost or broken.** Build is green locally (185 tests); all changes are on
+  one reviewable branch awaiting a single push.
+
+---
+
+## 10. Deep-quality pass (2026-07-16) — audit, research, fixes
+
+Marco asked for a maximal-quality pass: critical review, blind spots (incl. positive),
+web-researched best solutions. Three specialists ran; findings verified before landing.
+
+### Security audit (Aegis) — no reachable P0
+
+| Sev | Finding | Status |
+|---|---|---|
+| P1 | Threat-model overclaim: `connect-src` called "the" exfil boundary — **navigation exfil** (`location=`, `window.open`, `<a ping>`) bypasses it; `navigate-to` never shipped / removed from CSP3 | **FIXED** — reworded to "fetch-class" + residual-risk section pointing to ADR-005 runtime navigation allowlist |
+| P2 | `serializeCsp` did not validate directive **names** (contained by import gate, but docstring overclaimed) | **FIXED** — name validation + 3 tests |
+| P2 | Runtime threat classes (custom-scheme secure-context, SW cross-app leak) not modelled | **FIXED** — new runtime-threat-surface section |
+| P2 | Evidence manifest is tamper-**evident**, not tamper-resistant/attested ("immutable" wording) | documented (cosign/SLSA deliberately omitted for private repo — known NR) |
+| P3 | `192.0.0.0/16` over-blocked (fail-closed) | **FIXED** — exact `/24` + 2 tests |
+
+**Positive blind spots (better than assumed):** octal/hex/integer-IPv4 and
+IPv6-embedded-IPv4 smuggling neutralised; real two-layer separation with an *enforced*
+source-scan import gate (tested, not just claimed); CRLF/header-splitting double-closed;
+fail-closed throughout; supply-chain above average (SHA-pinned Actions, `permissions:{}`,
+`ignore-scripts` triple-enforced, zero runtime deps, secret-scan 0 hits). HSTS is
+**exactly** 63072000 at the hardened layer — the "exact two-year" doc claim is true.
+
+### Runtime/package research (Quella, primary-source) → now in ADR-006/007
+
+- **Runtime:** only **bundled Chromium (Electron / CEF)** gives *both* real Chromium
+  site-isolation and owner-controlled patch cadence. Adversarial sharpening: WebView2
+  *does* inherit Chromium site-isolation — its real disqualifiers for T3 are **no owner
+  patch-SLA** (evergreen, MS-controlled) + **platform inconsistency** (WebKit ≠
+  site-per-process), not "no isolation". Tauri/system-WebView → T1/own content only.
+  Servo/Ladybird not production-ready in 2026 (Ladybird stable ~2028).
+- **Isolation:** Chromium default boundary = **site** (scheme + eTLD+1); per-origin needs
+  **Origin-Agent-Cluster** (now default). Confirms the addendum's "site ≠ origin".
+- **Package:** IWA/`.swbn` is the right *architecture* but 2026 is **Enterprise/ChromeOS
+  only** — not portable. Best T1 today = **Electron + own signed Ed25519/Merkle-SHA256
+  manifest + OS code-signing** (emulate IWA key-bound identity); watch IWA as the target.
+- Honest weak pillars carried forward with low-confidence markers (CEF SLA qualitative;
+  Electron "1–2 wk Chromium bump" plausible; asar-integrity/Tauri-updater signing to
+  reconfirm before STABLE). ADR-006/007 stay **PROPOSED** — research focuses the spike,
+  it does not replace the measured comparison.
+
+### CI-cost cuts — ready patch (apply on first push, respecting the phantom-check trap)
+
+- Free private tier = **2,000 Linux-min/month**; **self-hosted runner = free** (planned
+  fee postponed Dec 2025, never active).
+- Patch A: `concurrency cancel-in-progress` in docs-ci, PR-scoped. Patch B: `paths` /
+  `paths-ignore` (docs vs code) — **only while checks are not required, or via an
+  always-runs/conditionally-no-ops gate job once #18 lands** (phantom-check trap). Patch
+  C: `on: pull_request` to avoid double runs. End state: self-hosted runner on Marco's PC
+  (runner-groups hardened; never public). Full patch text prepared for the push.
