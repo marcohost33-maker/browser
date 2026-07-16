@@ -57,8 +57,8 @@ elements:
     typ_pflicht: {software: P, forschung: P, app: P, engine: P, infra: P, public: P}
   - id: 3
     name: roadmap
-    ort: docs/ROADMAP.md
-    detektor: "exists(docs/ROADMAP.md) && non_empty && contains(Nordstern|Meilenstein)"
+    ort: docs/ROADMAP.md (o. Root ROADMAP.md)
+    detektor: "non_empty(docs/ROADMAP.md) || non_empty(ROADMAP.md)"   # Existenz, nicht Qualitaet (Nordstern/Meilenstein = Inhalts-GUETE, gehoert nicht in Existenz-Detektor)
     reifegrad_ab: scaffold
     typ_pflicht: {software: P, forschung: P, app: P, engine: P, infra: P, public: P}
   - id: 4
