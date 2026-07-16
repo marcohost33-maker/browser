@@ -78,3 +78,46 @@ illustrative only.
 
 High for A1–A8, B9–B11, C14–C15, D16–D18, E20–E23 (primary-source or well-known archive-parser /
 crypto hygiene). Medium for B12/B13/D19 (design choices — fix exact limits at implementation).
+
+## F. Verification, corrections & additional required classes (Quella primary-source cross-check, 2026-07-17)
+
+**Corrections to items above (web-verified — supersede the originals):**
+- **C14 (Ed25519) reworded:** rejecting non-canonical scalar `S ≥ ℓ` is done by BOTH `verify` and
+  `verify_strict` and only removes *scalar* malleability — necessary but NOT sufficient, and NOT
+  what distinguishes strict mode. Require `ed25519-dalek::verify_strict` = cofactorless verification
+  **plus** rejection of non-canonical/small-order encodings of **R and the public key A** (strong
+  binding / SBS). Refs: docs.rs ed25519-dalek; "Taming the many EdDSAs" ePrint 2020/1244.
+- **B11 (float-ban) tightened:** sound ONLY together with a **safe-integer magnitude cap `|n| < 2^53`**;
+  a larger "integer" is an IEEE-754 double under the hood and re-introduces the serialization
+  divergence JCS avoids.
+- **A7 (CVE-2024-0450) scope caveat:** covers ONLY overlapping-entry bombs (CPython fixed 3.12.3/
+  3.11.9/3.10.14/3.9.19/3.8.19). It does NOT defend ratio/aggregate-size bombs — do not cite it as
+  general zip-bomb coverage.
+
+**Additional REJECT / control requirements (were missing):**
+- **A9. Decompression bombs (biggest gap):** hard cap on total uncompressed bytes + per-entry ratio
+  cap + **streamed extraction with a byte ceiling** (abort mid-stream; never trust declared sizes).
+- **A10. Compression-method allowlist:** store(0)+deflate(8) ONLY; reject bzip2/LZMA/zstd/PPMd/deflate64.
+- **A11. Entry-count / central-directory-size cap** (millions of tiny entries = exhaustion bomb).
+- **A12. Extra-field filename override:** Info-ZIP Unicode-Path (0x7075) and 0x000a/0x5455 extra fields
+  can override the header name → traversal/sanitization bypass. Strip/ignore all non-essential extra
+  fields OR validate them against the sanitized main name.
+- **A13. POSIX mode / external-attr bits:** normalize/strip setuid/setgid/sticky/exec bits + mtime on
+  extraction (never honor from archive).
+- **A14. Windows filename edge cases (explicit):** reserved device names (CON, PRN, AUX, NUL, COM1–9,
+  LPT1–9, incl. with extension), trailing dot/space, NTFS ADS (`name:stream`), MAX_PATH(260) overflow.
+- **A15. Integer-overflow guard** in size/offset arithmetic (validate against real file length, even
+  with ZIP64 banned).
+- **B14. Manifest parser hardening:** duplicate-key → REJECT; reject NUL/BOM/non-UTF-8 at parse
+  (separate from the UTF-16-sort rule).
+- **B15. Signature scope + manifest↔payload bijection (top-tier supply-chain):** define explicitly WHAT
+  is signed. If only the manifest is signed, require a per-file content hash in the manifest AND a
+  bijective check (every ZIP entry ∈ manifest and vice-versa) — else unlisted files can be added/swapped.
+- **E24. Secure-update freshness (TUF):** Ed25519 proves only blob authenticity — add a monotonic
+  version counter (anti-downgrade), signed expiry/timestamp (anti-freeze/replay), and key-rotation/
+  revocation + role/threshold. MAJOR class for a signed-update format.
+
+Provenance: corrections/confirmations are web primary-source verified (RFC 8785, CVE-2024-0450
+advisory, ed25519-dalek docs + ePrint 2020/1244, Chrome IWA docs, Electron timelines); the gap list
+is our analysis on those facts. IWA/.swbn confirmed ChromeOS/enterprise-gated → rolling our own CWAP
+is defensible, not reinventing a portable standard.
