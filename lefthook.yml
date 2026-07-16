@@ -1,0 +1,10 @@
+# lefthook.yml — lokale Repo-Standard-14-Enforcement (pre-push), $0 GitHub-Actions.
+# ADVISORY + umgehbar (git push --no-verify); Solo-Fleet → kein reales Threat-Model.
+# Echtes Gate = Equalita + Marco. Detektor vendored in .repostandard14/ (self-contained,
+# copier-verwaltet). Detektor urteilt nie „PASS"; --gate wendet nur die yaml `hook`-Politik an:
+# hard-fail bei Pflicht-Kern #1/#2/#3/#14 absent o. Konflikt-Marker; sonst WARN (nicht-blockend).
+pre-push:
+  parallel: false
+  commands:
+    repo-standard-14:
+      run: py .repostandard14/detektor.py . --gate --standard .repostandard14/standard.yaml

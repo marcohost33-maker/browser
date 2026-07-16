@@ -1,0 +1,150 @@
+# REPO_STANDARD_14.yaml — Maschinen-Single-Source für ENG-04 (zaehlchecklisten-engine)
+# Standard ändern = HIER ändern → Checkliste/Detektor/Board ziehen nach (kein Doppelpflege-Drift).
+# Ehrlichkeit: misst EXISTENZ, nicht QUALITÄT. Hook/ENG-04 = advisory; echtes Gate = Equalita + Marco.
+version: "1.0"
+status: STABLE                  # Equalita-Konsistenz-PASS 2026-07-16 (Verdikt-Log Z.315)
+date: "2026-07-16"
+owner: vero
+grounded_in: [audit_wv8dq3mv6, mark_rollout_plan]
+
+# Detektor-Grammatik (verbindlich für ENG-04-Interpreter; behebt Equalita-Mängel #2).
+# Alle Detektoren sind BOOLESCHE Ausdrücke. Funktionen:
+detektor_grammar:
+  exists(path): "Pfad existiert im Repo-Tree → bool"
+  non_empty(path): "Datei existiert && size>0 (nach Whitespace-Trim) → bool"
+  non_empty_nongitkeep(dir): "dir enthält ≥1 Datei, die NICHT nur .gitkeep/.keep ist → bool"
+  count(glob_expr): "Anzahl Tree-Pfade die auf glob matchen → int (nur in Vergleich `count(...) >= N` verwenden)"
+  contains(scope, needle): "scope-Text enthält needle (Regex) → bool. scope ∈ {README, any, <pfad>}"
+  contains_min(scope, needle, N): "Anzahl needle-Matches in scope >= N → bool (ersetzt überladenes `contains(README,'## ') >= 3`)"
+  logik: "&&, ||, ! ; Vergleiche nur zwischen count()/contains_min() und Integer-Literal"
+  hinweis: "Regeln im 'elements[].detektor' sind Pseudo-DSL bis Codie den Interpreter baut (zaehlchecklisten-engine#8); Header 'maschinell' = Ziel-Zustand nach Bau."
+
+reifegrade: [scaffold, jung, aktiv, stabil]
+# Reifegrad-Quelle (autoritativ, maschinenlesbar): Frontmatter `reifegrad:` in `00_landkarte/README.md`
+# (Detektor liest dort + README). Frisch generierte Repos: Template seedet `reifegrad: scaffold`.
+# Fehlt der Marker → Detektor default `jung` + Signal (nicht als Wahrheit lesen). Reifegrad-Wechsel = manueller Marco/Vero-Akt.
+reifegrad_quelle: "00_landkarte/README.md frontmatter reifegrad:"
+
+# Pflicht-Kern: unter diesem Set ist ein Repo (jeder Reifegrad) unvollständig → Hook Hard-FAIL nur hier.
+pflicht_kern: [1, 2, 3, 14]
+
+projekt_typen: [software, forschung, app, engine, infra, public]
+
+# Taxonomie-Reconcile (Equalita-Advisory Z.317): copier repo_type → yaml typ_pflicht-Spalte.
+# copier repo_type = Single-Source im .copier-answers.yml jedes Repos; Detektor mappt darüber.
+typ_mapping_copier_to_yaml:
+  app: app
+  engine: engine
+  control_plane: infra          # Control-Plane = Infrastruktur
+  research: forschung
+  library: forschung            # „Knowledge library" (copier-Help) → formelbuch-pflichtig. Reine Code-Lib: als software scaffolden.
+  factory: software             # Werkbank/Tooling (z.B. code-factory FAC-01)
+# Repos ohne .copier-answers.yml (noch nicht adoptiert): Detektor nutzt Default 'software' + flaggt "typ_unbekannt".
+
+# P=Pflicht  Ps=Pflicht-leicht(Stub/Pointer)  G=ab reifegrad aktiv  na=n/a
+elements:
+  - id: 1
+    name: readme
+    ort: README.md
+    detektor: "exists && contains(/(?i)zweck/) && contains(/[A-Z]{3}-\\d{2}/) && contains(/(?i)build|test|run/) && contains(/(?i)landkarte|matrix/) && contains(/(?i)non-?goals?/)"
+    reifegrad_ab: scaffold
+    typ_pflicht: {software: P, forschung: P, app: P, engine: P, infra: P, public: P}
+  - id: 2
+    name: landkarte
+    ort: 00_landkarte/README.md
+    detektor: "exists(00_landkarte/README.md) && non_empty && contains('Code:')"
+    reifegrad_ab: scaffold
+    typ_pflicht: {software: P, forschung: P, app: P, engine: P, infra: P, public: P}
+  - id: 3
+    name: roadmap
+    ort: docs/ROADMAP.md
+    detektor: "exists(docs/ROADMAP.md) && non_empty && contains(Nordstern|Meilenstein)"
+    reifegrad_ab: scaffold
+    typ_pflicht: {software: P, forschung: P, app: P, engine: P, infra: P, public: P}
+  - id: 4
+    name: protokolle_adr
+    ort: docs/ADR/
+    detektor: "count(glob('docs/**/ADR-*.md')) >= 1"
+    reifegrad_ab: jung
+    typ_pflicht: {software: P, forschung: Ps, app: Ps, engine: P, infra: P, public: Ps}
+  - id: 5
+    name: archiv
+    ort: archiv/
+    detektor: "non_empty_nongitkeep(archiv/) || contains(README, 'Archiv-Konvention')"
+    reifegrad_ab: jung
+    typ_pflicht: {software: Ps, forschung: Ps, app: Ps, engine: Ps, infra: Ps, public: Ps}
+  - id: 6
+    name: historie
+    ort: CHANGELOG.md
+    detektor: "exists(CHANGELOG.md) && non_empty"
+    reifegrad_ab: jung
+    typ_pflicht: {software: P, forschung: Ps, app: P, engine: P, infra: P, public: P}
+  - id: 7
+    name: pr_nr
+    ort: pr_nr/
+    detektor: "non_empty_nongitkeep(pr_nr/)"
+    reifegrad_ab: jung
+    typ_pflicht: {software: P, forschung: P, app: Ps, engine: P, infra: P, public: P}
+  - id: 8
+    name: best_practices
+    ort: docs/BEST_PRACTICES.md | research/
+    detektor: "non_empty(docs/BEST_PRACTICES.md) || non_empty_nongitkeep(research/)"
+    reifegrad_ab: aktiv
+    typ_pflicht: {software: Ps, forschung: P, app: Ps, engine: P, infra: Ps, public: Ps}
+  - id: 9
+    name: audit
+    ort: compliance/AUDIT*.md | Gate-Matrix
+    detektor: "non_empty(glob('compliance/AUDIT*.md')) || contains(README,'Gate')"
+    reifegrad_ab: aktiv
+    typ_pflicht: {software: G, forschung: P, app: G, engine: P, infra: P, public: P}
+  - id: 10
+    name: inventar
+    ort: inventar/
+    detektor: "non_empty_nongitkeep(inventar/)"
+    reifegrad_ab: jung
+    typ_pflicht: {software: Ps, forschung: P, app: Ps, engine: P, infra: P, public: Ps}
+  - id: 11
+    name: toc
+    ort: README-TOC | INDEX.md
+    detektor: "contains_min(README, '## ', 3) || exists(INDEX.md)"
+    reifegrad_ab: jung
+    typ_pflicht: {software: P, forschung: P, app: Ps, engine: P, infra: P, public: P}
+  - id: 12
+    name: formelbuch
+    ort: research/ Pointer | 00_landkarte
+    detektor: "contains(any, 'Formelbuch|Wissensgraph|Wissens-Graph')"
+    reifegrad_ab: aktiv
+    typ_pflicht: {software: na, forschung: P, app: na, engine: na, infra: na, public: na}  # public nur wenn Wissens-Repo
+  - id: 13
+    name: datenschutz_compliance
+    ort: compliance/THREAT_MODEL.md + DATA_CLASSIFICATION.md
+    detektor: "non_empty(compliance/THREAT_MODEL.md) || non_empty(compliance/DATA_CLASSIFICATION.md)"
+    reifegrad_ab: jung
+    typ_pflicht: {software: G, forschung: P, app: P, engine: P, infra: P, public: P}
+  - id: 14
+    name: todo
+    ort: todo/ | OFFENE_THEMEN-Anschluss
+    detektor: "non_empty_nongitkeep(todo/) || contains(README, 'OFFENE_THEMEN')"
+    reifegrad_ab: scaffold
+    typ_pflicht: {software: P, forschung: P, app: P, engine: P, infra: P, public: P}
+
+# Toolchain (web-fundiert Quella 2026-07-16) — kein externes Detektor-Tool (repolinter archiviert, alint unreif)
+toolchain:
+  scaffold: copier          # schon in code-factory; copier copy (neu) / copier update (bestehende 20, erst 2-3 piloten)
+  detektor: "eigenes py-Skript (~50 Zeilen, Reuse forschungswissen-validate.py-Muster)"
+  enforcement: lefthook     # Single-Binary, null Runtime-Dep, pre-push
+  ausdruecklich_nicht: [repolinter_archiviert_2026_02, alint_unreif, backstage_idp, server_side_hooks, ci_matrix]
+
+# Detektor-Output-Kontrakt (verbindlich): SIGNAL, kein Verdikt
+detektor_output:
+  je_element: "{repo, element, signal, wert}"   # signal ∈ {present_nonempty, present_empty, absent}; wert = Detail
+  darf_NICHT: "PASS/grün/erfüllt ausgeben — Monitoring ≠ Validator; 'erfüllt' ist Equalitas Domäne"
+  anti_goodhart: "Existenz-Zählung IMMER mit Content-Signal (nicht-leer ∧ Sektions-Header) koppeln"
+
+# Hook-Politik (lokal via lefthook, $0 Actions) — WARN/advisory, kein Guarantee
+hook:
+  pre_push:
+    warn_wenn: "reifegrad in [aktiv,stabil] && signal(typ_pflicht_set) != present_nonempty"
+    hard_fail_wenn: "signal(pflicht_kern #1/#2/#3/#14) == absent"   # nur Kern-Verlust blockt
+    blockt_auch: "copier-Konflikt-Marker (git 7x-'<'-Marker im Tree)"
+    kosten: 0   # rein lokal, keine GitHub-Actions; umgehbar (Solo-Fleet ⇒ kein reales Threat-Model)
