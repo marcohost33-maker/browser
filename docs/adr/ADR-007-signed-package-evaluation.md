@@ -136,3 +136,11 @@ Primary sources (from the Quella 2026-07-16 deliverable):
 - [ ] update, rollback, revocation and key-rotation model
 - [ ] resource-limit policy
 - [ ] independent security review
+
+## Amendments
+
+- 2026-07-16 — [Cross-family verifier hardening requirements](ADR-007-amendment-cross-family-verifier-hardening-2026-07-16.md)
+  (Gemini deep review + ChatGPT gates, vetted). Normative REJECT rules for the #24 spike:
+  ZIP anti-malleability (comment/ZIP64/encryption/SFX bans, CDH↔LFH consistency, overlap detection),
+  RFC 8785 canonicalization (UTF-16 key sort, float ban), Ed25519 strict (SUF-CMA), TOCTOU/atomic-staging/
+  path-containment, and the mandatory Python↔Rust differential-test gate.
