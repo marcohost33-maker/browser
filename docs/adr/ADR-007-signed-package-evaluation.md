@@ -44,6 +44,12 @@ Important boundaries:
 - IWA's initial product availability remains managed-ChromeOS/selected-partner
   oriented; interoperability value does not equal cross-platform consumer
   readiness.
+- Signed HTTP Exchanges (SXG) are a *different* specification from IWA Signed Web
+  Bundles (`.swbn`): SXG tooling is not evidence of an `.swbn`/IWA verifier and
+  must not be substituted for one (ChatGPT cross-family correction 2026-07-15).
+- Track A pins an exact Web Bundle / Integrity Block spec revision and exact
+  verifier tool versions (Go/Node/Rust) before any conformance claim; "latest"
+  is not a spec.
 
 ## Track B — Minimal manifest-root package
 

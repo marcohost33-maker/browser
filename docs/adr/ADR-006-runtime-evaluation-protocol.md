@@ -22,6 +22,9 @@ security patches on the project's own cadence?
 1. Tauri 2 / WRY / system WebView
 2. Electron / bundled Chromium
 3. Windows-only WebView2-direct reference implementation
+4. CEF (Chromium Embedded Framework) / bundled Chromium — measured under the same
+   hard cut and security criteria as Electron, not carried as a conclusion-only
+   "Electron or CEF" mention (ChatGPT cross-family correction 2026-07-15).
 
 Servo, Verso and Ladybird remain watch-list items, not v1 production candidates.
 Flutter embedding is not a separate engine option and therefore is not evaluated
@@ -99,6 +102,14 @@ cut criteria separately from preferences.
 - Distinct CoreWebView2Environment and user-data folder per app.
 - No assumption that one WebView equals one renderer process.
 - ProcessFailed, cleanup and profile deletion behaviour tested.
+
+### CEF
+
+- Sandbox active; `--no-sandbox` is prohibited.
+- No generic JavaScript/native bridge exposed to app content.
+- Navigation, permissions, certificate handling and downloads denied by default.
+- Chromium lineage, branch support and a rebuild/re-release SLA demonstrated.
+- Browser-product maintenance and packaging cost measured, not assumed.
 
 ## Hard cut criteria
 

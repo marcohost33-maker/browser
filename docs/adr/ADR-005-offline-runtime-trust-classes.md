@@ -80,11 +80,14 @@ Cross-family review (Vero, ChatGPT, Aegis) constrains the runtime shortlist now,
 even though the binding choice stays in ADR-006, because T3 is a committed end
 state rather than a hypothetical:
 
-- Real site isolation for unknown foreign code needs process-level, per-origin
-  isolation inherited from the engine. A Chromium-based runtime (Electron or
-  CEF) inherits Chromium's site isolation; a system-WebView wrapper such as
-  Tauri does not provide equivalent cross-origin process isolation for hostile
-  content. The T3 runtime direction is therefore Chromium/CEF/Electron.
+- Real site isolation for unknown foreign code needs process-level site
+  isolation inherited from the engine. Chromium's default boundary is a *site*
+  (scheme + eTLD+1), not a full origin; per-*origin* process locking requires
+  Origin-Agent-Cluster and must be demonstrated, not inferred from the engine
+  default (see ADR-006). A Chromium-based runtime (Electron or CEF) inherits
+  Chromium's site isolation; a system-WebView wrapper such as Tauri does not
+  provide equivalent cross-origin process isolation for hostile content. The T3
+  runtime direction is therefore Chromium/CEF/Electron.
 - A shippable engine security-patch path is a hard cut criterion (evaluated in
   ADR-006): a bundled Chromium can be patched by the project on its own release
   cadence, whereas a system WebView ties patch latency to the host OS vendor.
