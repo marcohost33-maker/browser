@@ -196,3 +196,48 @@ curve25519-dalek#663 + ePrint 2020/1244; GHSA-w97x-xxj5-gpjx (2026-01-22); CVE-2
 CVE-2025-29787 (Rust zip, fixed 2.3.0); python.org CVE-2024-0450 thread; libzip extrafld.txt; APPNOTE 6.3.9;
 Fifield "A better zip bomb" WOOT'19; bugs.python.org 38671. Signing-layer rules G1–G8 are our analysis on those
 facts. Net: container layer strong; **the signing/binding semantics were the real gap and are now specified.**
+
+## H. Container-format re-evaluation (research, 2026-07-17) — feeds the #24 spike, owner/evidence-gated
+
+A deeper research pass asked the prior question: *is ZIP even the right container, given all of §A/§G is
+hardening tax?* Finding (recommendation for the #24 spike to confirm/falsify — NOT a settled decision):
+
+> **All of §A + the §G ZIP corrections exist ONLY because ZIP has a dual-index architecture (central
+> directory vs. local file headers) that generates parser differentials. Because we OWN the offline runtime
+> (we control both the verifier AND the extractor), we can choose a container whose byte-stream is
+> single-pass and canonical, which deletes that entire rule class BY CONSTRUCTION.**
+
+**Recommended primary candidate: NAR (Nix Archive) + detached Ed25519 (minisign format) + JCS manifest.**
+NAR grammar (nix.dev): magic `nix-archive-1`, recursive node tree, length-prefixed strings padded to 8 bytes,
+directory entries sorted by name → deterministic, single-pass, **no central directory, no dual-header
+ambiguity** → the ZIP/tar malleability class structurally cannot exist. Content-addressing gives tamper-
+evidence for free; the grammar is small enough (~sub-200-line verifier) to **self-implement canonically in
+BOTH Python and Rust**, depending on no large third-party archive parser on the trust path. Rust libs
+`nix-nar`/`libnar`; Go `zombiezen.com/go/nix/nar`.
+
+**Actively falsified alternatives:** tar+minisign is NOT a security upgrade — TARmageddon (CVE-2025-62518,
+Oct 2025) is the same PAX/ustar dual-encoding differential class as ZIP. `.wbn` Integrity-Block v2 does NOT
+reduce differential surface — it relocates it to CBOR canonical-form + adds HTTP-exchange semantics we don't
+need, and Rust verify tooling is immature (Go/Node-first). OCI+cosign keyful-offline works
+(`--tlog-upload=false`) but drags tar layers back in and Rust verify is awkward.
+
+**Fallback (rank 2): keep ZIP** but pin `rc-zip` (sans-io, RustSec-clean at review) and ALL of §A/§G. Pick this
+only if the runtime is already ZIP-coupled, or random-access to individual entries without whole-file read is
+required (NAR is whole-file sequential — fine for a signed offline package you verify end-to-end anyway).
+
+**Keep JCS (RFC 8785) for the manifest regardless of container** — orthogonal and correct.
+
+**What flips the recommendation (decision conditions for #24):** (1) runtime must consume a container it does
+NOT control (browser expecting `.wbn`, un-replaceable OS ZIP reader) → match that format + keep §A/§G;
+(2) need entry-level random access/streaming → ZIP/`.wbn`; (3) need public transparency-backed third-party
+verifiability → Sigstore keyless (online Rekor), revisit OCI; (4) a NAR-parser CVE appears or self-implementing
+the verifier proves too costly → fall back to rank 2.
+
+**Honesty flag:** the Python-NAR library ecosystem is thin (single-source `[plausibel]`); the recommendation
+leans on self-implementing the tiny canonical verifier. If we will NOT self-implement, rank 2 (ZIP+rc-zip)
+becomes the pragmatic pick. Re-check rustsec.org at build time — "no advisory" is absence-of-evidence.
+
+Provenance H: EXTERN primary sources only (WICG webpackage Go README; Nix Reference Manual 2.34 NAR spec;
+CVE-2025-62518 TARmageddon; CVE-2026-33056; CVE-2025-29787; rc-zip; RustSec DB; Sigstore cosign docs;
+minisign). No Coworkerz-internal measurement mixed in. This is a recommendation feeding the #24 spike; the
+container choice remains owner/evidence-gated.
