@@ -35,43 +35,43 @@ illustrative only.
 
 ## B. Manifest canonicalization (RFC 8785 / JCS) — deterministic cross-language signatures
 
-9. UTF-8, **no ASCII escaping** (`\uXXXX` for non-ASCII is forbidden).
-10. Object keys sorted by **UTF-16 code units**, NOT Unicode code points — critical: Python's
+1. UTF-8, **no ASCII escaping** (`\uXXXX` for non-ASCII is forbidden).
+2. Object keys sorted by **UTF-16 code units**, NOT Unicode code points — critical: Python's
     default code-point sort diverges from JS/Rust for chars > U+FFFF and silently breaks signatures.
-11. **Float ban** — numeric values MUST be integers; float/NaN/Infinity → REJECT (IEEE-754/Ryu
+3. **Float ban** — numeric values MUST be integers; float/NaN/Infinity → REJECT (IEEE-754/Ryu
     serialization diverges across languages → signature mismatch).
-12. **JSON depth limit** (e.g. ≤ 5) → nesting-DoS guard.
-13. **Strict-but-extensible** — optional `extensions: {}` object; unknown keys allowed ONLY inside
+4. **JSON depth limit** (e.g. ≤ 5) → nesting-DoS guard.
+5. **Strict-but-extensible** — optional `extensions: {}` object; unknown keys allowed ONLY inside
     it, still canonicalized and signature-bound, float-ban still applies; unknown **root** keys →
     REJECT. Optionally: unknown `critical_`-prefixed extension keys → REJECT.
 
 ## C. Signature & crypto
 
-14. **Ed25519 strict** — reject non-canonical scalar `S ≥ ℓ` (SUF-CMA; e.g. `verify_strict` /
+1. **Ed25519 strict** — reject non-canonical scalar `S ≥ ℓ` (SUF-CMA; e.g. `verify_strict` /
     ed25519-dalek strict). Prevents malleable-but-valid signatures if package hashes are ever
     logged/blocklisted.
-15. Signature verified **before** any payload parsing/extraction (keep existing strength).
+2. Signature verified **before** any payload parsing/extraction (keep existing strength).
 
 ## D. Filesystem / activation safety
 
-16. **TOCTOU** — stat via the open file descriptor (`fstat`), never path-stat-then-open.
-17. **Atomic staging** — staging dir MUST be on the same mount as `install_root`
+1. **TOCTOU** — stat via the open file descriptor (`fstat`), never path-stat-then-open.
+2. **Atomic staging** — staging dir MUST be on the same mount as `install_root`
     (e.g. `<install_root>/.staging`) so `rename`/`os.replace` is an atomic inode swap; never `/tmp`.
-18. **Strict path containment at extraction** — resolve the final path and assert it is inside the
+3. **Strict path containment at extraction** — resolve the final path and assert it is inside the
     staging sandbox (`resolved.is_relative_to(sandbox)`), independent of string-level checks.
-19. Keep last-good version for rollback; hard-delete rotated-out versions (retention / purpose-binding).
+4. Keep last-good version for rollback; hard-delete rotated-out versions (retention / purpose-binding).
 
 ## E. Process & verification gates
 
-20. Normative spec **before** code; one canonical manifest representation; limits enforced **before**
+1. Normative spec **before** code; one canonical manifest representation; limits enforced **before**
     allocation/extraction.
-21. **Differential-test gate (mandatory 007 gate)** — two independent implementations (Python
+2. **Differential-test gate (mandatory 007 gate)** — two independent implementations (Python
     reference + Rust: `rc-zip` + `serde_json` + `ed25519-dalek`) run against the same adversarial
     corpus **plus** mutation fuzzing; ANY verdict mismatch = fail.
-22. Keep these five questions **separate** (a valid signature answers only #1): package
+3. Keep these five questions **separate** (a valid signature answers only #1): package
     integrity/identity · publisher admission · capability approval · secure-update authority ·
     code-safety.
-23. Test update/rollback/replay/freeze/key-rotation/revocation/recovery; separate metadata-trust
+4. Test update/rollback/replay/freeze/key-rotation/revocation/recovery; separate metadata-trust
     from package-trust; use **TUF** as reference model.
 
 ## Confidence
@@ -82,6 +82,7 @@ crypto hygiene). Medium for B12/B13/D19 (design choices — fix exact limits at 
 ## F. Verification, corrections & additional required classes (Quella primary-source cross-check, 2026-07-17)
 
 **Corrections to items above (web-verified — supersede the originals):**
+
 - **C14 (Ed25519) reworded:** rejecting non-canonical scalar `S ≥ ℓ` is done by BOTH `verify` and
   `verify_strict` and only removes *scalar* malleability — necessary but NOT sufficient, and NOT
   what distinguishes strict mode. Require `ed25519-dalek::verify_strict` = cofactorless verification
@@ -95,6 +96,7 @@ crypto hygiene). Medium for B12/B13/D19 (design choices — fix exact limits at 
   general zip-bomb coverage.
 
 **Additional REJECT / control requirements (were missing):**
+
 - **A9. Decompression bombs (biggest gap):** hard cap on total uncompressed bytes + per-entry ratio
   cap + **streamed extraction with a byte ceiling** (abort mid-stream; never trust declared sizes).
 - **A10. Compression-method allowlist:** store(0)+deflate(8) ONLY; reject bzip2/LZMA/zstd/PPMd/deflate64.
@@ -130,6 +132,7 @@ document hardened the CONTAINER thoroughly but under-specified the CRYPTOGRAPHIC
 are signed) — where a signed-package format lives or dies.** These items SUPERSEDE the earlier wording.
 
 **Corrections (supersede A/C/E/§F above):**
+
 - **A6 (CDH↔LFH) — was insufficient.** Comparing filename+comp/uncomp size is NOT enough. CDH and LFH
   MUST agree byte-for-byte ALSO on **CRC-32, compression method, and the full general-purpose bit-flag
   word**; plus a **LFH↔CDH bijection** (exactly one LFH per CD entry, no orphan/shadow LFHs) and reject
@@ -153,7 +156,7 @@ are signed) — where a signed-package format lives or dies.** These items SUPER
   is an advisory STRING check; the write happens later (CVE-2025-29787, Rust `zip` ≤2.2.x, fixed 2.3.0).
   Require: (1) create the staging tree into a freshly-made, exclusively-owned dir no attacker can pre-seed;
   (2) open each path component with reparse-point-FAILING semantics (Windows `FILE_FLAG_OPEN_REPARSE_POINT`
-  + reject reparse; POSIX `O_NOFOLLOW` per component / `openat2 RESOLVE_BENEATH`); (3) re-verify containment on
+  - reject reparse; POSIX `O_NOFOLLOW` per component / `openat2 RESOLVE_BENEATH`); (3) re-verify containment on
   the OPENED fd (`GetFinalPathNameByHandle`/fstat), not a pre-open string; (4) never write through a
   junction/symlink component. Also covers Windows 8.3 short-names, ADS, trailing-dot/space, `\\?\` bypass.
 - **E21 (differential gate) — zipfile is a poor sole reference oracle.** CPython `zipfile` is itself
@@ -169,6 +172,7 @@ are signed) — where a signed-package format lives or dies.** These items SUPER
   algorithm correctly**; the `|n| < 2^53` cap (RFC 7493 I-JSON) sidesteps that conformance gap.
 
 **Signing-layer additions (the under-specified core — new REJECT/control rules):**
+
 - **G1. Signed-byte definition (bomb-swap gap — biggest).** B15 requires per-file hashes+bijection but never
   says WHICH bytes are hashed. Hashing decompressed content lets an attacker swap a `store`d file for a
   `deflate` bomb at the same content-hash. Rule: bind **compression-method + compressed-size + ratio** into
