@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   markdown-lint:
     name: markdown-lint (markdownlint-cli2)
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -51,7 +51,7 @@ jobs:
 
   link-check:
     name: link-check (markdown-link-check)
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read

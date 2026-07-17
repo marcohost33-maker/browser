@@ -19,7 +19,7 @@ permissions: {}
 jobs:
   zizmor:
     name: zizmor workflow audit
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     permissions:
       contents: read  # required for private repository checkout/collection
       actions: read   # required for private repository online audits
