@@ -1,7 +1,8 @@
 # Spike: CWAP-Strict-JSON v0.1.2-r1 (canonical-JSON manifest core)
 
 - Status: **D1–D4 + P1–P4 owner-ACCEPTED 2026-07-19** (`DECISION_2026-07-19.md`);
-  #24 promotion still fail-closed (Rust leg + CI gate + codebase wire-in open).
+  three-way differential fully re-verified by Vero (Py+Rust+JS, see below).
+  #24 promotion still fail-closed (CI gate + codebase wire-in open).
   Feeds issue #24 (package/secure-update spike),
   ADR-007 Track B (`docs/adr/ADR-007-signed-package-evaluation.md` +
   `docs/adr/ADR-007-amendment-cross-family-verifier-hardening-2026-07-16.md`).
@@ -42,8 +43,10 @@ construction*. Verified across three independent implementations.
 - Corpus: 3455 cases (55 curated + 400 random-valid + 3000 mutation-fuzz).
 - Delivered: 3455/3455 Python↔Rust↔JS agreement; canon-SHA
   `2fa3c49a0de37f64441a9e2a0714404cfdf5096d6c418b4cb9a30c86f044be23`.
-- **Independently reproduced by Vero:** Python↔JS 3455/3455, same canon-SHA,
-  31/31 reference tests. **Rust leg not re-run here** (no `rustc` in env) — see
+- **Independently re-verified by Vero (full 3-way):** `differential.py`
+  (Py↔Rust) 3455/3455, `differential3.py` (Py↔Rust↔JS) 3455/3455,
+  `hypothesis_fuzz.py` P-1/P-2 PASS, 31/31 reference tests — all Exit 0, same
+  canon-SHA. Rust built locally (GNU toolchain). See
   `VERIFICATION_VERO_2026-07-19.md`.
 
 ## CI-gate wiring — deferred (post owner-decision, post freeze)

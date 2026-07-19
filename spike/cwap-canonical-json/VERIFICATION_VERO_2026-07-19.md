@@ -11,8 +11,9 @@
 
 - Python 3.14.4 (`py` launcher)
 - Node v24.17.0
-- `rustc`: **nicht installiert** in dieser Umgebung → Rust-Leg hier NICHT
-  kompilier-/lauffähig.
+- Rust 1.97.1, Toolchain `stable-x86_64-pc-windows-gnu` (via rustup, 2026-07-19
+  während dieser Session installiert; GNU-Host gewählt, weil MSVC-`link.exe`
+  fehlt und die GNU-Toolchain selbst-linkt).
 
 ## Durchgeführte Läufe (real, nicht behauptet)
 
@@ -22,6 +23,11 @@
    (seed 20260719, exakte Reihenfolge: 55 Hand-Fälle + 400 randvalid + 3000
    mutate = 3455) und vergleicht die **Python-Referenz** gegen die
    **JS-Drittimplementation** (`js/batch.mjs`, ein Node-Prozess).
+3. **Voller 2-Wege-Lauf** `differential.py` (Python vs. Rust) — nach lokaler
+   Rust-Kompilierung (`rustc -O --edition 2021 -o rust/cwap_rs.exe
+   rust/cwap_strict_json.rs`).
+4. **Voller 3-Wege-Lauf** `differential3.py` (Python vs. Rust vs. JS).
+5. **Property-Fuzz** `hypothesis_fuzz.py` (P-1/P-2, Hypothesis 6.155.7).
 
 ## Ergebnis meines Laufs
 
@@ -39,21 +45,27 @@ Dieser Accept-Kanon-SHA-256 ist **byte-identisch** zum gelieferten
 `results/differential-report.json` und zur README-Angabe. Die Reject-Code-
 Verteilung stimmt exakt überein.
 
+## Ergebnisse der vollen Läufe (2026-07-19, nach Rust-Install)
+
+    differential.py  (Python vs Rust)        3455/3455 GRUEN, Exit 0
+    differential3.py (Python vs Rust vs JS)  3455/3455 GRUEN, Exit 0
+    hypothesis_fuzz.py                        P-1 PASS (500) · P-2 PASS (500), Exit 0
+
+Alle Läufe tragen denselben Accept-Kanon-SHA-256 `2fa3c49a…be23`.
+
 ## Bewertung
 
-- **Bestätigt (stark, tool-belegt):** Python-Referenz und JS-Drittimpl stimmen
-  über 3455 Fälle in Entscheid, Kanonbytes (SHA-identisch) und Reject-Code
-  überein. 2 von 3 Implementationen unabhängig reproduziert.
-- **NICHT hier verifiziert (ehrliche Lücke):** die Rust-Zweitimplementation
-  (`rust/cwap_strict_json.rs`) — mangels `rustc` in dieser Umgebung. Der
-  gelieferte `results/differential-report.json` (Python vs. Rust) und
-  `differential3-report.json` (3-Wege) tragen denselben Kanon-SHA; das ist ein
-  konsistenter, aber von mir hier NICHT selbst nachgefahrener Beleg. Zum
-  Schliessen: `rustc` installieren, `differential.py` + `differential3.py`
-  fahren, Exit 0 erwarten.
-- **Property-Fuzz** (`hypothesis_fuzz.py`, P-1/P-2): benötigt ebenfalls die
-  Rust-Binary (`differential3.NodeBatch`/`run_rust`) → hier nicht gefahren.
-  Hypothesis 6.155.7 ist installiert.
+- **Vollständig bestätigt (stark, tool-belegt):** alle **drei** unabhängigen
+  Implementationen (Python-Referenz, Rust-Zweitimpl, JS-Drittimpl) stimmen über
+  3455 Fälle in Entscheid, Kanonbytes (SHA-identisch), Reject-Code und
+  Idempotenz überein — von Vero selbst nachgefahren, nicht nur behauptet. Der
+  gelieferte `results/differential-report.json`/`differential3-report.json`
+  reproduziert byte-identisch.
+- **Keine offene Verifikations-Lücke mehr** auf dieser Seite. Die frühere
+  Rust-Lücke (kein `rustc`) ist durch die lokale GNU-Toolchain-Installation +
+  Kompilierung geschlossen.
+- `rust/cwap_rs.exe` ist ein Build-Artefakt (gitignored), reproduzierbar aus
+  `rust/cwap_strict_json.rs`.
 
 ## Reproduktion meines Laufs
 
