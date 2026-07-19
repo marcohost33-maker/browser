@@ -50,8 +50,18 @@ Problem, Knight & Leveson). Daher zwei **fremd-autorierte** externe Orakel:
    **4/4 Accept-Vektoren + alle 740 Korpus-Accept-Fälle byte-identisch** zwischen
    CWAP und dem Fremd-Orakel.
 
-Damit ist die Kanonisierung gegen zwei unabhängige externe Ground-Truths validiert,
-nicht nur selbst-konsistent.
+3. **JSONTestSuite** („Parsing JSON is a Minefield", nst/Nicolas Seriot) — 318
+   fremd-kuratierte Parser-Konformitäts-Fälle (y_/n_/i_), vendored+gepinnt unter
+   `testdata-jsontestsuite/` (commit 1ef36fa0). Test: `jts_harness.py` fährt alle
+   drei Impls: y_-Dateien akzeptiert oder nur mit CWAP-Semantik-Code rejected,
+   n_-Dateien rejected, i_-Dateien konsistent. Belegt 2026-07-19: **318/318 GRÜN**
+   (0 Parser-Bugs, 0 Divergenzen). Exponierte die zwei Fixes F-06 (O(n²)-DoS im
+   Duplikat-Key-Check → O(n log n), 60k Keys 5.64s→0.093s) und F-07 (Number-Reject
+   maximal-munch) sowie Bishop-Fox-Interop-Angriffsvektoren (Key-Kollision via
+   lone surrogate → LONE_SURROGATE; Comment-Smuggling-Dup-Key → INVALID_JSON).
+
+Damit ist die Kanonisierung gegen **drei** unabhängige externe Ground-Truths
+validiert (JCS-Referenz, ToB, JSONTestSuite), nicht nur selbst-konsistent.
 
 ## Determinismus (nicht nur Reject, sondern echte Byte-Stabilität)
 

@@ -15,6 +15,9 @@ Belegregel: jeder „behoben" trägt einen tool-verifizierten Nachweis.
 | F8 | Spec hand-transkribiert (base64-Korruption) | P2 | **mitigiert** | Provenienz-Notiz in SPEC; normative Autorität = bytegleicher Code + Addendum (Provenienz 12/12 vs sha256.txt) |
 | F9 | Fixed-Seed-Fuzz erkundet nur einen Pfad | P3 | **geplant** | `CONFORMANCE.md` dokumentiert cargo-fuzz-nightly + es6testfile100m-Reject-Orakel als nächste Stufe |
 | A3 | (aegis) Rust-`HashMap`-Iteration = Scheindeterminismus? | P1 | **widerlegt** | Impl sortiert `Vec<u16>::cmp` (kein HashMap); 5 separate Prozesse → identischer SHA |
+| F-06 | **DoS**: Duplikat-Key-Check O(n²) (60k Keys = 5.64s) — in meiner r1-Integration ausgeliefert | **P1** | **behoben** | Via r2-Audit-Adoption (JSONTestSuite exponierte es); O(n log n), 60k = 0.093s (60×). Gegen RFC/ToB/JTS gegengeprüft |
+| F-07 | Number-Reject-Klassifikation (`0.3e+`, `1.0e`, `1.`) nicht maximal-munch-korrekt | P2 | **behoben** | r2-Adoption; 3-Wege + JSONTestSuite belegt |
+| F-10 | 3. externes Orakel (JSONTestSuite) fehlte | P2 | **behoben** | `jts_harness.py` + vendored+gepinntes `testdata-jsontestsuite/` (SHA 1ef36fa0); 318/318 GRÜN, 3 Impls |
 
 ## Residual-Risiko (ehrlich)
 

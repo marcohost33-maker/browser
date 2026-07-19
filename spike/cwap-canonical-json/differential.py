@@ -90,6 +90,22 @@ HAND: list[tuple[str, bytes]] = [
     ("obj_nonstring_key", b"{1:2}"),
     ("single_quote_str", b"{'a':1}"),
     ("ext_field_passthrough", b'{"ext":{"z":1,"a":2},"v":"cwap-0.1.2"}'),
+    # --- Nachtrag 2026-07-19: JSONTestSuite-Luecken (F-07) ---
+    ("jts_frac_dangling_exp_plus", b"0.3e+"),
+    ("jts_frac_dangling_exp", b"1.0e"),
+    ("jts_frac_dangling_exp_minus", b"1.0e-"),
+    ("jts_int_dangling_exp", b"1e+"),
+    ("jts_frac_no_digits", b"1."),
+    # --- Bishop-Fox-Interop-Angriffsvektoren (json-interop-vuln-labs) ---
+    ("bf_key_lone_surrogate_collision", b'{"qty":1,"qty\\ud800":-1}'),
+    ("bf_comment_smuggle_dupkey", b'{"qty":1,"extra":1/*,"qty":-1*/}'),
+    ("bf_trailing_comment", b'{"qty":1}//x'),
+    # --- Normalisierungs-Vektoren ---
+    ("escaped_ascii_normalized", b'"\\u0041"'),
+    ("uppercase_hex_escape_in", b'"\\u001F"'),
+    ("line_separators_raw", '"\u2028\u2029"'.encode("utf-8")),
+    ("noncharacter_passthrough", '"\uffff"'.encode("utf-8")),
+    ("nbsp_is_not_ws", "\u00a0{}".encode("utf-8")),
 ]
 
 

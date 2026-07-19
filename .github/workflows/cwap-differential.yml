@@ -3,11 +3,12 @@
 # issue #24). Compiles the independent Rust 2nd impl under a PINNED toolchain and:
 #   1. runs the reference anti-regression suite;
 #   2. runs the deterministic Python-vs-Rust-vs-JS differential (fixed seed);
-#   3. runs the OFFICIAL RFC 8785 (JCS) reference vectors against all three impls
-#      (external ground truth, not self-generated);
+#   3. runs TWO external ground-truth oracles against all three impls — the
+#      official RFC 8785 (JCS) reference vectors and the vendored+pinned
+#      JSONTestSuite ("Parsing JSON is a Minefield", 318 files);
 #   4. asserts the accept-canon-SHA on BOTH differential reports equals the
-#      owner-accepted fingerprint (fail-closed);
-#   5. re-checks delivered-source provenance against results/sha256.txt.
+#      accepted fingerprint (fail-closed);
+#   5. re-checks source provenance against results/sha256.txt.
 #
 # ADVISORY (not a required check) while #24 is an unbuilt, owner-gated spike: both
 # triggers are path-filtered to the spike tree, so this does NOT post a status on
@@ -48,8 +49,11 @@ jobs:
     permissions:
       contents: read
     env:
-      # Owner-accepted canonical accept-set fingerprint (DECISION_2026-07-19).
-      EXPECTED_CANON_SHA256: "2fa3c49a0de37f64441a9e2a0714404cfdf5096d6c418b4cb9a30c86f044be23"
+      # Canonical accept-set fingerprint of the expanded r2 corpus (3468 cases).
+      # The original owner-accepted 740-accept subset is unchanged and still
+      # hashes to 2fa3c49a...; this superset fingerprint adds 4 coverage vectors
+      # (DECISION_2026-07-19 §fingerprint-change).
+      EXPECTED_CANON_SHA256: "84aa7110a244344594b0bcb17078439c76b6233f1955c823268857dd26d290f1"
       # Exact Rust toolchain — bump deliberately, never "stable".
       RUST_VERSION: "1.97.1"
     defaults:
@@ -85,6 +89,8 @@ jobs:
         run: python3 differential3.py
       - name: external oracle — official RFC 8785 (JCS) vectors, all three impls
         run: python3 test_rfc8785_vectors.py
+      - name: external oracle — JSONTestSuite (318 files, vendored+pinned, 3 impls)
+        run: python3 jts_harness.py
       - name: assert accept-canon-SHA on both reports matches owner-accepted fingerprint
         run: |
           set -euo pipefail

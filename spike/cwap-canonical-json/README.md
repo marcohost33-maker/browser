@@ -43,6 +43,7 @@ without that qualifier. See `CONFORMANCE.md`.
 | `testdata-rfc8785/` | **External oracle** — official RFC 8785/JCS reference vectors (cyberphone) |
 | `test_rfc8785_vectors.py` | 3 impls × 6 official JCS vectors (accept→byte-match, float→reject) |
 | `test_cross_oracle_tob.py` | 2nd **foreign-authored** oracle: CWAP == Trail-of-Bits `rfc8785` on accept domain |
+| `jts_harness.py` + `testdata-jsontestsuite/` | 3rd oracle: JSONTestSuite (318 files, vendored+pinned), 3 impls |
 | `CONFORMANCE.md` | Precise subset-conformance claim + external-oracle evidence + fuzzing plan |
 | `results/` | Delivered reports + `sha256.txt` |
 | `README_LIEFERUNG.md` | Original delivery note (Chat-Instanz) |
@@ -50,19 +51,28 @@ without that qualifier. See `CONFORMANCE.md`.
 
 ## Evidence status (2026-07-19)
 
-- Corpus: 3455 cases (55 curated + 400 random-valid + 3000 mutation-fuzz).
-- Delivered: 3455/3455 Python↔Rust↔JS agreement; canon-SHA
-  `2fa3c49a0de37f64441a9e2a0714404cfdf5096d6c418b4cb9a30c86f044be23`.
+- Corpus: 3468 cases (r2-expanded: 55+ curated incl. JSONTestSuite-gap +
+  Bishop-Fox interop vectors, 400 random-valid, 3000 mutation-fuzz).
+- 3468/3468 Python↔Rust↔JS agreement; expanded canon-SHA
+  `84aa7110a244344594b0bcb17078439c76b6233f1955c823268857dd26d290f1`
+  (original 740-accept subset unchanged → `2fa3c49a…`).
 - **Independently re-verified by Vero (full 3-way):** `differential.py`
   (Py↔Rust) 3455/3455, `differential3.py` (Py↔Rust↔JS) 3455/3455,
   `hypothesis_fuzz.py` P-1/P-2 PASS, 31/31 reference tests — all Exit 0, same
   canon-SHA. Rust built locally (GNU toolchain). See
   `VERIFICATION_VERO_2026-07-19.md`.
-- **External-oracle validation (breaks the same-author common-mode blind spot):**
-  all 3 impls match the official RFC 8785/JCS reference vectors (incl. the
-  UTF-16 supplementary-plane sort case `weird.json`); CWAP == Trail-of-Bits
-  `rfc8785` (foreign-authored) on all 4 accept vectors + all 740 corpus accept
-  cases, byte-identical. See `CONFORMANCE.md`.
+- **Three external oracles (break the same-author common-mode blind spot):**
+  (1) official RFC 8785/JCS reference vectors — all 3 impls match, incl. the
+  UTF-16 supplementary-plane sort case `weird.json`; (2) Trail-of-Bits `rfc8785`
+  (foreign-authored) == CWAP on all accept vectors + all corpus accepts,
+  byte-identical; (3) JSONTestSuite (318 files, vendored+pinned) 318/318.
+  See `CONFORMANCE.md`.
+- **r2-audit adoption (2026-07-19):** JSONTestSuite exposed two real bugs in the
+  earlier r1 impls — F-06 (O(n²) duplicate-key DoS, 60k keys 5.64s→0.093s) and
+  F-07 (number-reject classification) — both adopted and cross-checked against
+  all three oracles. Expanded corpus fingerprint: `84aa7110…` (the original
+  740-accept subset still hashes to `2fa3c49a…`; +4 ToB-verified coverage
+  accepts). See `DECISION_2026-07-19.md` §fingerprint-change.
 
 ## CI gate — `.github/workflows/cwap-differential.yml` (advisory)
 

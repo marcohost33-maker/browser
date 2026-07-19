@@ -151,23 +151,22 @@ class Parser {
     }
     const nx = this.peek();
     if (nx === "." || nx === "e" || nx === "E") {
-      // Float-Token-Gueltigkeit: gueltig -> FLOAT_FORBIDDEN (P3), sonst INVALID_JSON
-      let j = this.i, ok = true;
+      // F-07: maximal-munch wie CPython NUMBER_RE — gueltiger Fraktionsteil
+      // ('.'+Ziffer) => FLOAT_FORBIDDEN unabhaengig vom Exponent-Rest;
+      // Exponent ohne Fraktion braucht >= 1 Ziffer, sonst INVALID_JSON.
+      let j = this.i;
       const t = this.t;
       if (t[j] === ".") {
         j++;
         const s0 = j;
         while (t[j] >= "0" && t[j] <= "9") j++;
-        if (j === s0) ok = false;
+        throw new CanonReject(j > s0 ? "FLOAT_FORBIDDEN" : "INVALID_JSON");
       }
-      if (ok && (t[j] === "e" || t[j] === "E")) {
-        j++;
-        if (t[j] === "+" || t[j] === "-") j++;
-        const s0 = j;
-        while (t[j] >= "0" && t[j] <= "9") j++;
-        if (j === s0) ok = false;
-      }
-      throw new CanonReject(ok ? "FLOAT_FORBIDDEN" : "INVALID_JSON");
+      j++; // 'e'/'E'
+      if (t[j] === "+" || t[j] === "-") j++;
+      const s0 = j;
+      while (t[j] >= "0" && t[j] <= "9") j++;
+      throw new CanonReject(j > s0 ? "FLOAT_FORBIDDEN" : "INVALID_JSON");
     }
     // BigInt: verlustfrei, Range-Check erst im Kanon (P4). Der Betrag darf
     // beliebig gross sein — genau der Fall, den JSON.parse still korrumpiert.

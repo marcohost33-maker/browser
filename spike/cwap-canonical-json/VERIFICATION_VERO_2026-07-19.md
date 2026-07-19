@@ -78,3 +78,18 @@ Für den vollständigen 3-Wege-Beleg zusätzlich (mit Rust-Toolchain):
     rustc -O --edition 2021 -o rust/cwap_rs rust/cwap_strict_json.rs
     py differential.py            # Python vs Rust
     py differential3.py           # 3-Wege
+
+## Nachtrag 2026-07-19: r2-Audit-Adoption (verifiziert, nicht blind übernommen)
+
+Ein CWAP-r2-Audit-Paket (007-Ordner, same-family Claude) lieferte JSONTestSuite +
+zwei Impl-Fixes. Vor Adoption gegen MEINE unabhängigen Orakel geprüft:
+
+- Adoptions-Provenienz: übernommene `rust`/`js`/`jts_harness` matchen r2s gelieferte
+  SHA-256 (echte r2-Bytes, keine Halluzination).
+- r2-Impls auf MEINEM 3455-Korpus → weiterhin `2fa3c49a` (Fixes accept-neutral).
+- r2-Impls bestehen meine RFC-8785-Vektoren (6/6) + ToB-Orakel (744/744 accepts).
+- F-06-DoS empirisch: r1 5.64s vs r2 0.093s auf 60k Keys.
+- Bishop-Fox-Angriffsvektoren rejecten korrekt (LONE_SURROGATE / INVALID_JSON).
+- JSONTestSuite 318/318 (vendored, gepinnt 1ef36fa0), 3 Impls.
+- r2s README-Fingerprint `2fa3c49a` ist stale (echter r2-Report: `84aa7110`) —
+  eigenständig nachgerechnet, nicht die Behauptung übernommen.

@@ -123,10 +123,16 @@ impl<'a> Parser<'a> {
                 Some(b',') => continue,
                 Some(b'}') => {
                     // DUPLICATE_KEY erst beim Objekt-Ende (Praezedenz P3,
-                    // entspricht CPythons object_pairs_hook)
-                    for a in 0..out.len() {
-                        for b in (a + 1)..out.len() {
-                            if out[a].0 == out[b].0 {
+                    // entspricht CPythons object_pairs_hook).
+                    // F-06: sortbasiert O(n log n) statt O(n^2) — der
+                    // urspruengliche Doppel-Loop war ein DoS-Vektor
+                    // (60k Keys: 5.3s, empirisch 2026-07-19).
+                    if out.len() > 1 {
+                        let mut refs: Vec<&Vec<u16>> =
+                            out.iter().map(|(k, _)| k).collect();
+                        refs.sort_unstable();
+                        for w in refs.windows(2) {
+                            if w[0] == w[1] {
                                 return Err(Reject("DUPLICATE_KEY"));
                             }
                         }
@@ -176,23 +182,27 @@ impl<'a> Parser<'a> {
             _ => return Err(Reject("INVALID_JSON")),
         }
         if matches!(self.peek(), Some(b'.') | Some(b'e') | Some(b'E')) {
-            // Float-Token-Gueltigkeit pruefen: gueltig -> FLOAT_FORBIDDEN an
-            // dieser Scan-Position (P3); ungueltig -> INVALID_JSON.
-            let (bs, mut j, mut ok) = (self.b, self.i, true);
+            // F-07 (JSONTestSuite n_number_0.3e+ u.a.): maximal-munch wie
+            // CPythons NUMBER_RE — ein gueltiger FRAKTIONSTEIL ('.'+Ziffer)
+            // ergibt FLOAT_FORBIDDEN unabhaengig davon, ob ein nachfolgender
+            // Exponent vollstaendig ist (der wird dann zu Trailing-Garbage,
+            // aber parse_float feuert zuerst). Ein Exponent OHNE Fraktion
+            // braucht >= 1 Ziffer, sonst INVALID_JSON.
+            let (bs, mut j) = (self.b, self.i);
             if bs.get(j) == Some(&b'.') {
                 j += 1;
                 let d0 = j;
                 while matches!(bs.get(j), Some(b'0'..=b'9')) { j += 1; }
-                if j == d0 { ok = false; }
+                return Err(if j > d0 { Reject("FLOAT_FORBIDDEN") }
+                           else { Reject("INVALID_JSON") });
             }
-            if ok && matches!(bs.get(j), Some(b'e') | Some(b'E')) {
-                j += 1;
-                if matches!(bs.get(j), Some(b'+') | Some(b'-')) { j += 1; }
-                let d0 = j;
-                while matches!(bs.get(j), Some(b'0'..=b'9')) { j += 1; }
-                if j == d0 { ok = false; }
-            }
-            return Err(if ok { Reject("FLOAT_FORBIDDEN") } else { Reject("INVALID_JSON") });
+            // 'e'/'E' direkt nach Integer-Teil
+            j += 1;
+            if matches!(bs.get(j), Some(b'+') | Some(b'-')) { j += 1; }
+            let d0 = j;
+            while matches!(bs.get(j), Some(b'0'..=b'9')) { j += 1; }
+            return Err(if j > d0 { Reject("FLOAT_FORBIDDEN") }
+                       else { Reject("INVALID_JSON") });
         }
         let tok = std::str::from_utf8(&self.b[start..self.i]).unwrap();
         Ok(Value::Int(match tok.parse::<i128>() {

@@ -39,6 +39,8 @@ class NodeBatch:
     def run(self, data: bytes):
         self.p.stdin.write(base64.b64encode(data) + b"\n"); self.p.stdin.flush()
         line = self.p.stdout.readline().decode().rstrip("\n")
+        if not line:  # Node-Prozess tot -> harter Fehler statt Fehlklassifikation
+            raise RuntimeError(f"NodeBatch: Prozess beendet (rc={self.p.poll()})")
         tag, _, rest = line.partition(" ")
         if tag == "A":
             return ("A", base64.b64decode(rest))
