@@ -1,0 +1,9 @@
+# Preserve LF so the committed bytes stay identical to the delivered files and
+# their hashes in results/sha256.txt remain reproducible (repo has known CRLF traps).
+* text=auto eol=lf
+*.py text eol=lf
+*.mjs text eol=lf
+*.rs text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
