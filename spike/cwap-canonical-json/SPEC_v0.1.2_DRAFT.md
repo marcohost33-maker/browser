@@ -1,6 +1,7 @@
 # CWAP-Strict-JSON v0.1.2 — Normativer Kanonisierungs-Entwurf (DRAFT)
 
-Status: DRAFT für Owner-Entscheid (Marco/Vero). Promotion bleibt fail-closed.
+Status: D1–D4 vom Owner ANGENOMMEN 2026-07-19 (siehe `DECISION_2026-07-19.md`).
+Promotion von #24 bleibt fail-closed (Rust-Leg + CI-Gate + Codebasis-Einbau offen).
 Kontext: browser-Repo (APP-01), ADR-007 Track B. Löst den im Cross-Family-Review
 2026-07-17 (ChatGPT) benannten Blocker auf: v0.1.1-Custom-Canonical-JSON vs.
 Issue-#24-Kanon (JCS / Safe-Integer / Extensions / NAR) war nicht normativ

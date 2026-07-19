@@ -1,6 +1,8 @@
 # Spike: CWAP-Strict-JSON v0.1.2-r1 (canonical-JSON manifest core)
 
-- Status: **DRAFT / owner-gated.** Feeds issue #24 (package/secure-update spike),
+- Status: **D1–D4 + P1–P4 owner-ACCEPTED 2026-07-19** (`DECISION_2026-07-19.md`);
+  #24 promotion still fail-closed (Rust leg + CI gate + codebase wire-in open).
+  Feeds issue #24 (package/secure-update spike),
   ADR-007 Track B (`docs/adr/ADR-007-signed-package-evaluation.md` +
   `docs/adr/ADR-007-amendment-cross-family-verifier-hardening-2026-07-16.md`).
 - This is an **unbuilt-spike artifact**, not runtime product code. Consistent with
