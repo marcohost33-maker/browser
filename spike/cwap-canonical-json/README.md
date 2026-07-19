@@ -18,7 +18,13 @@ The ADR-007 amendment (§B/§H) flagged that RFC-8785/JCS float number-formattin
 is implemented correctly by few libraries — a real cross-language divergence risk
 for signed-manifest bytes. CWAP-Strict-JSON **bans floats/NaN/Infinity** (D2) and
 pins JCS UTF-16 key ordering (D1), which deletes that divergence class *by
-construction*. Verified across three independent implementations.
+construction*.
+
+**Precise conformance claim (do not overstate):** CWAP is a **restricted-domain
+subset profile** of JCS — for every input it *accepts* (integers only), its output
+is byte-identical to RFC 8785/JCS; it *rejects* JCS-valid float inputs fail-closed.
+It is **not** a full JCS serializer and must not be called "RFC-8785-conformant"
+without that qualifier. See `CONFORMANCE.md`.
 
 ## Layout (flat, so relative cross-references stay runnable)
 
@@ -34,9 +40,13 @@ construction*. Verified across three independent implementations.
 | `differential3.py` | 3-way Python↔Rust↔JS runner |
 | `differential_pyjs.py` | Vero's independent Python↔JS runner (no Rust needed) |
 | `hypothesis_fuzz.py` | Property-based fuzz P-1/P-2 (needs Rust binary) |
+| `testdata-rfc8785/` | **External oracle** — official RFC 8785/JCS reference vectors (cyberphone) |
+| `test_rfc8785_vectors.py` | 3 impls × 6 official JCS vectors (accept→byte-match, float→reject) |
+| `test_cross_oracle_tob.py` | 2nd **foreign-authored** oracle: CWAP == Trail-of-Bits `rfc8785` on accept domain |
+| `CONFORMANCE.md` | Precise subset-conformance claim + external-oracle evidence + fuzzing plan |
 | `results/` | Delivered reports + `sha256.txt` |
 | `README_LIEFERUNG.md` | Original delivery note (Chat-Instanz) |
-| `VERIFICATION_VERO_2026-07-19.md` | Vero's independent reproduction + honest Rust gap |
+| `VERIFICATION_VERO_2026-07-19.md` | Vero's independent reproduction |
 
 ## Evidence status (2026-07-19)
 
@@ -48,13 +58,26 @@ construction*. Verified across three independent implementations.
   `hypothesis_fuzz.py` P-1/P-2 PASS, 31/31 reference tests — all Exit 0, same
   canon-SHA. Rust built locally (GNU toolchain). See
   `VERIFICATION_VERO_2026-07-19.md`.
+- **External-oracle validation (breaks the same-author common-mode blind spot):**
+  all 3 impls match the official RFC 8785/JCS reference vectors (incl. the
+  UTF-16 supplementary-plane sort case `weird.json`); CWAP == Trail-of-Bits
+  `rfc8785` (foreign-authored) on all 4 accept vectors + all 740 corpus accept
+  cases, byte-identical. See `CONFORMANCE.md`.
 
-## CI-gate wiring — deferred (post owner-decision, post freeze)
+## CI gate — `.github/workflows/cwap-differential.yml` (advisory)
 
-Once the Owner accepts D1–D4 + P1–P4, wire a required check that runs
-`differential.py` (and `differential3.py`) with a Rust + Node toolchain; a
-non-zero exit ⇒ RED. Not added yet, to avoid gating an unaccepted spec and to
-respect the active GitHub-budget freeze (no CI-triggering pushes).
+Pins the Rust toolchain (exact patch, replaces ambient runner rustc — reproducible
+byte-determinism), then runs: delivered-source provenance (`sha256sum -c`), the
+31-vector reference suite, the 2-way + 3-way differential, the external RFC 8785
+oracle vectors across all three impls, and a dual accept-canon-SHA assert against
+the owner-accepted fingerprint (fail-closed). zizmor-clean (offline + online, v1.27.0).
+**Advisory + path-filtered** (not a required check) while #24 is an unbuilt spike —
+promote to required post-promotion. Not pushed yet (GitHub-budget freeze).
+
+The `hypothesis_fuzz.py` property fuzz and `test_cross_oracle_tob.py` (needs the
+`rfc8785` pip package) are kept out of the dependency-free CI gate and run locally;
+a coverage-guided `cargo-fuzz` nightly is the planned next fuzzing layer
+(`CONFORMANCE.md`).
 
 ## Reproduce
 

@@ -7,3 +7,7 @@
 *.md text eol=lf
 *.json text eol=lf
 *.txt text eol=lf
+
+# External RFC 8785/JCS oracle vectors: byte-exact ground truth — git must NEVER
+# normalize these (eol/whitespace changes would corrupt the oracle).
+testdata-rfc8785/** -text
