@@ -4,6 +4,14 @@
 - Scope: last two browser hardening responses, merged PR #3, browser issues #2/#4–#7 and nigin-engine#3
 - Status: canonical working register until superseded
 
+> **Standalone reframe (ADR-008, 2026-07-16).** `browser` is standalone; `nigin-engine`
+> and `browser-nigin` are separate, independent repositories linked only by knowledge
+> transfer (not dependencies). Any statement below that reads a `nigin-engine`
+> contract as a hard dependency of `browser` is superseded: MCP consumption is an
+> internal, optional `browser` capability off the T1 critical path, producer-neutral,
+> with no external producer assumed. The signature/provenance-verification discipline
+> is retained. Historical scope references are kept as provenance.
+
 ## 1. Validation verdict
 
 ### Confirmed strengths
@@ -210,7 +218,8 @@ Define the minimum operational telemetry needed for reliability and abuse detect
 ## 4. Immediate actions already completed
 
 - Merged PR #3 established the M1 design baseline.
-- `nigin-engine#3` now carries the contract/conformance dependency.
+- `nigin-engine#3` tracked contract/conformance work as provenance; per ADR-008 it is
+  not a `browser` dependency (MCP is optional/internal, producer-neutral).
 - `browser#4` covers executable production bootstrap.
 - `browser#5` covers hostile MCP/browser vectors.
 - `browser#6` covers operational release governance.

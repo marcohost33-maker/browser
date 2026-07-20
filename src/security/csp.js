@@ -107,6 +107,14 @@ const DIRECTIVE_POLICY = {
   'upgrade-insecure-requests': { valueless: true },
 };
 
+// Whitelist of directive NAMES the serializer may emit: the policy table keys
+// plus the known valueless directives. Any other name is an injected/unknown
+// directive and is refused fail-closed at serialization time.
+const KNOWN_DIRECTIVE_NAMES = new Set([
+  ...Object.keys(DIRECTIVE_POLICY),
+  ...VALUELESS_DIRECTIVES,
+]);
+
 // Custom error carrying the full list of violations for CI reporting.
 export class CspValidationError extends Error {
   constructor(errors) {
@@ -148,6 +156,10 @@ export function isExactOrigin(src) {
     return false;
   }
   if (!url.host) return false;
+  // A trailing-dot host (`example.com.`) is a distinct, non-canonical spelling
+  // of the FQDN that a browser resolves to the same target — treat it as a
+  // non-exact origin (defence in depth vs. canonicalization bypass).
+  if (url.hostname.endsWith('.')) return false;
   return url.origin === src && url.origin !== 'null';
 }
 
@@ -392,6 +404,20 @@ export function serializeCsp(directives) {
   }
   const parts = [];
   for (const [name, sources] of Object.entries(directives)) {
+    // Validate the directive NAME (defence in depth): a name carrying a
+    // separator/control char injects an extra directive, and an unknown name
+    // is not part of the reviewed policy surface. Both are refused fail-closed
+    // so the serializer itself can never emit an unsafe policy.
+    if (ILLEGAL_SOURCE_CHARS.test(name)) {
+      throw new CspValidationError([
+        `directive name ${JSON.stringify(name)} contains an illegal separator/control char (injection vector)`,
+      ]);
+    }
+    if (!KNOWN_DIRECTIVE_NAMES.has(name)) {
+      throw new CspValidationError([
+        `directive name ${JSON.stringify(name)} is not on the directive whitelist`,
+      ]);
+    }
     if (!Array.isArray(sources)) {
       throw new CspValidationError([`directive "${name}" must map to an array of sources`]);
     }

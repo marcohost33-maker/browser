@@ -16,8 +16,9 @@
 
 > **PRODUCT REFRAME (2026-07-14).** `browser` is reframed from a public MCP-client
 > webapp into a native, offline-capable runtime that executes foreign web apps
-> locally (three-layer stack: `browser` runtime · `nigin-engine` core · `browser-nigin`
-> AI layer). Binding record: ADR-005/006/007 (PR #22). The security/governance/
+> locally. `browser` is **standalone** (ADR-008, 2026-07-16): `nigin-engine` and
+> `browser-nigin` are separate, independent repositories linked only by knowledge
+> transfer (not dependencies). Binding record: ADR-005/006/007 (PR #22). The security/governance/
 > evidence foundation described below is real and framing-neutral; the
 > "MCP client / remote endpoint" product wording is superseded. **No runtime product
 > code exists** — do not read any item below as an implemented runtime capability.
@@ -89,7 +90,7 @@ reruns of the same source commit.
 ### Governance and operations foundation
 
 - active Charter and decision register;
-- ADR-001 enforcement boundaries (**SUPERSEDED by ADR-005**; boundary substance retained) and ADR-002 target trust design (framing realigned to `nigin-engine`);
+- ADR-001 enforcement boundaries (**SUPERSEDED by ADR-005**; boundary substance retained) and ADR-002 target trust design (producer-neutral; no external `nigin-engine` producer assumed, ADR-008);
 - ADR-003 endpoint/CORS/deployment decision (**SUPERSEDED by ADR-005**; network-security substance retained in `docs/security/*`);
 - falsifiable product-discovery protocol for issue #14;
 - SECURITY.md vulnerability-reporting process;

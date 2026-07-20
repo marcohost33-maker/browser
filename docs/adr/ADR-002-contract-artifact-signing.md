@@ -4,18 +4,21 @@
 - Decision date: 2026-07-10
 - Revalidated: 2026-07-11
 - Realigned: 2026-07-14
-- Implementation: BLOCKED on `nigin-engine` contract publication
-- Scope: how `browser` establishes trust in the `nigin-engine` contract artifact
+- Implementation: optional/internal capability off the T1 critical path; no external producer assumed (ADR-008)
+- Scope: how `browser` establishes trust in any signed contract artifact it consumes (producer-neutral, ADR-008)
 
-> **Framing realignment (2026-07-14).** The signature/SLSA-provenance/immutable-pin
-> substance of this ADR is retained and unchanged — it is the correct trust model
-> for consuming any signed engine contract artifact. Only the product framing is
-> realigned to the 2026-07-14 reframe (ADR-005/006/007, PR #22): the contract
-> producer is `nigin-engine` (the contract core of the three-layer stack `browser`
-> runtime · `nigin-engine` core · `browser-nigin` AI layer). Read "MCP contract"
-> below as "the signed, versioned `nigin-engine` contract artifact". The same
-> signature verification, provenance and digest-lock discipline also governs the
-> signed offline app packages evaluated under ADR-007.
+> **Framing realignment (2026-07-14; producer-neutral per ADR-008, 2026-07-16).**
+> The signature/SLSA-provenance/immutable-pin substance of this ADR is retained and
+> unchanged — it is the correct trust model for consuming **any** signed contract
+> artifact. Only the product framing is realigned: per **ADR-008** `browser` is
+> standalone, MCP consumption is an internal, optional capability off the T1 critical
+> path, and any signed contract it consumes may be sourced internally or from any
+> signed producer. `nigin-engine` appears below only as an **example producer**
+> (superseded as a hard dependency by ADR-008; producer-neutral) — read "MCP
+> contract" / "`nigin-engine` contract artifact" below as "the signed, versioned
+> contract artifact `browser` consumes, from whatever producer". The same signature
+> verification, provenance and digest-lock discipline also governs the signed offline
+> app packages evaluated under ADR-007.
 
 ## Context
 

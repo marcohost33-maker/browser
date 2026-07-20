@@ -4,14 +4,19 @@
 - Date: 2026-07-10
 - Applies to: `browser` network/egress and rendering security surface
 
-> **Framing note (2026-07-14).** `browser` is reframed into a native, offline-capable
-> runtime (ADR-005/006/007, PR #22). This threat model is retained because its
-> substance is framing-neutral: the egress origin allowlist, exact-origin
-> `connect-src`, untrusted-content rendering and deny-by-default posture apply
+> **Framing note (2026-07-14, revised 2026-07-16).** `browser` is reframed into a
+> native, offline-capable runtime (ADR-005/006/007, PR #22). The **M1 core of this
+> threat model still applies**: the egress origin allowlist, exact-origin
+> `connect-src`, untrusted-content rendering and deny-by-default posture hold
 > whether the target is a remote MCP endpoint or the network egress of a locally
 > hosted app. Read "MCP endpoint/server" below as "an approved network egress
-> target". The reframed runtime adds further trust-class (T1/T2/T3) boundaries
-> governed by ADR-005/006/007.
+> target". **But the reframed product is not merely a framing change of the same
+> surface.** Hosting *arbitrary foreign web apps* locally is a categorically larger
+> attack surface than a single human-in-the-loop MCP client; calling this
+> "framing-neutral" understates it. The runtime adds trust-class (T1/T2/T3)
+> boundaries and new attacker-reachable sub-surfaces governed by ADR-005/006/007 —
+> see "Runtime threat surface" below. The M1 core is retained and valid; the runtime
+> surface is genuinely larger and remains **open**.
 
 ## Assets
 
@@ -35,9 +40,29 @@ Browser UI ↔ application state ↔ security-policy layer ↔ MCP adapter ↔ r
 10. Logs are structured, minimal and redacted.
 11. CSP `connect-src` is pinned to the approved-endpoint set (`'self'` plus
     explicitly approved origins); no `*`/`https:` wildcard. It is the
-    exfiltration boundary even if script execution is achieved.
+    *fetch-class* exfiltration boundary even if script execution is achieved —
+    it constrains fetch/XHR/WebSocket/EventSource/`sendBeacon`, **not**
+    navigation-based egress (see residual risk below).
 12. The contract artifact is trusted only after signature + provenance +
     transparency-log verification (ADR-002); a bare hash is not a trust anchor.
+
+### Residual risk — navigation-based exfiltration (not closed by `connect-src`)
+
+`connect-src` governs only the fetch class of network egress. If script
+execution is achieved, an attacker can still exfiltrate by *navigating*:
+`location = …`, `window.open`, form `target`-navigation, `<a ping>`, and
+`<link rel=prefetch/prerender>` all leave the page (or issue a request) without
+crossing `connect-src`. CSP Level 3 has **no** directive that blocks this: the
+`navigate-to` directive that would have covered it was never shipped and was
+removed from the CSP specification and from browser support data (W3C CSP Level 3;
+mdn/browser-compat-data PR #17902 removed `navigate-to`). `frame-src`/
+`frame-ancestors` do not cover top-level or popup navigation either.
+
+This residual is **open under this M1 threat model** and is closed only by the
+reframed runtime's **navigation allowlist** (ADR-005: navigation, popup,
+download and external-protocol actions default-deny, granted per app). Until
+that runtime control exists, treat "script execution achieved" as implying a
+navigation-exfiltration path that CSP alone does not stop.
 
 ## Priority threats and mandatory controls
 
@@ -58,6 +83,43 @@ Browser UI ↔ application state ↔ security-policy layer ↔ MCP adapter ↔ r
 | Clickjacking | `frame-ancestors 'none'` unless explicitly changed | header test |
 | Data remanence | explicit clear-session action; no sensitive service-worker cache | browser storage inspection |
 
+## Runtime threat surface (T1/T2/T3) — OPEN, tracked in ADR-005/006/007
+
+The M1 table above covers the network-egress and rendering surface of a single
+approved target. Running arbitrary foreign web apps locally (T1 → T2 → T3) opens
+additional attacker-reachable sub-surfaces that the M1 controls do **not** address.
+These are **open** and tracked in the runtime and package spikes (ADR-005/006/007);
+they are listed here so the spikes test the right questions, not because a control
+exists yet.
+
+- **Navigation-based egress** — as in the residual-risk note above: default-deny
+  navigation/popup/download/external-protocol allowlist per app (ADR-005) is the
+  control, not CSP.
+- **Cross-app process/site isolation** — one hosted app must not read another
+  app's memory, storage or renderer state. This requires process-level site
+  isolation from the engine (ADR-006), not application-layer checks.
+- **Per-app data-domain separation** — cookies, IndexedDB, CacheStorage,
+  permissions and download areas must be partitioned by app identity.
+- **Custom-scheme secure-context escalation** — serving app content from a custom
+  scheme such as `app://` or `isolated-app://` makes it a **secure context**,
+  which *unlocks* powerful web features, service-worker registration and
+  persistent storage for that content. A custom scheme is therefore not a neutral
+  packaging detail; it changes which capabilities foreign content can reach and
+  must be gated as such (ADR-007; note that `app://` does not reproduce the
+  browser-enforced `isolated-app://` guarantees — see ADR-007 boundaries).
+- **Service-worker cross-app leak / SW partitioning per app identity** — a
+  service worker registered by one hosted app can persist, intercept requests and
+  cache responses; without strict partitioning keyed to app identity, a SW
+  becomes a cross-app read/persistence and data-remanence channel. Service-worker
+  registration, scope, cache and emergency-removal per app identity must be part
+  of the runtime design (ADR-006/007), not assumed benign.
+- **Engine security-patch SLA** — a T3 runtime carries the engine's full CVE
+  surface; the ability to ship an upstream engine fix on the project's own cadence
+  is a hard cut criterion (ADR-006), not a convenience.
+
+None of the above is closed by the M1 static header/CSP work. Adding any T2/T3
+capability requires a fresh threat-model review against these classes.
+
 ## OWASP Top 10 for Agentic Applications (2026) mapping
 
 APP-01 is an MCP **client** for human-in-the-loop use, so agentic risk is
@@ -71,7 +133,7 @@ confidence: high):
 | ASI02 | Tool Misuse and Exploitation | two-tier endpoint allowlist (curated + consented user-added), deny-by-default, `connect-src` enforcement |
 | ASI03 | Identity and Privilege Abuse | audience-bound tokens, no token passthrough, session IDs are not authentication |
 | ASI04 | Agentic Supply Chain | signed + provenanced contract artifact (ADR-002), SBOM, dependency review |
-| ASI05 | Unexpected Code Execution | no `unsafe-eval`, Trusted Types, no local server exec in M1 |
+| ASI05 | Unexpected Code Execution | no `unsafe-eval`, Trusted Types (**Chromium-only**; not enforced in Firefox/Safari, so it is defence-in-depth, not a cross-browser guarantee — same caveat as `CSP_AND_SECURITY_HEADERS.md` Permissions-Policy note), no local server exec in M1 |
 
 ### ASI01 downstream re-review rule
 

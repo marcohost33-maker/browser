@@ -22,6 +22,9 @@ security patches on the project's own cadence?
 1. Tauri 2 / WRY / system WebView
 2. Electron / bundled Chromium
 3. Windows-only WebView2-direct reference implementation
+4. CEF (Chromium Embedded Framework) / bundled Chromium — measured under the same
+   hard cut and security criteria as Electron, not carried as a conclusion-only
+   "Electron or CEF" mention (ChatGPT cross-family correction 2026-07-15).
 
 Servo, Verso and Ladybird remain watch-list items, not v1 production candidates.
 Flutter embedding is not a separate engine option and therefore is not evaluated
@@ -100,6 +103,14 @@ cut criteria separately from preferences.
 - No assumption that one WebView equals one renderer process.
 - ProcessFailed, cleanup and profile deletion behaviour tested.
 
+### CEF
+
+- Sandbox active; `--no-sandbox` is prohibited.
+- No generic JavaScript/native bridge exposed to app content.
+- Navigation, permissions, certificate handling and downloads denied by default.
+- Chromium lineage, branch support and a rebuild/re-release SLA demonstrated.
+- Browser-product maintenance and packaging cost measured, not assumed.
+
 ## Hard cut criteria
 
 A candidate that fails any of these is rejected regardless of its other scores:
@@ -121,6 +132,71 @@ compatibility or the T3 site-isolation/patch-path criteria but Electron passes,
 choose Electron rather than weakening isolation. If no candidate passes, reduce
 platform scope or app capability; do not relabel missing evidence as acceptable
 risk.
+
+## Primary-source landscape (Quella 2026-07-16)
+
+This ADR stays **PROPOSED**. The primary-source review below **focuses** the spike;
+it does **not** replace the measured spike. Every measured cut criterion above still
+has to be executed; nothing here selects a runtime. Confidence markers are carried
+over honestly from the source review.
+
+- **Only bundled Chromium unites real Chromium site isolation *and* an
+  owner-controlled patch cadence.** Electron (JS/pragmatic) or CEF (C++/heavier) are
+  the two paths that ship their own Chromium and let the project decide which version
+  reaches users. `[strong evidence]`
+- **Adversarial precision on system WebView (do not drop this).** System WebView is
+  **not** categorically "without isolation": WebView2 *is* Chromium and **inherits
+  Chromium site isolation**. The defensible reasons to exclude a system WebView for
+  the T3 target are two others: (1) **no owner patch SLA** — WebView2 is Evergreen,
+  updated automatically on Microsoft's cadence (Fixed-Version gives control only at
+  the cost of self-repackaging and losing auto-patch); WKWebView/WebKitGTK are bound
+  to the user's OS update cadence; and (2) **platform inconsistency** — WKWebView
+  (WebKit) and WebKitGTK do not offer the same site-per-process guarantee as Chromium,
+  so the isolation level varies by OS/version and is outside project control. This
+  sharpens the earlier prose (which over-stated "no cross-origin isolation").
+  `[strong evidence for patch control; platform-inconsistency H2H = plausible, not a
+  direct primary isolation benchmark]`
+- **Pin the Electron security baseline hard:** `sandbox: true` +
+  `contextIsolation: true` + `nodeIntegration: false` + `webSecurity: true`.
+  `contextIsolation` **alone is insufficient** — without the sandbox the renderer runs
+  with full system access and any V8 memory bug becomes RCE. `[strong evidence]`
+- **Site vs origin.** Chromium's default isolation boundary is a **site** (scheme +
+  eTLD+1), not a full origin; multiple origins of one site can share a renderer.
+  Per-origin process locking is available via **Origin-Agent-Cluster**, which is now
+  the default (merged into the HTML standard) and effectively disables
+  `document.domain`. For mutually hostile same-site tenants, origin-keyed isolation
+  must be enabled and demonstrated, not inferred from process counts. `[strong
+  evidence]`
+- **Servo/Verso and Ladybird are not production-ready in 2026** (Ladybird Stable
+  targeted ~2028; Servo 2026 = embedding demos / minimal shell). Keep them as
+  **2028+ watch-list** items, not v1 candidates. `[strong evidence]`
+- **Patch-SLA confidence is uneven — mark it.** The CEF patch SLA is only qualitative
+  ("tracks Chromium"), with **no** primary-sourced number; do not carry it as a hard
+  SLA. The Electron "~1–2 weeks after Chromium stable" figure is a secondary snippet,
+  **not** verbatim in the fetched Electron Timelines page; treat it as plausible, not
+  a guarantee. Do **not** invent a number. Proposed measurable metric for this ADR:
+  **"median days from Chromium security release to a released bundle reaching the
+  user"** — for Electron this is the project's own CI/release latency (measurable and
+  steerable); for WebView2 it is Microsoft's rollout (only observable). `[metric =
+  our proposal, plausible]`
+
+Primary sources (from the Quella 2026-07-16 deliverable):
+
+- Electron: <https://www.electronjs.org/docs/latest/tutorial/electron-timelines> ·
+  <https://www.electronjs.org/docs/latest/tutorial/security> ·
+  <https://www.electronjs.org/docs/latest/tutorial/sandbox>
+- Chromium isolation:
+  <https://chromium.googlesource.com/chromium/src/+/main/docs/process_model_and_site_isolation.md>
+  · <https://www.chromium.org/Home/chromium-security/site-isolation/> ·
+  <https://github.com/WICG/origin-agent-cluster>
+- WebView2 patch model:
+  <https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/evergreen-vs-fixed-version>
+  ·
+  <https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution>
+- Tauri/WRY: <https://v2.tauri.app/security/future/> ·
+  <https://github.com/tauri-apps/wry>
+- Servo/Ladybird: <https://en.wikipedia.org/wiki/Ladybird_(web_browser)> ·
+  <https://www.phoronix.com/news/Servo-January-2026>
 
 ## Deliverables
 

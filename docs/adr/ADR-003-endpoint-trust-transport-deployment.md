@@ -13,7 +13,10 @@
 > 2026-07-14 decision reframes `browser` into a native, offline-capable runtime that
 > executes arbitrary foreign web apps **locally** (trust-class target **T3**),
 > replacing cloud hosting and running without any AI layer. The binding reframe
-> record is **ADR-005/006/007** (see PR #22). The remote-endpoint-marketplace and
+> record is **ADR-005/006/007** (see PR #22); `browser` is **standalone** per
+> **ADR-008** (2026-07-16), with MCP consumption an internal, optional capability off
+> the T1 critical path and no external `nigin-engine` dependency. The
+> remote-endpoint-marketplace and
 > direct-browser-transport product model below is therefore obsolete. Its
 > *network-security substance* — egress origin allowlist, exact-origin `connect-src`,
 > separation of endpoint URL vs. canonical origin, redirect/DNS-rebinding/

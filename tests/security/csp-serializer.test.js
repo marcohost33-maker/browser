@@ -50,6 +50,35 @@ test('serializeCsp rejects a non-array directive value', () => {
   );
 });
 
+test('serializeCsp refuses an injected directive NAME (separator/control char)', () => {
+  // Aegis PoC: a `;`/whitespace-carrying key would smuggle an extra directive
+  // into the serialized string. The serializer must refuse to emit it.
+  assert.throws(
+    () =>
+      serializeCsp({
+        'script-src': ["'self'"],
+        'x-evil connect-src *': ["'self'"],
+      }),
+    CspValidationError,
+  );
+});
+
+test('serializeCsp refuses an unknown (non-whitelisted) directive NAME', () => {
+  assert.throws(
+    () => serializeCsp({ 'script-src': ["'self'"], 'totally-made-up-src': ["'self'"] }),
+    CspValidationError,
+  );
+});
+
+test('serializeCsp emits every known/whitelisted directive name unchanged', () => {
+  const csp = serializeCsp({
+    'default-src': ["'none'"],
+    'script-src': ["'self'"],
+    'upgrade-insecure-requests': [],
+  });
+  assert.equal(csp, "default-src 'none'; script-src 'self'; upgrade-insecure-requests");
+});
+
 // --- header map (single source of truth) -----------------------------------
 
 test('buildHeaderMap emits CSP plus every additional header from the baseline', () => {
@@ -88,6 +117,12 @@ test('isExactOrigin accepts exact origins, rejects wildcards/paths/scheme-only',
   assert.equal(isExactOrigin('https:'), false); // scheme-only
   assert.equal(isExactOrigin('*'), false);
   assert.equal(isExactOrigin('data:'), false);
+});
+
+test('isExactOrigin rejects a trailing-dot FQDN host (canonicalization bypass)', () => {
+  assert.equal(isExactOrigin('https://example.com.'), false);
+  assert.equal(isExactOrigin('https://mcp.example.com.'), false);
+  assert.equal(isExactOrigin('https://mcp.example.com.:8443'), false);
 });
 
 // --- THE crown-jewel connect-src negative test (must BITE) ------------------

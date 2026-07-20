@@ -3,8 +3,9 @@
 > Scope: only `marcohost33-maker/browser`. **Product reframed 2026-07-14:**
 > `browser` is a native, offline-capable browser/webapp **runtime program** that
 > runs foreign web apps locally (staged T1 → T2 → T3; north star **T3**), replaces
-> cloud hosting and runs without an AI layer. Three-layer stack: `browser` (runtime)
-> · `nigin-engine` (contract core) · `browser-nigin` (AI layer). Binding reframe
+> cloud hosting and runs without an AI layer. `browser` is **standalone** (ADR-008,
+> 2026-07-16): `nigin-engine` and `browser-nigin` are separate, independent
+> repositories linked only by knowledge transfer (not dependencies). Binding reframe
 > record: **ADR-005/006/007** (PR #22). The "MCP client webapp" wording below is
 > superseded product framing; the milestone/gate discipline is retained. This
 > repository is not `browser-nigin` and not `nigin-engine`.
@@ -18,12 +19,12 @@
 ## M1A — Product and architecture gates
 
 - [x] ADR-001: browser application and enforcement boundaries. **SUPERSEDED by ADR-005** (enforcement-boundary substance retained).
-- [x] ADR-002 accepted target design: signed/provenanced contract input (framing realigned to `nigin-engine`).
+- [x] ADR-002 accepted target design: signed/provenanced contract input (producer-neutral; no external `nigin-engine` producer assumed, ADR-008).
 - [x] Product-discovery protocol prepared for #14 (to be re-scoped to the runtime product).
 - [x] ADR-003 proposed: curated endpoint, CORS and deployment model. **SUPERSEDED by ADR-005** (network-security substance retained in `docs/security/*`).
 - [ ] Execute #14 and record go/pivot/stop evidence.
 - [ ] Complete representative endpoint/CORS/auth spike and accept ADR-003 (#13).
-- [ ] Receive and verify signed ENG-01 contract, fixtures and conformance flow.
+- [ ] (Optional, off the T1 critical path) Verify any signed MCP contract `browser` chooses to consume — sourced internally or from any signed producer; no external `nigin-engine` blocker (ADR-008).
 - [ ] Complete ADR-004 framework/build/browser spike (#7).
 
 **Gate M1A:** no real MCP runtime, OAuth implementation or dynamic endpoint
