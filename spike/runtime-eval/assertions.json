@@ -1,0 +1,41 @@
+{
+  "schema": "runtime-eval-assertions/v1",
+  "description": "Expected probe outcomes a CORRECTLY isolated, network-disabled runtime must produce. A harness reads window.__spikeResults after loading payload/index.html and compares each probe's status against expected[] (an ordered set of acceptable statuses). Any deviation is a finding for ADR-006's raw matrix, not an auto-fail of the payload.",
+  "statusVocabulary": {
+    "PASS": "capability worked as a correctly isolated runtime should",
+    "BLOCKED": "hostile/ungranted action correctly denied (the secure outcome)",
+    "FAIL": "outcome deviated from the isolated-runtime expectation",
+    "READY": "destructive fixture registered + callable by harness, not auto-run",
+    "SKIP": "API genuinely absent in a non-security-relevant way"
+  },
+  "notes": [
+    "Capability probes (module_loading, indexeddb, cachestorage, webassembly) MUST PASS on any Chromium-based candidate (Electron/CEF/WebView2). A system-WebView divergence surfaces here as a finding.",
+    "service_worker may be BLOCKED under some load schemes (opaque origin / custom scheme without SW support); both PASS and BLOCKED are acceptable, FAIL is not.",
+    "trusted_types is SKIP-acceptable only if the runtime lacks Trusted Types support entirely; where supported it MUST be BLOCKED. Record the runtime + version when SKIP.",
+    "native_ipc_zero_grant expects BLOCKED (no bridge exposed). WebView2 injects window.chrome.webview by design: if that surfaces, the payload reports FAIL and the harness MUST additionally prove the bridge rejects ungranted calls; a callable ungranted bridge is a hard-cut failure.",
+    "external_protocol/popup can only be observed from JS as a refused window.open. The harness MUST also assert at OS level that no external handler launched and no new top-level window/download occurred.",
+    "Destructive fixtures are never auto-executed; the harness triggers window.__spikeFixtures.* in isolated runs and records crash containment, host recovery, hang detection and oversized-resource handling as separate measurements."
+  ],
+  "probes": {
+    "module_loading":        { "category": "capability", "expected": ["PASS"] },
+    "indexeddb":             { "category": "capability", "expected": ["PASS"] },
+    "cachestorage":          { "category": "capability", "expected": ["PASS"] },
+    "service_worker":        { "category": "capability", "expected": ["PASS", "BLOCKED"] },
+    "webassembly":           { "category": "capability", "expected": ["PASS"] },
+    "csp_eval":              { "category": "security",   "expected": ["BLOCKED"] },
+    "csp_inline_script":     { "category": "security",   "expected": ["BLOCKED"] },
+    "trusted_types":         { "category": "security",   "expected": ["BLOCKED", "SKIP"] },
+    "popup":                 { "category": "security",   "expected": ["BLOCKED"] },
+    "external_protocol":     { "category": "security",   "expected": ["BLOCKED"] },
+    "native_ipc_zero_grant": { "category": "security",   "expected": ["BLOCKED"] },
+    "destructive_fixtures":  { "category": "fixture",    "expected": ["READY"] }
+  },
+  "hostLevelAssertions": {
+    "network": "No socket/DNS activity during the entire result path. connect-src 'none' is set in the payload; the harness MUST additionally start the runtime with networking disabled and assert zero egress.",
+    "external_protocol_os": "No external URL handler process is spawned when external_protocol / navigateExternal is exercised.",
+    "download_os": "No file is written to the download directory when triggerDownload is exercised (download denied by default).",
+    "navigation_os": "Top-level navigation to an external origin (navigateExternal) is denied by the will-navigate handler; document.location origin is unchanged.",
+    "crash_containment": "crash fixture kills only the app renderer/process, not the host; host recovers and can relaunch.",
+    "hang_detection": "hang fixture triggers the runtime's unresponsive-renderer handling; host stays responsive."
+  }
+}

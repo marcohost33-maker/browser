@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    Framework-neutral runtime-evaluation payload (ADR-006 "Common test app").
+    Network is intentionally forbidden in the result path: connect-src 'none'.
+    require-trusted-types-for 'script' + no 'unsafe-eval' are load-bearing:
+    they turn the Trusted-Types and CSP-eval probes into deterministic BLOCKED
+    outcomes for a correctly isolated runtime. 'wasm-unsafe-eval' is allowed on
+    purpose so the WebAssembly probe measures wasm capability (not CSP), while
+    eval() stays blocked. A harness MAY additionally set these via HTTP headers;
+    the meta tag keeps the payload self-contained for file://-style loading.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'none'; worker-src 'self'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script';">
+  <title>Runtime Eval Payload</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main>
+    <h1>Runtime Evaluation Payload</h1>
+    <p id="status" data-state="running">Running probes&hellip;</p>
+    <table id="results-table">
+      <thead>
+        <tr><th>#</th><th>Probe</th><th>Category</th><th>Status</th><th>Detail</th></tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+    <h2>Machine-readable results (<code>window.__spikeResults</code>)</h2>
+    <pre id="results-json" aria-label="results json"></pre>
+  </main>
+  <!-- Module loading is itself probe #1: if this module never runs, no results
+       appear and window.__spikeResults stays undefined (a harness FAIL). -->
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
