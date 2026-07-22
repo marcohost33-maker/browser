@@ -1,7 +1,11 @@
-# CWAP-Strict-JSON v0.1.2 — Normativer Kanonisierungs-Entwurf (DRAFT)
+# CWAP-Strict-JSON v0.1.2 — Normativer Kanonisierungs-Standard (ACCEPTED)
 
-Status: D1–D4 vom Owner ANGENOMMEN 2026-07-19 (siehe `DECISION_2026-07-19.md`).
-Promotion von #24 bleibt fail-closed (Rust-Leg + CI-Gate + Codebasis-Einbau offen).
+Status: **ACCEPTED / PROMOTED 2026-07-22.** D1–D4 vom Owner ANGENOMMEN 2026-07-19
+(`DECISION_2026-07-19.md`); P1–P4-Fehlerpräzedenz + 5 F6-Präzisierungssätze owner-seitig
+ADJUDIZIERT 2026-07-22 (`ADJUDICATION_F6_2026-07-22.md`), branch nach main gelandet
+(`PROMOTION_2026-07-22_browser24.md`). Dies promotet die **kanonische Manifest-
+Repräsentation von ADR-007 Track B** — NICHT das gesamte Issue #24 (Track A `.swbn`/IWA,
+Track C TUF-Secure-Update, Publisher-Admission, Capability-Approval, Code-Safety bleiben OFFEN).
 Kontext: browser-Repo (APP-01), ADR-007 Track B. Löst den im Cross-Family-Review
 2026-07-17 (ChatGPT) benannten Blocker auf: v0.1.1-Custom-Canonical-JSON vs.
 Issue-#24-Kanon (JCS / Safe-Integer / Extensions / NAR) war nicht normativ

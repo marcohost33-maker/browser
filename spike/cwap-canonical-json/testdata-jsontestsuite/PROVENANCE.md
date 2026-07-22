@@ -1,6 +1,6 @@
 # JSONTestSuite — vendored external parser-conformance oracle
 
-- Source: https://github.com/nst/JSONTestSuite ("Parsing JSON is a Minefield",
+- Source: <https://github.com/nst/JSONTestSuite> ("Parsing JSON is a Minefield",
   Nicolas Seriot). `test_parsing/` — 318 files.
 - Pinned commit: `1ef36fa01286573e846ac449e8683f8833c5b26a` (fetched 2026-07-19).
 - License: MIT (see `LICENSE`). Vendored verbatim (byte-exact, `-text`) for an

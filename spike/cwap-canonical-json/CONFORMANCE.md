@@ -82,11 +82,13 @@ ein späterer Container binär gehen darf.
 ## Test-/Fuzzing-Schichtung (Best Practice: deterministisches Gate vs. scheduled)
 
 Deterministisches CI-Gate (jeder PR, exit-code-gated):
+
 - `test_cwap_v012_r1.py` (31 Kernvektoren) · `differential.py`/`differential3.py`
   (3455 Fälle, fixer Seed) · `test_rfc8785_vectors.py` (externe JCS-Vektoren, 3 Impls)
   · `test_cross_oracle_tob.py` (Fremd-Orakel) · `hypothesis_fuzz.py` (fixer Seed).
 
 Geplant / noch offen (scheduled/nightly, nicht blockierend):
+
 - **cargo-fuzz + libFuzzer** mit `Arbitrary`-JSON (structure-aware), Fremd-Orakel
   im Loop — findet, was fixe Tests + selbst-generierter Korpus verfehlen.
 - **es6testfile100m** (cyberphone-Release, 100M IEEE-754-Zeilen) als Reject-Pfad-

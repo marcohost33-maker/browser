@@ -92,7 +92,7 @@ sicherheitskritisch; die Code-Praezedenz ist Interop-/Diagnose-Vertrag.
    die Code-Praezedenz ist Interop-/Diagnose-Vertrag, nicht sicherheitskritisch (s.o.
    Z. „Nur der ACCEPT/REJECT-Entscheid und die Kanonbytes sind sicherheitskritisch").
    Unabhaengigkeits-Anker liegt vor: Fremd-Oracle Trail-of-Bits-rfc8785 (nicht-Claude)
-   + ChatGPT-Votum (bestaetigt schliessendes-`}`/EOF) + referenzfreie Viert-Impl C.
+   - ChatGPT-Votum (bestaetigt schliessendes-`}`/EOF) + referenzfreie Viert-Impl C.
 2. Einbau r1-Referenz + Rust-Impl ins browser-Repo (Differential-Korpus als CI-Gate):
    offen, aber NICHT F6-blockierend.
 3. Coverage-Fuzzing (cargo-fuzz/Atheris) als Ausbaustufe: offen, nicht F6-blockierend.
