@@ -7,9 +7,13 @@
 //   * Opens a BrowserWindow under the FULL ADR-006 app-context security gate:
 //       sandbox:true, contextIsolation:true, nodeIntegration:false, webSecurity:true,
 //       no preload (zero native bridge -> native_ipc_zero_grant must be BLOCKED).
-//   * Denies popups/new windows, external navigation, all permission requests, all downloads.
+//   * Denies popups/new windows, external navigation + server redirects, all permission
+//     requests AND checks, all downloads; disables the auxclick (middle-click) nav surface.
 //   * REAL egress block: session.webRequest.onBeforeRequest cancels every non-local scheme
 //     and logs it. Proves zero external requests reached Chromium's network stack.
+//   * WebRTC egress closure: setWebRTCIPHandlingPolicy('disable_non_proxied_udp') on every
+//     window — closes the ICE/STUN/TURN UDP path that bypasses webRequest (set-policy, not
+//     empirically exercised; the payload opens no RTCPeerConnection).
 //   * Runs the 12 probes (reads window.__spikeResults), compares each against assertions.json.
 //   * Triggers the destructive fixtures in isolated windows: external navigation (denied),
 //     download (denied), real renderer crash (containment), hang (unresponsive detection).
@@ -70,8 +74,28 @@ const MIME = {
 // Egress + host-level ledgers
 // ---------------------------------------------------------------------------
 const egress = { allowedLocal: 0, blockedExternal: 0, blockedList: [] };
-const hostLevel = { downloadsDenied: 0, externalNavDenied: 0, windowOpenDenied: 0, permissionDenied: 0 };
+const hostLevel = {
+  downloadsDenied: 0,
+  externalNavDenied: 0,
+  externalRedirectDenied: 0,
+  windowOpenDenied: 0,
+  permissionDenied: 0,
+  permissionChecksDenied: 0,
+};
 const consoleLog = []; // renderer console (captures CSP refusal messages = evidence)
+
+// Defense-in-depth hardening applied on top of the 4 core ADR-006 gate flags.
+// These close egress/navigation paths the 4 flags + onBeforeRequest do NOT cover.
+const hardening = {
+  webrtcIpHandlingPolicy: 'disable_non_proxied_udp', // STUN/TURN/ICE UDP bypasses session.webRequest
+  webrtcPolicyApplied: 0,
+  webrtcPolicyErrors: [],
+  disableBlinkFeatures: 'Auxclick',                   // suppress middle-click aux navigation surface
+  willRedirectHandlerInstalled: true,                 // origin-pin server-side redirects too
+  permissionRequestHandler: 'deny-all',
+  permissionCheckHandler: 'deny-all',
+  privilegedScheme: 'app: standard+secure+supportFetchAPI+corsEnabled+stream+allowServiceWorkers',
+};
 
 function isLocalScheme(u) {
   return /^(app|data|blob|devtools|chrome-extension|about):/i.test(u);
@@ -107,11 +131,28 @@ async function waitForDone(wc, timeoutMs = 30000) {
 // Apply the ADR-006 Electron security gate + deny handlers to a window's webContents.
 function harden(win) {
   const wc = win.webContents;
+
+  // --- WebRTC egress closure (the pillar session.webRequest does NOT cover) ---
+  // WebRTC ICE/STUN/TURN open UDP peer connections directly through the OS,
+  // bypassing Chromium's HTTP network stack and therefore onBeforeRequest.
+  // 'disable_non_proxied_udp' forces all UDP through a proxy; none is configured
+  // here, so there is no direct peer-UDP egress path. Structural closure applied;
+  // the payload never exercises WebRTC (no getUserMedia/RTCPeerConnection), so
+  // this is a set-policy defense, not an empirically-triggered block.
+  try {
+    wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
+    hardening.webrtcPolicyApplied += 1;
+  } catch (e) {
+    hardening.webrtcPolicyErrors.push(String(e && e.message));
+  }
+
   wc.setWindowOpenHandler(() => {
     hostLevel.windowOpenDenied += 1;
     return { action: 'deny' };
   });
-  wc.on('will-navigate', (event, url) => {
+
+  // Origin-pin BOTH client-initiated navigation and server-issued redirects.
+  const denyIfExternal = (event, url, isRedirect) => {
     let external = true;
     try {
       external = new URL(url).origin !== new URL(wc.getURL() || 'app://local/').origin;
@@ -121,10 +162,18 @@ function harden(win) {
     if (external) {
       event.preventDefault();
       hostLevel.externalNavDenied += 1;
+      if (isRedirect) hostLevel.externalRedirectDenied += 1;
     }
-  });
-  wc.on('console-message', (_e, _level, message) => {
-    if (consoleLog.length < 60) consoleLog.push(message);
+  };
+  wc.on('will-navigate', (event, url) => denyIfExternal(event, url, false));
+  wc.on('will-redirect', (event, url) => denyIfExternal(event, url, true));
+
+  // console-message: Electron 43 passes an Event params object as arg0 (the old
+  // (event, level, message) positional form is deprecated). Read .message off
+  // the params object, fall back to the positional arg for older builds.
+  wc.on('console-message', (event, level, message) => {
+    const msg = (event && typeof event.message === 'string') ? event.message : message;
+    if (consoleLog.length < 60) consoleLog.push(msg);
   });
 }
 
@@ -140,6 +189,8 @@ function makeWindow() {
       webSecurity: true,
       // No preload: zero native bridge is exposed to app content.
       backgroundThrottling: false,
+      // Drop the middle-click "auxclick" navigation surface entirely.
+      disableBlinkFeatures: 'Auxclick',
     },
   });
   harden(win);
@@ -200,7 +251,7 @@ async function realMain() {
 
   // Deny all permissions and all downloads.
   ses.setPermissionRequestHandler((_wc, _perm, cb) => { hostLevel.permissionDenied += 1; cb(false); });
-  ses.setPermissionCheckHandler(() => false);
+  ses.setPermissionCheckHandler(() => { hostLevel.permissionChecksDenied += 1; return false; });
   ses.on('will-download', (event) => { event.preventDefault(); hostLevel.downloadsDenied += 1; });
 
   // ---- Cold run: capability + security probes -----------------------------
@@ -355,6 +406,7 @@ async function realMain() {
     memByTypeKB: memByType,
     egress,
     hostLevel,
+    hardening,
     fixtures,
   };
 
@@ -366,6 +418,7 @@ async function realMain() {
   process.stdout.write(`probes as-expected: ${summary.asExpected}/${summary.probeCount}  deviations=${deviations}\n`);
   process.stdout.write(`security negatives all BLOCKED: ${secBlockedAll}\n`);
   process.stdout.write(`egress: ${externalEgressZero} (allowedLocal=${egress.allowedLocal})\n`);
+  process.stdout.write(`hardening: webRTC-policy=${hardening.webrtcIpHandlingPolicy} applied=${hardening.webrtcPolicyApplied}x errors=${hardening.webrtcPolicyErrors.length}; disableBlinkFeatures=${hardening.disableBlinkFeatures}; will-redirect=on; permission req/check=deny-all\n`);
   process.stdout.write(`cold=${coldStartMs}ms warm=${warmStartMs}ms idleResident=${totalWorkingSetKB}KB\n`);
   for (const c of comparison) {
     process.stdout.write(`  [${c.verdict === 'as-expected' ? 'OK ' : 'DEV'}] ${c.id.padEnd(22)} ${String(c.status).padEnd(8)} exp=${JSON.stringify(c.expected)}\n`);
@@ -389,6 +442,42 @@ function writeResultsMd(s, comparison) {
     ? s.egress.blockedList.map((b) => `  - ${b.method} ${b.scheme}: ${b.url} (${b.resourceType})`).join('\n')
     : '  - (none — no external request was ever attempted)';
 
+  // The #status terminal state depends on whether ANY probe FAILed. With the
+  // cachestorage payload fix in place, a clean run settles at state=done.
+  const anyFail = s.deviations > 0 || s.coldDoneState === 'error' || s.warmDoneState === 'error';
+  const stateNote = anyFail
+    ? `> **On the \`state=error\` labels above:** the payload sets \`#status[data-state=error]\`
+> whenever *any* probe returns FAIL. Every one of those page loads still ran ALL 12 probes to
+> completion — the label is the FAIL echo, not a load failure.`
+    : `> **On the \`state=done\` labels above:** \`#status[data-state=done]\` means every one of the
+> 12 probes ran to completion with no FAIL. (Before the cachestorage payload fix this row showed
+> \`state=error\`, driven solely by the single cachestorage FAIL — see the resolved-deviation note below.)`;
+
+  const deviationSection = s.deviations === 0
+    ? `## Deviations — none (cachestorage payload bug fixed)
+
+All 12 probes are as-expected against \`assertions.json\` (deviations = 0).
+
+**Resolved deviation history (transparency).** The first execution (2026-07-22, pre-fix) showed
+one DEVIATION: \`cachestorage\` FAIL (\`threw: TypeError\`). Root cause was **payload-side, not an
+Electron defect**: the probe used \`new Request('runtime-eval:/fixture')\`, and the Service Worker
+Cache spec rejects a non-\`http(s)\` request scheme in \`Cache.put()\` with a \`TypeError\` — reproducible
+on any Chromium, including real Chrome over https. Fix: the byte-locked SoT payload was **deliberately
+changed** to key the cache entry on \`https://cwap.invalid/runtime-eval-fixture\` (RFC 6761 reserved
+\`.invalid\` host, guaranteed non-resolvable) with an **explicit** \`Response\` so \`cache.put\` STORES it
+with **no network** (only \`cache.add\`/\`addAll\` fetch); \`connect-src 'none'\` is not violated. The
+\`asset-manifest.json\` SHA256 byte-lock was regenerated via \`verify-determinism.mjs --update\`; all
+pre-fix evidence against the old payload bytes is invalidated by that intentional change.`
+    : `## The one DEVIATION — \`cachestorage\` FAIL (root-caused, payload-side, NOT an Electron defect)
+
+The \`cachestorage\` probe calls \`cache.put(new Request('runtime-eval:/fixture'), …)\`. Per the
+Service Worker Cache spec, \`Cache.put()\` throws a \`TypeError\` when the request URL's scheme is
+not \`http\`/\`https\`; \`runtime-eval:\` is a custom scheme, so it throws \`TypeError\` — exactly what
+was observed (\`threw: TypeError\`). CacheStorage itself IS available and secure-context-enabled
+here (\`caches.open\` succeeded before the throw). This reproduces on any Chromium, including real
+Chrome served over https — a **latent bug in the byte-locked test-app payload**, surfaced by this
+run, **not** a runtime property of Electron.`;
+
   const md = `# Electron runtime-eval harness — Windows results, 2026-07-22
 
 First real runtime execution of the ADR-006 common test app (\`spike/runtime-eval/payload/\`).
@@ -398,6 +487,7 @@ Generated by \`main.js\` from a live run; every number below is straight from th
 - Runtime: **Electron ${s.electron}** (Chromium ${s.chromium}, Node ${s.node}, V8 ${s.v8})
 - Host: Windows (${s.platform})
 - Security gate applied: \`sandbox:true\` + \`contextIsolation:true\` + \`nodeIntegration:false\` + \`webSecurity:true\`, no preload (zero native bridge). Popups/new-windows denied, external navigation denied, all permissions denied, all downloads denied.
+- Defense-in-depth hardening (beyond the 4 flags): WebRTC IP policy \`${s.hardening.webrtcIpHandlingPolicy}\` (applied ${s.hardening.webrtcPolicyApplied}x, errors ${s.hardening.webrtcPolicyErrors.length}); \`disableBlinkFeatures:'${s.hardening.disableBlinkFeatures}'\`; \`will-redirect\` origin-pin; \`setPermissionCheckHandler\` deny-all; privileged scheme \`${s.hardening.privilegedScheme}\`.
 - Payload origin: \`app://local/\` privileged local scheme (standard+secure), not \`file://\` (file:// blocks ES-module loading in Chromium).
 - Toolchain deviation (documented): the repo root pins Node 22.23.1 for its CSP/security tests; this harness is a **separate framework-neutral spike** driven by the local Node ${process.versions.node === s.node ? '24.17.0 launcher' : 'launcher'} and running inside Electron ${s.electron}'s bundled Node ${s.node} / Chromium ${s.chromium}. Repo root toolchain untouched.
 
@@ -419,10 +509,7 @@ Generated by \`main.js\` from a live run; every number below is straight from th
 Per-process idle memory (workingSetSize):
 ${memLines}
 
-> **On the \`state=error\` labels above:** the payload sets \`#status[data-state=error]\` whenever
-> *any* probe returns FAIL. The single FAIL here is \`cachestorage\` (root-caused below), so cold,
-> warm and crash-relaunch all show a terminal state of \`error\`. Every one of those page loads ran
-> ALL 12 probes to completion — the label is the FAIL echo, not a load failure.
+${stateNote}
 
 ## Probe results vs \`assertions.json\`
 
@@ -436,18 +523,7 @@ ${comparison.filter((c) => c.category === 'security').map((c) => `- \`${c.id}\`:
 
 All security negatives BLOCKED (TT SKIP-acceptable only if unsupported): **${s.securityNegativesAllBlocked}**.
 
-## The one DEVIATION — \`cachestorage\` FAIL (root-caused, payload-side, NOT an Electron defect)
-
-The \`cachestorage\` probe calls \`cache.put(new Request('runtime-eval:/fixture'), …)\`. Per the
-Service Worker Cache spec, \`Cache.put()\` throws a \`TypeError\` when the request URL's scheme is
-not \`http\`/\`https\`; \`runtime-eval:\` is a custom scheme, so it throws \`TypeError\` — exactly what
-was observed (\`threw: TypeError\`). CacheStorage itself IS available and secure-context-enabled
-here (\`caches.open\` succeeded before the throw). This reproduces on any Chromium, including real
-Chrome served over https — it is a **latent bug in the byte-locked test-app payload** (a synthetic
-non-http scheme used for the cache key), surfaced by this first real execution, **not** a runtime
-property of Electron. The payload is byte-locked (\`asset-manifest.json\`) + is the ADR-006 SoT
-deliverable, so it was **deliberately NOT edited here**; this is filed as a payload fix-forward for
-its owner. Recorded as a DEVIATION in the raw matrix as the protocol requires — not auto-resolved.
+${deviationSection}
 
 ## Egress block — real proof (not just \`connect-src 'none'\`)
 
@@ -460,13 +536,24 @@ request whose scheme is not local (\`app:\`/\`data:\`/\`blob:\`/\`devtools:\`/\`
 - Blocked external request log:
 ${blockedRows}
 
+**WebRTC pillar (the one \`onBeforeRequest\` does NOT cover):** WebRTC ICE/STUN/TURN open UDP
+peer connections directly through the OS, bypassing Chromium's HTTP network stack — so
+\`session.webRequest.onBeforeRequest\` never sees them. This harness now sets
+\`webContents.setWebRTCIPHandlingPolicy('${s.hardening.webrtcIpHandlingPolicy}')\` on every window
+(applied ${s.hardening.webrtcPolicyApplied}×, errors ${s.hardening.webrtcPolicyErrors.length}), which forces UDP through a proxy — none is
+configured, so there is no direct peer-UDP egress path. Honest caveat: the payload never
+exercises WebRTC (no \`getUserMedia\`/\`RTCPeerConnection\`), so this is a **set-policy structural
+closure**, not an empirically-triggered block. It removes the strongest known webRequest-bypass
+egress route by construction; it is not a measurement that a bypass was attempted and stopped.
+
 **Honest method limit:** this proves zero egress *at Chromium's network stack + webRequest layer*.
 It is NOT a kernel-level socket/DNS packet capture. There is no OS socket monitor here. The
 residual-risk argument for "no raw socket either" is structural, not measured: with
 \`nodeIntegration:false\` + \`sandbox:true\` + no preload, app content has no Node/native API to
-open a raw socket; the only network path available to it is Chromium's stack, which is what
-\`onBeforeRequest\` gates. A future run could add Windows-level ETW/\`Get-NetTCPConnection\`
-sampling to close this gap empirically.
+open a raw socket; the only network path available to it is Chromium's stack (gated by
+\`onBeforeRequest\`) plus the WebRTC UDP path (now closed by the IP-handling policy above). A
+future run could add Windows-level ETW/\`Get-NetTCPConnection\` sampling to close this gap
+empirically.
 
 ## Destructive fixtures (isolated runs, host-level truth)
 
