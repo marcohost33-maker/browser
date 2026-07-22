@@ -1,6 +1,6 @@
 # Daten-Klassifikation · browser
 
-Schutzklassen-Modell (5-Tier). Repo-Default: **<hier einstufen>**.
+Schutzklassen-Modell (5-Tier). Repo-Default: **`<hier einstufen>`**.
 
 | Tier | Bedeutung | Beispiel | Behandlung |
 |------|-----------|----------|------------|
@@ -12,5 +12,5 @@ Schutzklassen-Modell (5-Tier). Repo-Default: **<hier einstufen>**.
 
 ## Repo-Einstufung
 
-- Hoechste hier verarbeitete Klasse: **<hier ausfuellen>**
-- Begruendung: <hier ausfuellen>
+- Hoechste hier verarbeitete Klasse: **`<hier ausfuellen>`**
+- Begruendung: `<hier ausfuellen>`

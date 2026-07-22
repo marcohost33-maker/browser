@@ -11,4 +11,4 @@ Ablage: `pr_nr/PR/<slug>.md` bzw. `pr_nr/NR/<slug>.md`.
 
 | Datum | Typ | Slug | Kurz | Root-Cause / Nutzen |
 |-------|-----|------|------|---------------------|
-| <YYYY-MM-DD> | NR | <slug> | <hier ausfuellen> | <hier ausfuellen> |
+| `<YYYY-MM-DD>` | NR | `<slug>` | `<hier ausfuellen>` | `<hier ausfuellen>` |

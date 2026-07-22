@@ -6,6 +6,6 @@ Offene Faeden, datiert. Anschluss an das zentrale `OFFENE_THEMEN`-Board.
 
 | Datum | Thema | Prio | Status |
 |-------|-------|------|--------|
-| <YYYY-MM-DD> | Scaffold mit projekt-spezifischem Inhalt fuellen | P0 | offen |
+| `<YYYY-MM-DD>` | Scaffold mit projekt-spezifischem Inhalt fuellen | P0 | offen |
 
-<Erledigtes nach `archiv/` verschieben oder abhaken.>
+> Hinweis: Erledigtes nach `archiv/` verschieben oder abhaken.

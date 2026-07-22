@@ -6,6 +6,6 @@ Bestands- / Content-Uebersicht dieses Repos (`APP-01`).
 
 | Pfad | Zweck | Reifegrad | Owner |
 |------|-------|-----------|-------|
-| `src/` | <hier ausfuellen> | scaffold | marcohost33-maker |
+| `src/` | `<hier ausfuellen>` | scaffold | marcohost33-maker |
 
-<Pflegen bei jeder Struktur-Aenderung.>
+`<Pflegen bei jeder Struktur-Aenderung.>`

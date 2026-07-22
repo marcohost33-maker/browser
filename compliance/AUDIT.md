@@ -6,9 +6,9 @@ Nachvollziehbarkeit der Qualitaets-Gates. Seed — Eintraege nach jedem Gate-Dur
 
 | Gate | Beschreibung | Status | Evidenz | Datum |
 |------|--------------|--------|---------|-------|
-| G0 | Scaffold-Struktur (14 Elemente non-empty) | offen | – | <YYYY-MM-DD> |
+| G0 | Scaffold-Struktur (14 Elemente non-empty) | offen | – | `<YYYY-MM-DD>` |
 | G1 | Vertikaler Slice + Positiv- / Negativ-Tests | offen | – | – |
 
 ## Audit-Log
 
-- <YYYY-MM-DD> · <hier ausfuellen — Auditor · Befund · Verdikt.>
+- `<YYYY-MM-DD>` · `<hier ausfuellen — Auditor · Befund · Verdikt.>`
