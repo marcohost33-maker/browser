@@ -34,9 +34,11 @@ Evidence: Charter, ADR-005/006/007 (PR #22), Marco decision 2026-07-14.
 > client webapp; Wasmtime/WIT/WASI/CAS/engine work belongs to ENG-01." Retained for
 > provenance.
 
-## D2 — M1 primary user and top task — OPEN / P0
+## D2 — M1 primary user and top task — OPEN / P0 (PROPOSED frame 2026-07-22)
 
-Owner issue: #14.
+Owner issue: #14. **Proposed frame** (persona, anti-persona, bounded read-only task,
+thresholds, go/pivot/stop): `docs/decisions/2026-07-22_D2-M1-product-discovery_PROPOSED.md`.
+Still OPEN — awaits Marco go/pivot/stop.
 
 Required decision:
 

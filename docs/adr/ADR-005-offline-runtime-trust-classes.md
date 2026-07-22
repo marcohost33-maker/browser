@@ -5,7 +5,9 @@
 - Decision owner: Marco
 - Decision: Marco G1 (2026-07-14) — staged trust-class maturation T1 → T2 → T3,
   with T3 as the target state (north star)
-- Cross-family review: ChatGPT complete; Gemini V2 reviewed; Vero adjudication open
+- Cross-family review: ChatGPT complete (advisory, fail-closed); Gemini V2 adjudicated
+  (rejected as-specified — wrong premise/layer); Vero adjudication DONE 2026-07-22 →
+  `docs/verification/2026-07-22_cross-family-adjudication.md`
 - Supersedes the trust-scope product assumptions in ADR-001
 
 ## Context
