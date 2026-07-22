@@ -25,9 +25,11 @@ evidence foundations. Product validation, the runtime/trust-class design
 verification and operations remain open gates.
 
 PR #17 (static security and production-evidence foundation) was **merged on
-2026-07-14** (merge commit `d9b231d`). Branch protection (#18) and independent
-final-head review of the merged head (#20) remain open governance gates tracked
-separately; the merge did not close them.
+2026-07-14** (merge commit `d9b231d`). Its two governance gates are now **closed as
+completed**: branch protection (#18, closed 2026-07-13) and independent final-head
+review of the merged head (#20, closed 2026-07-16). These governance gates are done;
+the open program gates are now product/runtime, not governance (see the reframe note
+and `docs/PROGRAM_CRITICAL_PATH.md`).
 
 See [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) and
 [`docs/verification/PRODUCTION_READINESS_MATRIX.md`](docs/verification/PRODUCTION_READINESS_MATRIX.md)
@@ -140,9 +142,10 @@ contract, capability or authorization assumption.
 
 ## Governance
 
-- Critical paths are listed in `.github/CODEOWNERS`; enforcement still requires
-  issue #18.
-- Independent review of the exact final PR #17 head is tracked in issue #20.
+- Critical paths are listed in `.github/CODEOWNERS`; branch protection was
+  established under issue #18 (closed completed 2026-07-13).
+- Independent final-head review of PR #17 was completed under issue #20 (closed
+  2026-07-16).
 - Dependency and GitHub Actions updates use Dependabot release cooldowns; the
   first scheduled post-merge cycle remains operational evidence.
 - Pull requests must link exact-head evidence and preserve fail-closed negative
