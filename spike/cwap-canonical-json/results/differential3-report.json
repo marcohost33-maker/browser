@@ -1,0 +1,20 @@
+{
+  "seed": 20260719,
+  "total": 3468,
+  "agree": 3468,
+  "accept": 744,
+  "reject": 2724,
+  "reject_codes": {
+    "INT_OUT_OF_SAFE_RANGE": 21,
+    "FLOAT_FORBIDDEN": 116,
+    "NONFINITE_FORBIDDEN": 30,
+    "DUPLICATE_KEY": 2,
+    "LONE_SURROGATE": 17,
+    "INVALID_JSON": 1630,
+    "INVALID_UTF8": 905,
+    "DEPTH_EXCEEDED": 3
+  },
+  "divergences": [],
+  "accept_canon_sha256": "84aa7110a244344594b0bcb17078439c76b6233f1955c823268857dd26d290f1",
+  "verdict": "GRUEN"
+}

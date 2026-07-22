@@ -1,0 +1,104 @@
+# cwap-differential — canonical-JSON conformance + three-way differential gate for
+# the CWAP-Strict-JSON v0.1.2-r1 spike (spike/cwap-canonical-json/, ADR-007 Track B,
+# issue #24). Compiles the independent Rust 2nd impl under a PINNED toolchain and:
+#   1. runs the reference anti-regression suite;
+#   2. runs the deterministic Python-vs-Rust-vs-JS differential (fixed seed);
+#   3. runs TWO external ground-truth oracles against all three impls — the
+#      official RFC 8785 (JCS) reference vectors and the vendored+pinned
+#      JSONTestSuite ("Parsing JSON is a Minefield", 318 files);
+#   4. asserts the accept-canon-SHA on BOTH differential reports equals the
+#      accepted fingerprint (fail-closed);
+#   5. re-checks source provenance against results/sha256.txt.
+#
+# ADVISORY (not a required check) while #24 is an unbuilt, owner-gated spike: both
+# triggers are path-filtered to the spike tree, so this does NOT post a status on
+# unrelated PRs and must NOT be added to branch protection as required (that would
+# phantom-block docs-only PRs). Promote to required only when #24 promotion is
+# unblocked and the filter policy is reconsidered.
+#
+# Determinism note (self-review F2 / research A1): the Rust toolchain is pinned to
+# an exact patch version below rather than trusting the drifting ambient runner
+# rustc, so the byte-determinism proof is reproducible. python3/node are pinned via
+# setup-node / recorded version; the canonical bytes are produced by our own
+# deterministic code and do not depend on interpreter patch level.
+name: cwap-differential
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "spike/cwap-canonical-json/**"
+      - ".github/workflows/cwap-differential.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "spike/cwap-canonical-json/**"
+      - ".github/workflows/cwap-differential.yml"
+
+permissions: {}
+
+concurrency:
+  group: cwap-differential-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  three-way-differential:
+    name: canonical-JSON conformance + three-way differential
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # Canonical accept-set fingerprint of the expanded r2 corpus (3468 cases).
+      # The original owner-accepted 740-accept subset is unchanged and still
+      # hashes to 2fa3c49a...; this superset fingerprint adds 4 coverage vectors
+      # (DECISION_2026-07-19 §fingerprint-change).
+      EXPECTED_CANON_SHA256: "84aa7110a244344594b0bcb17078439c76b6233f1955c823268857dd26d290f1"
+      # Exact Rust toolchain — bump deliberately, never "stable".
+      RUST_VERSION: "1.97.1"
+    defaults:
+      run:
+        working-directory: spike/cwap-canonical-json
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: "22.23.1"
+      - name: pin Rust toolchain (replace ambient runner rustc)
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+          rustup default "$RUST_VERSION"
+          rustc --version
+          python3 --version
+          node --version
+      - name: build independent Rust 2nd implementation
+        run: rustc -O --edition 2021 -o rust/cwap_rs rust/cwap_strict_json.rs
+      - name: delivered-source provenance (recompute vs results/sha256.txt)
+        # sha256.txt paths are relative to the spike root (the working-directory).
+        run: |
+          set -euo pipefail
+          sha256sum -c results/sha256.txt
+      - name: reference anti-regression suite (31 vectors)
+        run: python3 test_cwap_v012_r1.py
+      - name: two-way differential (Python vs Rust)
+        run: python3 differential.py
+      - name: three-way differential (Python vs Rust vs JS)
+        run: python3 differential3.py
+      - name: external oracle — official RFC 8785 (JCS) vectors, all three impls
+        run: python3 test_rfc8785_vectors.py
+      - name: external oracle — JSONTestSuite (318 files, vendored+pinned, 3 impls)
+        run: python3 jts_harness.py
+      - name: assert accept-canon-SHA on both reports matches owner-accepted fingerprint
+        run: |
+          set -euo pipefail
+          for report in results/differential-report.json results/differential3-report.json; do
+            got="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['accept_canon_sha256'])" "$report")"
+            echo "$report -> $got"
+            if [ "$got" != "$EXPECTED_CANON_SHA256" ]; then
+              echo "::error::canon-SHA drift in $report (expected $EXPECTED_CANON_SHA256)"
+              exit 1
+            fi
+          done

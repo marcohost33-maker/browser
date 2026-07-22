@@ -1,0 +1,15 @@
+{
+  "files": 318,
+  "agree": 318,
+  "y_ok": 95,
+  "y_bug": [],
+  "n_ok": 188,
+  "n_bug": [],
+  "i_ok": 35,
+  "divergences": [],
+  "y_reject_codes": {
+    "FLOAT_FORBIDDEN": 15,
+    "DUPLICATE_KEY": 2
+  },
+  "verdict": "GRUEN"
+}
