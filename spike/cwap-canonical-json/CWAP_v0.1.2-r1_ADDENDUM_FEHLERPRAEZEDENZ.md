@@ -50,6 +50,9 @@ P3  Scan-Ordnung (links nach rechts, ein Durchlauf):
     - DUPLICATE_KEY beim SCHLIESSENDEN `}` des betroffenen Objekts (nicht
       beim zweiten Auftreten des Keys) — ein Syntaxfehler vor diesem `}`
       gewinnt als INVALID_JSON.
+      (d) EOF-Fall: existiert kein schliessendes `}` (Eingabe endet vorher),
+      so gibt es keinen DUPLICATE_KEY-Meldepunkt -> INVALID_JSON gewinnt am EOF.
+      Beleg: `q4_missing_close_after_dup -> INVALID_JSON`, 4-Wege einig.
     - Jede sonstige Grammatikverletzung (auch Trailing-Data, fuehrende
       Nullen, rohe Controls in Strings) -> INVALID_JSON an ihrer Position.
 P4  Post-Parse in Kanon-Traversierungsordnung (Objekte: erst Surrogat-
@@ -80,14 +83,21 @@ sicherheitskritisch; die Code-Praezedenz ist Interop-/Diagnose-Vertrag.
   eigener Parser — bewusst, da publizierte JCS-Crates teils vom RFC abweichen
   bzw. verwaist sind; geteilte Bibliotheken wuerden geteilte Fehler bedeuten.
 
-## Offen (unveraendert + neu)
+## Status (2026-07-22): F6 ADJUDIZIERT (Owner-seitig)
 
-1. Owner-Entscheid Marco/Vero ueber D1-D4 UND dieses Addendum (P1-P4).
-2. Einbau r1-Referenz + Rust-Impl ins browser-Repo via Vero (Draft-PR),
-   Differential-Korpus als CI-Gate (`differential.py`, Exit != 0 = ROT).
-3. Coverage-Fuzzing (cargo-fuzz/libFuzzer bzw. Atheris) als Ausbaustufe des
-   Mutations-Fuzzers — im Container nicht verfuegbar, auf Vero-Seite moeglich.
-4. Promotion browser#24 bleibt fail-closed bis 1.-2. erledigt.
+1. Owner-Entscheid Marco/Vero ueber D1-D4 UND dieses Addendum (P1-P4):
+   **ERLEDIGT** — D1-D4 angenommen 2026-07-19; P1-P4 + die 5 F6-Praezisierungssaetze
+   (a)-(e) owner-seitig adjudiziert 2026-07-22 (`ADJUDICATION_F6_2026-07-22.md`).
+   Der fruehere „warte auf ChatGPT UND Gemini"-Hold ist AUFGEHOBEN (Marco-angewiesen):
+   die Code-Praezedenz ist Interop-/Diagnose-Vertrag, nicht sicherheitskritisch (s.o.
+   Z. „Nur der ACCEPT/REJECT-Entscheid und die Kanonbytes sind sicherheitskritisch").
+   Unabhaengigkeits-Anker liegt vor: Fremd-Oracle Trail-of-Bits-rfc8785 (nicht-Claude)
+   + ChatGPT-Votum (bestaetigt schliessendes-`}`/EOF) + referenzfreie Viert-Impl C.
+2. Einbau r1-Referenz + Rust-Impl ins browser-Repo (Differential-Korpus als CI-Gate):
+   offen, aber NICHT F6-blockierend.
+3. Coverage-Fuzzing (cargo-fuzz/Atheris) als Ausbaustufe: offen, nicht F6-blockierend.
+4. Promotion browser#24: **Marco-Gate** (der F6-Design-Blocker ist aufgeloest; die
+   eigentliche Promotion/Merge bleibt Marcos Entscheid — nicht hier vergeben).
 
 ## Nachtrag 2026-07-19 (2. Session-Haelfte): JS-Drittimplementation
 

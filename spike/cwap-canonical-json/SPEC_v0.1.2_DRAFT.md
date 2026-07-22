@@ -62,9 +62,51 @@ Formatierungs-Invarianz).
 > Menge und Kanonbytes sind gegenüber v0.1.2 unverändert (F-01/F-02 sind
 > Bugfixes, keine Kanon-Änderung). Details: `CWAP_v0.1.2-r1_ADDENDUM_FEHLERPRAEZEDENZ.md`.
 
+## F6-Präzisierungen (2026-07-22): implementierungs-autarke Normsätze
+
+Zweck: die im Normtext bisher nur RFC-8785-implizit vorhandenen Kanten explizit
+machen, damit eine unabhängige N-te Implementation ALLEIN aus diesem Text baubar
+ist (die Viert-Impl C musste 3 Stellen aus RFC-8785-Allgemeinwissen ableiten).
+Diese Sätze ändern das Verhalten des v0.1.2-Engine NICHT (3 unabhängige Legs
+divergenzfrei: Python + JS + Fremd-Oracle Trail-of-Bits-rfc8785; siehe
+`ADJUDICATION_F6_2026-07-22.md`). Sie präzisieren D1/D2; sie ersetzen nichts.
+
+- **(a) ES/JCS-String-Escaping, vollständig.** Präzisiert D1. Der Kanonisierer
+  verwendet die Zwei-Zeichen-Escapes `\b \t \n \f \r \" \\`; jedes weitere
+  C0-Steuerzeichen (U+0000–U+001F) als `\u00xx` mit KLEINEN Hexziffern; `/`
+  (U+002F) wird NICHT escaped; jedes andere Zeichen wird als literale UTF-8-Bytes
+  emittiert (KEIN `\uXXXX`-Escaping von Nicht-ASCII). Beleg: RFC-8785-Referenz-
+  vektor (ð U+1F602) byte-gleich, Fremd-Oracle-Übereinstimmung.
+- **(b) `-0` → `0`.** Präzisiert D2. Das Zahl-Token `-0` MUSS zum kanonischen
+  Byte `0` normalisiert werden; die Kanonbytes tragen kein Vorzeichen für Null.
+  Beleg: `edge_minus_zero_canon → ACCEPT:0`.
+- **(c) Top-Level-Skalare zulässig (RFC-8259).** Engine-/Grammatik-Schicht. Ein
+  einzelnes Top-Level-Skalar (String, nichtnegative-Integer-Zahl, `true`,
+  `false`, `null`) ist ein gültiges Dokument und wird kanonisiert. Die
+  Beschränkung „Wurzel MUSS Objekt sein" gilt AUSSCHLIESSLICH für die
+  Manifest-Schicht (Manifest-Constraint, nicht Engine-Constraint). Beleg:
+  `edge_max_safe_accept → ACCEPT:9007199254740991`.
+- **(e) Key-Vergleich = UTF-16-Code-Unit-Folge, KEINE Unicode-Normalisierung.**
+  Präzisiert D1 (Sortierung) und die Duplikaterkennung. Object Keys werden nach
+  Escape-Dekodierung (inkl. Zusammensetzung gepaarter Surrogate) als Folgen von
+  UTF-16-Code-Units binär verglichen und sortiert; es findet KEINE Normalisierung
+  (NFC/NFD/NFKC/NFKD) statt — weder für Duplikaterkennung noch für Sortierung.
+  Schließt die NFC/NFKC-Key-Smuggling-Klasse konstruktiv. Beleg: NFC-vs-NFD-Key →
+  kein Duplikat; escaped-vs-literal-Emoji → DUPLICATE_KEY.
+
+(Der fünfte Satz (d) — EOF-Fall ohne schließendes `}` → INVALID_JSON — gehört zur
+Präzedenz-Schicht und steht im Addendum, P3-DUPLICATE_KEY-Bullet.)
+
 ## Offen (Owner/Cross-Family)
 
-Owner-Entscheid über D1–D4; Einbau in die v0.1.1-Codebasis (dort ersetzt
-recanonicalize den bisherigen Kanonschritt); Rust-Zweitimplementation +
-Differential-Korpus; Fuzzing der parse_strict-Grenzen; danach erst
-Promotion-Neubewertung von browser#24.
+- Owner-Entscheid über D1–D4: **ANGENOMMEN 2026-07-19** (`DECISION_2026-07-19.md`).
+- P1–P4-Fehlerpräzedenz + F6-Präzisierungen (a)–(e): **ADJUDIZIERT 2026-07-22**
+  (Vero owner-seitig, Marco-angewiesen; Fremd-Oracle + ChatGPT-Votum als
+  Unabhängigkeits-Anker) — `ADJUDICATION_F6_2026-07-22.md`. Der frühere „warte auf
+  ChatGPT UND Gemini"-Hold ist damit AUFGEHOBEN: die Präzedenz ist laut Addendum
+  ausdrücklich **Interop-/Diagnose-Vertrag, nicht sicherheitskritisch** (nur
+  ACCEPT/REJECT + Kanonbytes sind sicherheitskritisch, und die sind durch das
+  Fremd-Oracle unabhängig bestätigt).
+- Rest (nicht F6-blockierend): Einbau in die Codebasis; Rust-Binary im CI-Gate;
+  Fuzzing der parse_strict-Grenzen; danach Promotion-Neubewertung von browser#24
+  (= Marco-Gate).
