@@ -84,6 +84,23 @@ cosign verify-blob \
   mcp-contract.tar.gz
 ```
 
+> **Cross-repo identity alignment (2026-07-22, OPEN).** The `<tag>` placeholder above
+> must be pinned to the **strict** tag pattern, not a broad `refs/tags/.+`. The
+> `nigin-engine` side is reported to publish under the workload identity
+> `…/.github/workflows/publish-contract.yml@refs/tags/contract-v.+` (strict: fixed
+> workflow filename + `contract-v*` tag prefix). Two mismatches to reconcile:
+> (1) **workflow filename** — this ADR's illustrative example names
+> `release-contract.yml`; the producer reportedly uses `publish-contract.yml`;
+> (2) **tag pattern** — pin the consumer to the exact `contract-v.+` (or an exact
+> reviewed tag), never a loose catch-all. **This could not be verified locally**
+> (`nigin-engine` is a separate private repo, not checked out here; and no
+> `contract-v*` tag exists yet in `browser` — `git tag -l` is empty). Resolution
+> is BLOCKED on `nigin-engine` publishing its first signed contract release; when
+> it does, set the consumer identity string to that repo's **actual** published
+> workflow path + tag prefix and record it in the reviewed contract lock. Do not
+> hardcode either filename from this note — treat both as unverified until the
+> producer's release is inspected. Tracked as an OPEN decision, not silently left.
+
 ### Provenance
 
 The attestation must identify:

@@ -24,8 +24,10 @@ evidence foundations. Product validation, the runtime/trust-class design
 (ADR-005/006/007), a signed `nigin-engine` contract, application runtime, browser
 verification and operations remain open gates.
 
-PR #17 is intentionally Draft until branch protection and independent final-head
-review are completed or explicitly dispositioned.
+PR #17 (static security and production-evidence foundation) was **merged on
+2026-07-14** (merge commit `d9b231d`). Branch protection (#18) and independent
+final-head review of the merged head (#20) remain open governance gates tracked
+separately; the merge did not close them.
 
 See [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) and
 [`docs/verification/PRODUCTION_READINESS_MATRIX.md`](docs/verification/PRODUCTION_READINESS_MATRIX.md)
@@ -98,13 +100,18 @@ reproducible release build.
 
 ## Decision order
 
+> This is the M1-era decision order; it predates the 2026-07-14 runtime reframe.
+> ADR-003 is superseded by ADR-005, and the runtime-framework portion of ADR-004
+> is now governed by ADR-006 (see the reframe note above and `docs/adr/`). The
+> ordering constraint below still holds; the two ADR labels are annotated inline.
+
 ```text
 branch protection (#18) + independent final-head review (#20)
   -> merge the static foundation if approved
   -> product evidence (#14)
-  -> endpoint/CORS/deployment ADR-003 (#13)
+  -> endpoint/CORS/deployment ADR-003 (#13)   [SUPERSEDED by ADR-005; see reframe]
   -> signed and pinned ENG-01 contract
-  -> framework/build/browser ADR-004 (#7)
+  -> framework/build/browser ADR-004 (#7)     [runtime-framework choice now governed by ADR-006]
   -> secure TypeScript application bootstrap
   -> mock and real read-only vertical slice
   -> browser/privacy/accessibility/security verification
