@@ -97,8 +97,14 @@ const PROBES = [
     }
     try {
       const cache = await caches.open('spike-runtime-eval');
-      // Synthetic Request/Response — no network involved.
-      const req = new Request('runtime-eval:/fixture');
+      // Cache.put requires an http(s)-scheme request key: the Service Worker Cache
+      // spec rejects a non-http(s) scheme with TypeError (a custom scheme such as
+      // the earlier `runtime-eval:` key threw here on every Chromium). Use a
+      // reserved `.invalid` host (RFC 6761 — guaranteed non-resolvable) with an
+      // EXPLICIT Response so NO network occurs: cache.put STORES the given
+      // Response (only cache.add/addAll fetch). This exercises real CacheStorage
+      // put/match semantics without violating `connect-src 'none'`.
+      const req = new Request('https://cwap.invalid/runtime-eval-fixture');
       await cache.put(req, new Response('fixed-body'));
       const hit = await cache.match(req);
       const body = hit ? await hit.text() : null;
