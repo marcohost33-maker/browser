@@ -45,6 +45,36 @@ Important boundaries:
   oriented; interoperability value does not equal cross-platform consumer
   readiness.
 
+### Concrete standard-candidate detail (2026, `[extern]`)
+
+The concrete reference format to evaluate under Track A is the **Signed Web Bundle
+(`.swbn`)** as consumed by **Isolated Web Apps (IWA)**:
+
+- **Integrity Block V2 is the active format.** V1 is **deprecated since Chrome
+  M129** (installing a V1-signed bundle errors with *"Integrity Block V1 has been
+  deprecated since M129. Please re-sign your bundle."*); V2 was introduced to fix
+  key-rotation limitations of V1, and both were supported for a migration window
+  before V1 support is dropped `[extern: chromium IWA docs / WICG isolated-web-apps]`.
+  Any browser-side verifier we build must target **V2**.
+- **Signature algorithms:** the integrity block carries one or more signatures;
+  **Ed25519** (V1's algorithm) and **ECDSA P-256** are the elliptic-curve schemes in
+  scope for V2 `[extern — confirm the exact V2 algorithm set + count/order rules
+  against the current WICG spec before implementing; do not hardcode from memory]`.
+- **Identity is key-derived, not archive-bytes-derived** — the bundle identity is
+  derived from the signing public key, which is what makes key rotation a first-class
+  concern (the V1→V2 motivation).
+
+**Weighing vs Track B (minimal manifest).** `.swbn`/IWA is the stronger reference
+model (spec, real consumer, integrity-block + rotation story) and gains weight under
+the ADR-005 T3 target where foreign publishers need verifiable provenance. Its cost:
+a CBOR/web-bundle parser, integrity-block V2 verification, and the honest boundary
+that a **custom `app://` host does not reproduce Chrome's browser-enforced
+`isolated-app://` origin/storage/CSP/permission semantics** — every guarantee must be
+re-implemented and re-audited, not inherited. The minimal manifest (Track B) avoids
+the web-bundle parser but creates a **new** format, canonicalisation, rotation and
+update ecosystem to specify and fuzz. Neither is selected here; both stay in the
+two-track spike.
+
 ## Track B — Minimal manifest-root package
 
 Prototype only as a comparison baseline. Requirements:

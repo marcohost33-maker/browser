@@ -59,6 +59,66 @@ assertions every candidate harness must use.
   executed in a real browser — no runtime exists in the repo (consistent with
   `docs/IMPLEMENTATION_STATUS.md`). First real execution belongs to the platform harness step.
 
+## B.1 First measured Electron row — Windows (2026-07-22)
+
+Source: `spike/runtime-eval/harness/electron/` (Codie, 2026-07-22). First real runtime
+**execution** of the §B payload under a live Electron process; supersedes §B's "not yet
+executed in a real browser" caveat for the Windows/Electron cell only. Every number below is
+straight from the harness console output; the file `RESULTS_WINDOWS_2026-07-22.md` is generated
+by the harness from the same run. **Not self-certified — Equalita/Data review open.**
+
+- Runtime: **Electron 43.2.0** (Chromium 150.0.7871.129, Node 24.18.0), Windows x64.
+- Gate: `sandbox:true` + `contextIsolation:true` + `nodeIntegration:false` + `webSecurity:true`,
+  no preload; payload served from a privileged `app://` scheme (standard+secure), not `file://`.
+- **Probes: 12/12 as-expected vs `assertions.json`, 0 deviations, harness exit 0.** (First run
+  was 11/12: one `cachestorage` deviation, root-caused as a **payload** bug — the probe keyed
+  `cache.put` on a non-`http(s)` scheme, which the Service Worker Cache spec rejects with
+  `TypeError` on any Chromium. Fixed in the payload; byte-lock `asset-manifest.json` regenerated;
+  determinism gate still discriminates 1-byte tamper → exit 1.)
+- **6/6 security negatives BLOCKED** (CSP eval/inline, Trusted-Types, popup, external-protocol,
+  native-IPC-zero-grant). Renderer crash **contained** (host survived + relaunched). Hang:
+  NOT-OBSERVED within a 12 s bound (bound artifact, not proof of no detection).
+- **Egress: 0 external requests** attempted/allowed, enforced at Electron
+  `session.webRequest.onBeforeRequest` (deny every non-local scheme).
+
+### Hardening applied beyond the four gate flags (measured)
+
+The four flags are necessary but not sufficient; the harness now also applies, on every window:
+
+- `setWebRTCIPHandlingPolicy('disable_non_proxied_udp')` — **closes the WebRTC egress bypass.**
+  ICE/STUN/TURN open UDP peer connections directly through the OS, bypassing Chromium's HTTP
+  network stack and therefore `onBeforeRequest` — this was the weakest egress pillar. Honest
+  scope: this is a **set-policy structural closure** (applied 5× per run, 0 errors), **not** an
+  empirically-triggered block; the payload opens no `RTCPeerConnection`/`getUserMedia`.
+- `will-redirect` origin-pin (server-issued redirects), alongside `will-navigate`.
+- `disableBlinkFeatures:'Auxclick'`; `setPermissionCheckHandler` + `setPermissionRequestHandler`
+  both deny-all; `setWindowOpenHandler` deny; all downloads denied.
+
+### T3 risk / honest vendor caveat — Electron is NOT designed for arbitrary untrusted content
+
+The Electron security documentation states plainly that *"displaying arbitrary content from
+untrusted sources poses a severe security risk that Electron is not intended to handle"* and that
+Node integration must never be enabled for remote content `[extern: electronjs.org security
+tutorial]`. This is a **direct caveat against the T3 (arbitrary foreign content) north star** and
+must not be glossed over: the measured gate above hardens Electron substantially, but the vendor's
+own stance is that Electron's threat model targets **trusted first-party** app content. This
+**reinforces the ADR-005 staging discipline** — reach T1 (owner-controlled) and T2 (curated)
+first; T3 requires either a runtime whose vendor supports that threat model, per-origin site
+isolation carrying real weight, or an explicitly owned, audited residual-risk decision. It does
+**not** by itself reject Electron (bundled Chromium still gives site isolation + an owned
+patch cadence — §A), but it raises the evidentiary bar for the T3 cell specifically.
+
+### Measurement-boundary honesty
+
+- The egress proof is at **Chromium's network stack + `webRequest`**, not a kernel socket/DNS
+  packet capture. There is no OS socket monitor here. With `nodeIntegration:false` + `sandbox:true`
+  + no preload, app content has no native API to open a raw socket, and the WebRTC UDP path is now
+  policy-closed — but "no raw socket either" remains a **structural argument, not a measurement**.
+  A future run could add Windows ETW / `Get-NetTCPConnection` sampling to close this empirically.
+- One OS (Windows), one runtime (Electron). macOS/Linux rows and the CEF fallback harness — the
+  real two-way comparison ADR-006 needs — are NOT produced. Cold/warm start + idle memory are
+  single-sample magnitudes, not p50/p95. ADR-006 stays **PROPOSED**; this is one measured row.
+
 ## C. What still REQUIRES the measured spike (unchanged ADR-006 deliverables)
 
 Per-platform builds (Win/macOS/Linux) of the **Electron** and **CEF** harnesses that load
