@@ -5,7 +5,7 @@
 - Product: standalone native, offline-capable web-application runtime
 - Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
 - First release scope: T1
-- Overall state: **security/evidence foundation plus manifest spike; no runtime product**
+- Overall state: **security/evidence foundation plus manifest/update spikes; no runtime product**
 
 ## Executive status
 
@@ -71,9 +71,13 @@ capability approval, secure updates, safe extraction or runtime isolation.
 
 - dependency-free Node.js verifier for a self-contained TUF v1.0.35 offline bundle;
 - top-level root, timestamp, snapshot and targets threshold verification;
-- old/new root dual-threshold rotation and fast-forward-state reset;
+- old/new root dual-threshold rotation and correct timestamp/snapshot fast-forward reset;
+- preservation of separately trusted targets rollback state across key rotation;
 - rollback, freeze, mix-and-match, target-integrity and capability-expansion checks;
-- 14 deterministic tests with bounded metadata and target envelopes.
+- canonical JSON depth/node bounds, cycle rejection, canonical UTC expiry and full
+  signed-target path validation;
+- immutable bytes/capability identity for a reused application version;
+- 20 deterministic TUF tests plus four ADR-governance tests, all locally green.
 
 ## Not implemented
 
