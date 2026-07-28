@@ -66,14 +66,16 @@ an explicit offline profile, client-state invariants and acceptance matrix.
 - consolidated ADR-007 around the actual partial decision;
 - replaced the colliding amendment with ADR-007a;
 - added ADR-009 for a pinned TUF v1.0.35 evaluation;
+- implemented an initial dependency-free TUF offline metadata verifier and 14-case
+  adversarial test matrix;
 - added an executable ADR identity/link governance check and regression tests;
 - wired the governance check into the local verification chain;
 - recorded the next bounded execution sequence.
 
 ## Recommended implementation order
 
-1. **TUF fixture harness:** implement schemas, metadata fixtures and adversarial
-   client tests without networking or package activation.
+1. **Complete the TUF spike:** add raw-byte parsing, delegated publishers,
+   independent differential evidence and atomic durable state/activation recovery.
 2. **Container decision spike:** compare Track-A and project-controlled candidates
    on the same corpus; do not build a UI first.
 3. **Package verifier:** implement only after exact signed bytes and container are
