@@ -67,12 +67,21 @@ capability approval, secure updates, safe extraction or runtime isolation.
 - fixed canonical subset profile with floats forbidden and safe-integer limits;
 - deterministic reject precedence and owner-promoted Track-B manifest specification.
 
+### Initial secure-update spike
+
+- dependency-free Node.js verifier for a self-contained TUF v1.0.35 offline bundle;
+- top-level root, timestamp, snapshot and targets threshold verification;
+- old/new root dual-threshold rotation and fast-forward-state reset;
+- rollback, freeze, mix-and-match, target-integrity and capability-expansion checks;
+- 14 deterministic tests with bounded metadata and target envelopes.
+
 ## Not implemented
 
 - native application shell or Chromium host;
 - package parser/verifier and signature validation wired to a product path;
 - content-addressed staging, atomic activation and recovery;
-- TUF metadata client/repository, key rotation, revocation or offline update bundle;
+- production TUF client/repository, raw-byte parser, delegations, durable monotonic
+  state, revocation operations or atomic offline update activation;
 - publisher admission, namespace ownership and capability approval engine;
 - per-application process, profile, storage and permission isolation;
 - OS-enforced null-egress and independent process-tree/network observation;
@@ -85,7 +94,9 @@ capability approval, secure updates, safe extraction or runtime isolation.
 1. **Product falsifiability (#14):** primary user, anti-persona, top task and go/pivot/stop criteria.
 2. **Acquisition semantics (#30):** distinguish signed package, installed PWA, captured archive and remote browsing.
 3. **Package completion (#24):** container, signed-byte scope, strict crypto, resource limits, extraction and activation evidence.
-4. **Update security (#24 / ADR-009):** root, targets, snapshot and timestamp roles; rollback/freeze/mix-and-match and recovery tests.
+4. **Update security (#24 / ADR-009):** raw-byte parser, delegated publishers,
+   durable monotonic state, revocation, independent differential evidence and
+   atomic metadata/package recovery.
 5. **Runtime evidence (#23):** exact Electron/CEF versions, sandbox configuration, compatibility and patch-SLA measurements.
 6. **T3 isolation:** outer sandbox/VM profile, OS-level deny, resource limits and independently observed null-egress.
 7. **T2 governance (#25):** publisher admission, capability approval, emergency removal and support lifecycle.
@@ -97,7 +108,8 @@ The next implementation should be small and evidence-producing:
 
 1. keep the repository/document consistency gate required;
 2. freeze the T1 package/update interface without selecting a container prematurely;
-3. implement a TUF metadata fixture and adversarial client test harness from ADR-009;
+3. extend the initial TUF harness with raw parsing, delegated publishers,
+   differential evidence and atomic persistence/activation;
 4. implement the package verifier only after the exact container/signed-byte decision;
 5. build an Electron compatibility harness with no native bridge and an outer
    Linux null-egress experiment;
@@ -106,6 +118,7 @@ The next implementation should be small and evidence-producing:
 ## Production-readiness statement
 
 `browser` is not production-ready and is not a functioning browser runtime. The
-current evidence supports claims about static policy enforcement and the accepted
-CWAP manifest subset only. It does not support claims that foreign content is safely
-executed, updates are secure or user data is protected in a deployed product.
+current evidence supports claims about static policy enforcement, the accepted CWAP
+manifest subset and the bounded in-memory TUF spike only. It does not support
+claims that foreign content is safely executed, updates are secure or user data is
+protected in a deployed product.
