@@ -19,11 +19,16 @@ export const DEFAULT_LIMITS = Object.freeze({
   rootUpdates: 32,
   targetCount: 10_000,
   capabilities: 128,
+  jsonDepth: 32,
+  jsonNodes: 50_000,
+  targetPathLength: 1_024,
+  targetPathComponents: 64,
 });
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 const HEX_64 = /^[0-9a-f]{64}$/;
 const HEX_128 = /^[0-9a-f]{128}$/;
+const CANONICAL_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 export class TufSpikeError extends Error {
   constructor(code, message, details = undefined) {
@@ -44,6 +49,14 @@ function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
+function boundedLimit(limits, name) {
+  const value = limits?.[name] ?? DEFAULT_LIMITS[name];
+  if (!Number.isSafeInteger(value) || value < 1) {
+    fail('INVALID_LIMIT', `${name} must be a positive safe integer`);
+  }
+  return value;
+}
+
 function assertStringWellFormed(value, label) {
   if (typeof value !== 'string') fail('INVALID_TYPE', `${label} must be a string`);
   for (let index = 0; index < value.length; index += 1) {
@@ -60,14 +73,15 @@ function assertStringWellFormed(value, label) {
   }
 }
 
-/**
- * Deterministic JSON for the spike POUF.
- *
- * This is deliberately smaller than a general JSON canonicalization library:
- * finite safe integers only, plain objects only, and UTF-16 code-unit key order.
- * Raw JSON parsing and duplicate-key rejection remain outside this spike.
- */
-export function canonicalJson(value, label = '$') {
+function canonicalJsonValue(value, label, state, depth) {
+  state.nodes += 1;
+  if (state.nodes > state.maxNodes) {
+    fail('JSON_NODE_LIMIT', `${label} exceeds the canonical JSON node limit`);
+  }
+  if (depth > state.maxDepth) {
+    fail('JSON_DEPTH_LIMIT', `${label} exceeds the canonical JSON depth limit`);
+  }
+
   if (value === null) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
@@ -85,41 +99,72 @@ export function canonicalJson(value, label = '$') {
   }
 
   if (Array.isArray(value)) {
-    return `[${value.map((entry, index) => canonicalJson(entry, `${label}[${index}]`)).join(',')}]`;
+    if (state.active.has(value)) fail('CYCLIC_JSON', `${label} contains a cycle`);
+    state.active.add(value);
+    try {
+      return `[${value.map((entry, index) => (
+        canonicalJsonValue(entry, `${label}[${index}]`, state, depth + 1)
+      )).join(',')}]`;
+    } finally {
+      state.active.delete(value);
+    }
   }
 
   if (!isPlainObject(value)) {
     fail('INVALID_TYPE', `${label} must contain only JSON values`);
   }
+  if (state.active.has(value)) fail('CYCLIC_JSON', `${label} contains a cycle`);
 
-  const keys = Object.keys(value).sort();
-  return `{${keys.map((key) => {
-    assertStringWellFormed(key, `${label} key`);
-    return `${JSON.stringify(key)}:${canonicalJson(value[key], `${label}.${key}`)}`;
-  }).join(',')}}`;
+  state.active.add(value);
+  try {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => {
+      assertStringWellFormed(key, `${label} key`);
+      return `${JSON.stringify(key)}:${canonicalJsonValue(value[key], `${label}.${key}`, state, depth + 1)}`;
+    }).join(',')}}`;
+  } finally {
+    state.active.delete(value);
+  }
 }
 
-export function canonicalBytes(value) {
-  return Buffer.from(canonicalJson(value), 'utf8');
+/**
+ * Deterministic JSON for the spike POUF.
+ *
+ * This is deliberately smaller than a general JSON canonicalization library:
+ * finite safe integers only, plain objects only, UTF-16 code-unit key order and
+ * explicit depth/node bounds. Raw JSON parsing and duplicate-key rejection remain
+ * outside this spike.
+ */
+export function canonicalJson(value, label = '$', limits = DEFAULT_LIMITS) {
+  return canonicalJsonValue(value, label, {
+    active: new WeakSet(),
+    maxDepth: boundedLimit(limits, 'jsonDepth'),
+    maxNodes: boundedLimit(limits, 'jsonNodes'),
+    nodes: 0,
+  }, 0);
+}
+
+export function canonicalBytes(value, limits = DEFAULT_LIMITS) {
+  return Buffer.from(canonicalJson(value, '$', limits), 'utf8');
 }
 
 export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-export function keyIdFor(key) {
-  return sha256(canonicalBytes(key));
+export function keyIdFor(key, limits = DEFAULT_LIMITS) {
+  return sha256(canonicalBytes(key, limits));
 }
 
-function metadataBytes(metadata) {
-  return canonicalBytes(metadata);
+function metadataBytes(metadata, limits) {
+  return canonicalBytes(metadata, limits);
 }
 
-function signedBytes(metadata) {
+function signedBytes(metadata, limits) {
   if (!isPlainObject(metadata) || !isPlainObject(metadata.signed)) {
     fail('INVALID_METADATA', 'metadata must contain a signed object');
   }
-  return canonicalBytes(metadata.signed);
+  return canonicalBytes(metadata.signed, limits);
 }
 
 function assertPositiveInteger(value, label) {
@@ -130,8 +175,21 @@ function assertPositiveInteger(value, label) {
 
 function assertNotExpired(expires, fixedStartTime, roleName) {
   assertStringWellFormed(expires, `${roleName}.expires`);
+  if (!CANONICAL_UTC.test(expires)) {
+    fail('INVALID_EXPIRY', `${roleName} expiry must be canonical UTC`);
+  }
+
   const expiry = Date.parse(expires);
   if (!Number.isFinite(expiry)) fail('INVALID_EXPIRY', `${roleName} has an invalid expiry timestamp`);
+
+  const millisecondsForm = new Date(expiry).toISOString();
+  const secondsForm = millisecondsForm.endsWith('.000Z')
+    ? millisecondsForm.replace('.000Z', 'Z')
+    : millisecondsForm;
+  if (expires !== millisecondsForm && expires !== secondsForm) {
+    fail('INVALID_EXPIRY', `${roleName} expiry is not a canonical timestamp`);
+  }
+
   if (expiry <= fixedStartTime.getTime()) {
     fail('EXPIRED_METADATA', `${roleName} metadata is expired`, { role: roleName, expires });
   }
@@ -155,15 +213,15 @@ function assertMetadataLimit(metadata, limits, roleName) {
   if (!isPlainObject(metadata) || !Array.isArray(metadata.signatures) || !isPlainObject(metadata.signed)) {
     fail('INVALID_METADATA', `${roleName} metadata has an invalid envelope`);
   }
-  const bytes = metadataBytes(metadata);
-  if (bytes.length > limits.metadataBytes) {
+  const bytes = metadataBytes(metadata, limits);
+  if (bytes.length > boundedLimit(limits, 'metadataBytes')) {
     fail('METADATA_TOO_LARGE', `${roleName} metadata exceeds the byte limit`, {
       role: roleName,
       actual: bytes.length,
-      limit: limits.metadataBytes,
+      limit: boundedLimit(limits, 'metadataBytes'),
     });
   }
-  if (metadata.signatures.length > limits.signatures) {
+  if (metadata.signatures.length > boundedLimit(limits, 'signatures')) {
     fail('TOO_MANY_SIGNATURES', `${roleName} has too many signatures`);
   }
   return bytes;
@@ -192,14 +250,14 @@ function assertRootShape(rootSigned, limits) {
   }
 
   const keyEntries = Object.entries(rootSigned.keys);
-  if (keyEntries.length === 0 || keyEntries.length > limits.rootKeys) {
+  if (keyEntries.length === 0 || keyEntries.length > boundedLimit(limits, 'rootKeys')) {
     fail('INVALID_ROOT', 'root key count is outside the accepted envelope');
   }
 
   for (const [keyId, key] of keyEntries) {
     if (!HEX_64.test(keyId)) fail('INVALID_KEYID', `root key id is not SHA-256 hex: ${keyId}`);
     keyObjectFromRawEd25519(key);
-    if (keyIdFor(key) !== keyId) {
+    if (keyIdFor(key, limits) !== keyId) {
       fail('KEYID_MISMATCH', `root key id does not match its canonical key object: ${keyId}`);
     }
   }
@@ -229,11 +287,11 @@ function verifyRoleSignatures(metadata, trustedRootSigned, roleName, limits) {
   const role = trustedRootSigned.roles[roleName];
   if (!role) fail('UNKNOWN_ROLE', `trusted root does not define role ${roleName}`);
 
-  if (metadata.signatures.length > limits.signatures) {
+  if (metadata.signatures.length > boundedLimit(limits, 'signatures')) {
     fail('TOO_MANY_SIGNATURES', `${roleName} has too many signatures`);
   }
 
-  const message = signedBytes(metadata);
+  const message = signedBytes(metadata, limits);
   const seen = new Set();
   let valid = 0;
 
@@ -282,7 +340,9 @@ function sameRoleKeys(leftRoot, rightRoot, roleName) {
 
 export function updateRootChain(trustedRoot, candidates, fixedStartTime, limits = DEFAULT_LIMITS) {
   if (!Array.isArray(candidates)) fail('INVALID_ROOT_CHAIN', 'root candidates must be an array');
-  if (candidates.length > limits.rootUpdates) fail('TOO_MANY_ROOT_UPDATES', 'root update chain exceeds the limit');
+  if (candidates.length > boundedLimit(limits, 'rootUpdates')) {
+    fail('TOO_MANY_ROOT_UPDATES', 'root update chain exceeds the limit');
+  }
 
   assertMetadataLimit(trustedRoot, limits, 'root');
   assertRoleMetadata(trustedRoot, 'root', fixedStartTime, { checkExpiry: false });
@@ -347,19 +407,22 @@ function verifyMetadataDescriptor(metadata, descriptor, label, limits) {
   assertDigest(sha256(bytes), descriptor.hashes.sha256, 'METADATA_HASH', label);
 }
 
-function validateTargetPath(targetPath) {
+function validateTargetPath(targetPath, limits) {
   assertStringWellFormed(targetPath, 'target path');
+  const components = targetPath.split('/');
   if (targetPath.length === 0
+      || targetPath.length > boundedLimit(limits, 'targetPathLength')
+      || components.length > boundedLimit(limits, 'targetPathComponents')
       || targetPath.startsWith('/')
       || targetPath.includes('\\')
       || targetPath.includes('\0')
-      || targetPath.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')) {
+      || components.some((segment) => segment === '' || segment === '.' || segment === '..')) {
     fail('INVALID_TARGET_PATH', `unsafe target path: ${targetPath}`);
   }
 }
 
 function normalizeCapabilities(value, limits) {
-  if (!Array.isArray(value) || value.length > limits.capabilities) {
+  if (!Array.isArray(value) || value.length > boundedLimit(limits, 'capabilities')) {
     fail('INVALID_CAPABILITIES', 'capabilities must be a bounded array');
   }
   const result = [];
@@ -378,7 +441,7 @@ function normalizeCapabilities(value, limits) {
 
 function verifyTargetDescriptor(target, descriptor, limits) {
   if (!Buffer.isBuffer(target.bytes)) fail('INVALID_TARGET', 'target bytes must be a Buffer');
-  if (target.bytes.length > limits.targetBytes) {
+  if (target.bytes.length > boundedLimit(limits, 'targetBytes')) {
     fail('TARGET_TOO_LARGE', 'target exceeds the configured byte limit');
   }
   if (!isPlainObject(descriptor)
@@ -400,7 +463,7 @@ function verifyTargetDescriptor(target, descriptor, limits) {
 function assertMetaMap(snapshot, limits) {
   if (!isPlainObject(snapshot.signed.meta)) fail('INVALID_SNAPSHOT', 'snapshot meta must be an object');
   const entries = Object.entries(snapshot.signed.meta);
-  if (entries.length === 0 || entries.length > limits.targetCount) {
+  if (entries.length === 0 || entries.length > boundedLimit(limits, 'targetCount')) {
     fail('INVALID_SNAPSHOT', 'snapshot metadata count is outside the accepted envelope');
   }
   return snapshot.signed.meta;
@@ -410,6 +473,14 @@ function currentTrustedVersion(trustedState, roleName) {
   const value = trustedState.versions?.[roleName] ?? 0;
   if (!Number.isSafeInteger(value) || value < 0) {
     fail('INVALID_TRUSTED_STATE', `trusted ${roleName} version is invalid`);
+  }
+  return value;
+}
+
+function trustedSnapshotTargetVersion(trustedState) {
+  const value = trustedState.snapshotMeta?.['targets.json']?.version ?? 0;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    fail('INVALID_TRUSTED_STATE', 'trusted snapshot targets version is invalid');
   }
   return value;
 }
@@ -435,13 +506,13 @@ export function verifyOfflineBundle({
   if (!isPlainObject(trustedState) || !isPlainObject(bundle)) {
     fail('INVALID_INPUT', 'trusted state and bundle must be objects');
   }
-  validateTargetPath(targetPath);
+  validateTargetPath(targetPath, limits);
 
   const rootUpdate = updateRootChain(trustedState.root, bundle.roots ?? [], now, limits);
   const trustedRoot = rootUpdate.root;
 
   const metadataRollbackStateReset = rootUpdate.timestampKeysRotated || rootUpdate.snapshotKeysRotated;
-  const trustedTimestampVersion = rootUpdate.timestampKeysRotated
+  const trustedTimestampVersion = metadataRollbackStateReset
     ? 0
     : currentTrustedVersion(trustedState, 'timestamp');
   const trustedSnapshotVersion = metadataRollbackStateReset
@@ -483,8 +554,8 @@ export function verifyOfflineBundle({
   if (!targetsDescriptor) fail('MISSING_TARGETS', 'snapshot does not describe targets.json');
 
   const oldTargetsVersion = metadataRollbackStateReset
-    ? 0
-    : (trustedState.snapshotMeta?.['targets.json']?.version ?? trustedTargetsVersion);
+    ? trustedTargetsVersion
+    : Math.max(trustedTargetsVersion, trustedSnapshotTargetVersion(trustedState));
   if (targetsDescriptor.version < oldTargetsVersion) {
     fail('TARGETS_ROLLBACK', 'snapshot points to an older targets version');
   }
@@ -502,14 +573,18 @@ export function verifyOfflineBundle({
     fail('INVALID_TARGETS', 'targets metadata must contain a targets object');
   }
   const targetEntries = Object.keys(bundle.targets.signed.targets);
-  if (targetEntries.length > limits.targetCount) {
+  if (targetEntries.length > boundedLimit(limits, 'targetCount')) {
     fail('TOO_MANY_TARGETS', 'targets metadata exceeds the entry limit');
   }
+  for (const entryPath of targetEntries) validateTargetPath(entryPath, limits);
 
   const descriptor = bundle.targets.signed.targets[targetPath];
   if (!descriptor) fail('TARGET_NOT_FOUND', `target is not authorized: ${targetPath}`);
   if (!isPlainObject(bundle.target) || bundle.target.path !== targetPath) {
     fail('WRONG_TARGET', 'offline bundle target path does not match the requested target');
+  }
+  if (trustedState.app?.targetPath && trustedState.app.targetPath !== targetPath) {
+    fail('TARGET_PATH_MISMATCH', 'target path does not match trusted application state');
   }
   verifyTargetDescriptor(bundle.target, descriptor, limits);
 
@@ -524,17 +599,23 @@ export function verifyOfflineBundle({
   }
 
   const previousAppVersion = trustedState.app?.version ?? 0;
+  if (!Number.isSafeInteger(previousAppVersion) || previousAppVersion < 0) {
+    fail('INVALID_TRUSTED_STATE', 'trusted app version is invalid');
+  }
   if (appVersion < previousAppVersion) {
     fail('APP_ROLLBACK', 'target app version rolled back');
   }
 
+  const previousCapabilities = normalizeCapabilities(trustedState.app?.capabilities ?? [], limits);
   const previousDigest = trustedState.app?.digest;
   const digest = descriptor.hashes.sha256;
-  if (appVersion === previousAppVersion && previousDigest && digest !== previousDigest) {
-    fail('APP_VERSION_REUSE', 'an app version was reused for different bytes');
+  if (appVersion === previousAppVersion) {
+    const sameCapabilities = canonicalJson(capabilities) === canonicalJson(previousCapabilities);
+    if ((previousDigest && digest !== previousDigest) || !sameCapabilities) {
+      fail('APP_VERSION_REUSE', 'an app version was reused for different identity or capabilities');
+    }
   }
 
-  const previousCapabilities = normalizeCapabilities(trustedState.app?.capabilities ?? [], limits);
   const expansion = capabilities.filter((capability) => !previousCapabilities.includes(capability));
   if (expansion.length > 0) {
     const approved = approveCapabilityExpansion({
