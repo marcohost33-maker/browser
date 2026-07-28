@@ -20,8 +20,10 @@ It is based on TUF Specification v1.0.35, including:
 - rollback/freeze checks;
 - snapshot and targets version/hash/length binding;
 - target path, length and SHA-256 binding;
-- recovery from timestamp/snapshot fast-forward state after authorized key rotation;
-- preservation of separately trusted targets-version rollback state during that recovery.
+- recovery from trusted timestamp/snapshot fast-forward state after authorized key
+  rotation;
+- deletion of fast-forwarded targets versions learned only from the discarded
+  snapshot while retaining the version of actually accepted targets metadata.
 
 Primary specification: <https://theupdateframework.github.io/specification/v1.0.35/>
 
@@ -32,7 +34,7 @@ The spike pins a deliberately narrow project profile:
 - TUF `spec_version`: `1.0.35`;
 - metadata and key IDs: deterministic JSON with safe integers and UTF-16 key order;
 - canonical JSON depth/node limits and cycle rejection;
-- canonical UTC expiry timestamps;
+- expiry timestamps in exact `YYYY-MM-DDTHH:MM:SSZ` UTC form;
 - signature scheme: raw-public-key Ed25519;
 - digest: SHA-256;
 - canonical full-metadata bytes for length/hash descriptors;
@@ -56,12 +58,12 @@ The TUF test suite contains **20 deterministic tests** covering:
 4. failed old/new root dual-threshold rotation;
 5. valid role-key rotation and rollback-state reset;
 6. snapshot-only key rotation resetting timestamp/snapshot fast-forward state;
-7. preservation of separately trusted targets rollback state across key rotation;
+7. preservation of actually accepted targets rollback state across key rotation;
 8. snapshot mix-and-match bytes;
 9. timestamp/snapshot version disagreement;
 10. timestamp rollback;
 11. expired timestamp/freeze signal;
-12. noncanonical expiry rejection;
+12. noncanonical expiry rejection, including offset and fractional-second encodings;
 13. target digest substitution;
 14. targets metadata rollback;
 15. validation of every signed target path;
@@ -83,6 +85,7 @@ no reusable private key material is stored.
 ## Explicitly not implemented
 
 - raw JSON parsing or duplicate-key detection;
+- complete schema validation and a final application-ID grammar;
 - delegated targets roles and path traversal through delegation graphs;
 - repository/mirror networking and consistent-snapshot filenames;
 - target streaming from an untrusted source;
