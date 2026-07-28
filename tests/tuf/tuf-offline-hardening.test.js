@@ -17,7 +17,7 @@ import {
 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 
 const NOW = new Date('2026-07-28T12:00:00.000Z');
-const FUTURE = '2027-07-28T12:00:00.000Z';
+const FUTURE = '2027-07-28T12:00:00Z';
 const TARGET_PATH = 'apps/demo.cwap';
 const TARGET_BYTES = Buffer.from('browser-offline-package-v2', 'utf8');
 const PKCS8_SEED_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
@@ -265,10 +265,15 @@ test('canonical JSON rejects excessive depth and cycles before stack exhaustion'
 });
 
 test('noncanonical expiry encodings are rejected by the pinned POUF', () => {
-  expectCode('INVALID_EXPIRY', () => verifyOfflineBundle({
-    trustedState: state(),
-    bundle: bundle({ timestampExpires: '2027-07-28T14:00:00+02:00' }),
-    targetPath: TARGET_PATH,
-    now: NOW,
-  }));
+  for (const timestampExpires of [
+    '2027-07-28T14:00:00+02:00',
+    '2027-07-28T12:00:00.000Z',
+  ]) {
+    expectCode('INVALID_EXPIRY', () => verifyOfflineBundle({
+      trustedState: state(),
+      bundle: bundle({ timestampExpires }),
+      targetPath: TARGET_PATH,
+      now: NOW,
+    }));
+  }
 });
