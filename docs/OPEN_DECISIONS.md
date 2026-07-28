@@ -1,125 +1,111 @@
 # OPEN DECISIONS — `browser`
 
-- Status: ACTIVE REGISTER (product reframed 2026-07-14)
-- Updated: 2026-07-14
-- Source of implementation work: GitHub issues in `marcohost33-maker/browser`
+- Status: ACTIVE REGISTER
+- Updated: 2026-07-28
+- Source of execution truth: GitHub issues and accepted ADRs in `marcohost33-maker/browser`
 
-> **PRODUCT REFRAME (2026-07-14).** `browser` is reframed into a native,
-> offline-capable browser/webapp runtime that runs foreign web apps locally (staged
-> T1 → T2 → T3; north star **T3**), replacing cloud hosting and running without an AI
-> layer. `browser` is **standalone** (ADR-008, 2026-07-16): `nigin-engine` and
-> `browser-nigin` are separate, independent repositories linked only by knowledge
-> transfer (not dependencies). The binding decision record for the reframe is
-> **ADR-005/006/007** (PR #22),
-> not this register. Decisions below that assume the "MCP client webapp / remote
-> endpoint" product are superseded by that canon; their security substance is
-> retained.
+## State vocabulary
 
-## Decision states
+- `RESOLVED`: binding decision reflected in architecture and roadmap.
+- `PARTIAL`: a bounded sub-decision is accepted; the parent decision remains open.
+- `PROPOSED`: recommended direction exists; measured acceptance evidence is incomplete.
+- `OPEN`: alternatives or owner evidence remain incomplete.
+- `FAIL-CLOSED`: work may be researched, but no promotion or security claim is permitted.
 
-- `RESOLVED`: accepted and reflected in architecture/roadmap.
-- `PROPOSED`: concrete recommendation exists; required evidence is incomplete.
-- `OPEN`: alternatives or required evidence are still incomplete.
-- `BLOCKED`: an external artifact or preceding decision is missing.
+## D1 — Repository and product boundary — RESOLVED
 
-## D1 — Repository scope — RESOLVED (reframed 2026-07-14)
+`browser` is a standalone native, offline-capable runtime for locally executed web
+applications. Delivery is staged T1 → T2 → T3; T1 is the first release scope and T3
+the north star. `nigin-engine` and `browser-nigin` are separate repositories and not
+dependencies. MCP is internal, optional and off the T1 critical path.
 
-`browser` is a native, offline-capable browser/webapp runtime program that runs
-foreign web apps locally (staged T1 → T2 → T3; north star T3), replacing cloud
-hosting and running without an AI layer. Engine/contract work (`nigin-engine`) and
-the AI layer (`browser-nigin`) are separate repositories. This repository is not
-`browser-nigin` and not `nigin-engine`.
+Binding records: ADR-005 and ADR-008.
 
-Evidence: Charter, ADR-005/006/007 (PR #22), Marco decision 2026-07-14.
-
-> Superseded framing (pre-2026-07-14): "APP-01 is the public privacy-first MCP
-> client webapp; Wasmtime/WIT/WASI/CAS/engine work belongs to ENG-01." Retained for
-> provenance.
-
-## D2 — M1 primary user and top task — OPEN / P0
+## D2 — Primary user and T1 task — OPEN / P0
 
 Owner issue: #14.
 
-Required decision:
+Required outcome:
 
 - one primary persona and anti-persona;
-- one bounded read-only task;
-- measurable task-success and consent-comprehension thresholds;
-- go, pivot or stop decision for a public browser client.
+- one bounded offline task;
+- one manual-sideload workflow;
+- measurable success, consent and recovery criteria;
+- go, pivot or stop result.
 
-No feature expansion may substitute for this evidence.
+## D3 — Offline acquisition mode — OPEN / P0
 
-## D3 — Endpoint trust, browser transport and deployment — SUPERSEDED by ADR-005
+Owner issue: #30.
 
-Owner issue: #13. Former proposed design: ADR-003 (now SUPERSEDED). The
-remote-MCP-endpoint transport/deployment product model is obsolete under the
-2026-07-14 reframe. Its network-security substance (egress origin allowlist,
-exact-origin `connect-src`, redirect/DNS-rebinding/private-network/metadata
-rejection) is framing-neutral and applies to the network egress of locally hosted
-apps; it is retained in `docs/security/*`. Runtime trust classes and the runtime
-security boundary are now governed by ADR-005/006/007 (PR #22).
+The project must separately decide the semantics of:
 
-Former recommendation (superseded, retained for provenance):
+- signed packaged application;
+- already-installed PWA;
+- captured/archive replay;
+- ordinary remote browsing.
 
-- curated deploy-time HTTPS endpoint set for M1;
-- arbitrary remote user-entered origins prohibited;
-- full MCP endpoint URL and CSP origin validated separately;
-- direct browser transport only when the server's CORS/auth contract passes;
-- same-origin gateway remains the fallback when credentials, CORS or operational
-  policy make direct transport unsafe or infeasible;
-- loopback HTTP permitted only for explicit development.
+These modes have different origin, identity, update, storage and compatibility
+properties and must not share an ambiguous "offline webapp" claim.
 
-Acceptance remains blocked on product evidence and a representative endpoint
-spike.
+## D4 — Package format and verifier — PARTIAL / P0
 
-## D4 — MCP contract revision and conformance artifact — RESOLVED (optional/internal, off T1 path, ADR-008)
+Owner issue: #24. Binding records: ADR-007 and ADR-007a.
 
-MCP consumption is an internal, optional `browser` capability off the T1 critical
-path (ADR-008); it is **not** a P0 prerequisite and is **not** blocked on an external
-`nigin-engine` producer. If `browser` chooses to consume a signed MCP contract, the
-selected revision, schemas/types, positive and negative fixtures, limits,
-compatibility policy and signed provenance artifact come from whatever producer
-`browser` consumes — sourced internally or from any signed producer, with no named
-external producer assumed.
+Resolved subset:
 
-The verification discipline is retained but producer-neutral: `browser` must verify
-signature, provenance, source identity and digest before production use. Hash-only or
-manually copied artifacts are mock/development inputs, not production trust anchors.
+- CWAP-Strict-JSON v0.1.2 is the accepted canonical-manifest profile for its
+  restricted input domain.
 
-## D5 — Application framework, build and browser matrix — OPEN
+Still open:
 
-Owner issue: #7. Output: ADR-004.
+- `.swbn`, NAR, ZIP-minimal or another exact container;
+- signed-byte scope and package identity;
+- strict signature-verifier implementation;
+- resource limits, extraction, staging, activation and recovery;
+- independent parser/verifier and fuzz evidence.
 
-This decision follows D2, D3 and D4. The spike compares a minimal standards-first
-TypeScript implementation with a mature framework under CSP, accessibility,
-bundle, dependency, testability and maintenance constraints.
+A canonical manifest is not an accepted package format.
 
-## D6 — OAuth and credential architecture — BLOCKED
+## D5 — Secure update metadata — PROPOSED / P0
 
-OAuth remains disabled until D3 selects the topology and any authorization profile
-and fixtures are available from whatever signed contract `browser` may consume
-(producer-neutral; no external `nigin-engine` producer assumed, ADR-008). Any future
-browser public-client flow must
-use Authorization Code with PKCE, exact redirect matching, issuer/state checks,
-audience-restricted tokens and no token persistence in prohibited sinks.
+Binding proposal: ADR-009. Parent issue: #24 Track C.
 
-A backend-for-frontend is an explicit architecture choice, not an implicit
-credential workaround.
+Evaluate TUF v1.0.35 with a project-specific POUF and explicit offline profile.
+Manual offline sideload remains mandatory; automatic update is optional and fully
+disableable. The decision must cover key thresholds, delegation, rollback, freeze,
+mix-and-match, revocation, capability expansion and key-loss recovery.
 
-## D7 — PWA and service worker — DEFERRED
+## D6 — Runtime selection — PROPOSED / P0
 
-No service worker or offline cache in M1. Reconsider only after a dedicated data
-classification, cache invalidation, update, revocation and sensitive-data threat
-model is accepted.
+Owner issue: #23. Binding protocol: ADR-006.
 
-## D8 — Public/open-source release — BLOCKED
+Current hypothesis:
 
-Public release requires, at minimum:
+- Electron is the pragmatic compatibility and T2 harness baseline;
+- CEF requires a measured Electron exit criterion;
+- a project-owned Chromium fork is rejected under current staffing assumptions;
+- T3 requires an outer OS/container/VM boundary and independently observed
+  null-egress; Chromium sandboxing remains defense in depth.
 
-- D2–D6 resolved as applicable;
-- runtime, contract, browser E2E and hostile-input evidence;
-- privacy sink and accessibility evaluation;
-- LICENSE, SECURITY.md, privacy and accessibility statements;
-- protected default branch, required checks and code ownership;
-- SBOM, release provenance, staging, rollback and incident exercises;
-- no P0 or unowned P1 risk.
+No runtime is accepted before measured spike evidence.
+
+## D7 — Publisher admission and capabilities — OPEN / P1
+
+Owner issue: #25.
+
+Signature validity, publisher admission, code review, capability approval and update
+authority are separate states. Required decisions include namespace ownership,
+review lifecycle, least-privilege grants, emergency removal, support expiry and
+capability-expansion re-consent.
+
+## D8 — Service workers and persistence — DEFERRED / FAIL-CLOSED
+
+Service workers, persistent shared profiles and cross-version cache retention are
+disabled by default. They require dedicated cache/update/revocation/privacy evidence
+and an emergency-removal path.
+
+## D9 — Public and production release — BLOCKED
+
+Public or production release requires the applicable D2–D8 decisions plus package,
+update, runtime, hostile-input, privacy, accessibility, provenance, rollback and
+incident evidence. No P0 or unowned P1 may remain.
