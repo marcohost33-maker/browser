@@ -119,6 +119,20 @@ The client must never advance trusted metadata state without also preserving a
 recoverable installation state. It must never activate a package before both update
 metadata and package verification pass.
 
+## Initial implementation status — 2026-07-28
+
+An executable, dependency-free Node.js spike now verifies a self-contained offline
+bundle in memory for the top-level root, timestamp, snapshot and targets roles. It
+implements unique-key threshold counting, old/new root dual-signature rotation,
+metadata and target length/hash binding, rollback/freeze checks, app identity and
+version monotonicity, capability-expansion re-consent and bounded metadata/target
+envelopes. Fourteen deterministic tests pass locally.
+
+This is partial evidence only. Raw JSON parsing, duplicate-key rejection, delegated
+targets, networking, durable monotonic state, atomic coupling to package activation,
+independent differential verification, fuzzing and recovery drills remain blockers.
+See `spike/tuf-offline-metadata/README.md`.
+
 ## Evaluation deliverables
 
 - [ ] exact v1.0.35 clauses mapped to implementation requirements;
