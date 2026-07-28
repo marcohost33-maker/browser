@@ -28,7 +28,7 @@ export const DEFAULT_LIMITS = Object.freeze({
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 const HEX_64 = /^[0-9a-f]{64}$/;
 const HEX_128 = /^[0-9a-f]{128}$/;
-const CANONICAL_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+const TUF_UTC_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 export class TufSpikeError extends Error {
   constructor(code, message, details = undefined) {
@@ -175,19 +175,16 @@ function assertPositiveInteger(value, label) {
 
 function assertNotExpired(expires, fixedStartTime, roleName) {
   assertStringWellFormed(expires, `${roleName}.expires`);
-  if (!CANONICAL_UTC.test(expires)) {
-    fail('INVALID_EXPIRY', `${roleName} expiry must be canonical UTC`);
+  if (!TUF_UTC_SECONDS.test(expires)) {
+    fail('INVALID_EXPIRY', `${roleName} expiry must use YYYY-MM-DDTHH:MM:SSZ`);
   }
 
   const expiry = Date.parse(expires);
   if (!Number.isFinite(expiry)) fail('INVALID_EXPIRY', `${roleName} has an invalid expiry timestamp`);
 
-  const millisecondsForm = new Date(expiry).toISOString();
-  const secondsForm = millisecondsForm.endsWith('.000Z')
-    ? millisecondsForm.replace('.000Z', 'Z')
-    : millisecondsForm;
-  if (expires !== millisecondsForm && expires !== secondsForm) {
-    fail('INVALID_EXPIRY', `${roleName} expiry is not a canonical timestamp`);
+  const canonical = new Date(expiry).toISOString().replace('.000Z', 'Z');
+  if (expires !== canonical) {
+    fail('INVALID_EXPIRY', `${roleName} expiry is not a canonical UTC timestamp`);
   }
 
   if (expiry <= fixedStartTime.getTime()) {
