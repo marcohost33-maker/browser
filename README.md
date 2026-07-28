@@ -24,6 +24,7 @@ The repository currently contains:
 - supply-chain, evidence and repository-governance foundations;
 - a promoted canonical-manifest core for ADR-007 Track B
   (`CWAP-Strict-JSON v0.1.2`);
+- an initial dependency-free TUF v1.0.35 offline metadata verification spike;
 - runtime, package, update and product-discovery spike protocols.
 
 No application installer, package verifier, updater, runtime host, browser shell or
@@ -118,6 +119,7 @@ local toolchain-version check is advisory; CI owns exact-version enforcement.
 - [`docs/security/`](docs/security/) — threat and static browser-policy foundation
 - [`docs/verification/`](docs/verification/) — evidence and readiness matrices
 - [`spike/cwap-canonical-json/`](spike/cwap-canonical-json/) — accepted Track-B manifest core
+- [`spike/tuf-offline-metadata/`](spike/tuf-offline-metadata/) — initial ADR-009 offline update verifier spike
 - [`src/security/`](src/security/) and [`tests/security/`](tests/security/) — current executable policy foundation
 - [`scripts/check-doc-governance.js`](scripts/check-doc-governance.js) — ADR identity/link consistency gate
 
