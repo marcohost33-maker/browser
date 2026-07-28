@@ -20,7 +20,8 @@ It is based on TUF Specification v1.0.35, including:
 - rollback/freeze checks;
 - snapshot and targets version/hash/length binding;
 - target path, length and SHA-256 binding;
-- recovery from timestamp/snapshot fast-forward state after authorized key rotation.
+- recovery from timestamp/snapshot fast-forward state after authorized key rotation;
+- preservation of separately trusted targets-version rollback state during that recovery.
 
 Primary specification: <https://theupdateframework.github.io/specification/v1.0.35/>
 
@@ -30,39 +31,50 @@ The spike pins a deliberately narrow project profile:
 
 - TUF `spec_version`: `1.0.35`;
 - metadata and key IDs: deterministic JSON with safe integers and UTF-16 key order;
+- canonical JSON depth/node limits and cycle rejection;
+- canonical UTC expiry timestamps;
 - signature scheme: raw-public-key Ed25519;
 - digest: SHA-256;
 - canonical full-metadata bytes for length/hash descriptors;
 - metadata limit: 64 KiB per role by default;
 - target limit: 64 MiB by default;
+- bounded target paths, counts, keys, signatures and root-update chains;
 - no networking, mirrors, compressed metadata or implicit capabilities;
-- exact `app_id`, monotonic `app_version` and package-bound capability list;
+- exact `app_id`, monotonic `app_version`, stable target path and package-bound
+  capability list;
+- an app version cannot be reused for different bytes or capabilities;
 - capability expansion requires an explicit approval callback;
 - verification returns a proposed next state and `persistenceRequired: true`.
 
 ## Current tests
 
-The test suite covers:
+The TUF test suite contains **20 deterministic tests** covering:
 
 1. valid offline update;
 2. normal same-timestamp no-update;
 3. duplicate signature key rejection;
 4. failed old/new root dual-threshold rotation;
 5. valid role-key rotation and rollback-state reset;
-6. snapshot mix-and-match bytes;
-7. timestamp/snapshot version disagreement;
-8. timestamp rollback;
-9. expired timestamp/freeze signal;
-10. target digest substitution;
-11. targets metadata rollback;
-12. capability escalation without re-consent;
-13. exact approved capability expansion;
-14. metadata byte-envelope enforcement.
+6. snapshot-only key rotation resetting timestamp/snapshot fast-forward state;
+7. preservation of separately trusted targets rollback state across key rotation;
+8. snapshot mix-and-match bytes;
+9. timestamp/snapshot version disagreement;
+10. timestamp rollback;
+11. expired timestamp/freeze signal;
+12. noncanonical expiry rejection;
+13. target digest substitution;
+14. targets metadata rollback;
+15. validation of every signed target path;
+16. capability escalation without re-consent;
+17. exact approved capability expansion;
+18. app-version reuse with changed capabilities;
+19. metadata byte-envelope enforcement;
+20. canonical JSON depth and cycle rejection.
 
 Run:
 
 ```text
-node --test tests/tuf/tuf-offline.test.js
+node --test "tests/tuf/*.test.js"
 ```
 
 The fixtures use deterministic test-only Ed25519 seeds derived from public labels;
