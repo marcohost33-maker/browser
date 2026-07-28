@@ -1,418 +1,223 @@
-# `browser` — Master Roadmap v2
+# `browser` — Master Roadmap v3
 
-- Status: ACTIVE / evidence-gated (product reframed 2026-07-14)
-- Updated: 2026-07-14
+- Status: ACTIVE / evidence-gated
+- Updated: 2026-07-28
 - Repository: `marcohost33-maker/browser`
-- Scope: native, offline-capable browser/webapp **runtime program** (executes
-  foreign web apps locally; T1 → T2 → T3; north star **T3**)
-- Explicit exclusion: this is **not** `browser-nigin` (the AI layer) and not
-  `nigin-engine` (the contract core)
+- Product: standalone native offline web-application runtime
+- Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
+- First release: T1
+- North star: T3 with an outer isolation boundary
 
-> **PRODUCT REFRAME (2026-07-14) — read first.** Per Marco's 2026-07-14 decision,
-> `browser` is a native, offline-capable **runtime program** that runs arbitrary
-> foreign web applications locally (staged T1 → T2 → T3; north star **T3**),
-> replaces cloud hosting and runs without any AI layer. `browser` is **standalone**
-> (ADR-008, 2026-07-16): `nigin-engine` and `browser-nigin` are separate, independent
-> repositories linked only by knowledge transfer (not dependencies).
-> The binding reframe record is **ADR-005/006/007** (PR #22) — not duplicated here.
-> Runtime direction for T3: a Chromium engine (CEF/Electron) is favoured for
-> inherited site-isolation and a maintained engine security-patch path over Tauri;
-> the framework decision is deferred to the measured comparison in ADR-006. The
-> "MCP client webapp / remote endpoint" narrative throughout this roadmap is
-> **superseded product framing**; the workstream/gate/evidence *discipline* below
-> stays valid and is being re-pointed at the runtime product. Do not read any
-> milestone below as a claim of implemented runtime behaviour.
+## 1. Programme objective
 
-## 1. Production objective
+Deliver a native runtime that installs and executes signed web applications locally
+without requiring an AI layer or an external engine repository. `nigin-engine` and
+`browser-nigin` remain independent. MCP is an optional internal capability and is
+off the T1 critical path.
 
-Deliver a native, offline-capable **runtime program** that executes foreign web
-applications locally (staged T1 → T2 → T3; north star **T3** = arbitrary foreign
-web content), replacing cloud hosting and running without any AI layer. The first
-shipping increment is **T1**: run owner-controlled, signed offline packages with a
-minimal, auditable attack surface — process/site isolation, per-app data-domain
-separation, a default-deny navigation/download/external-protocol policy, an
-owner-controlled engine security-patch path, and reproducible build, test, deploy,
-monitoring and rollback evidence. MCP consumption is an **internal, optional**
-capability off the T1 critical path (ADR-008), **not** a required MCP endpoint.
-
-Four maturity levels are distinct:
+Four maturity states remain distinct:
 
 1. **Designed** — requirements, decisions and threat models exist.
 2. **Implemented** — code exists and passes local checks.
-3. **Verified** — CI/manual evidence satisfies acceptance criteria.
-4. **Production-ready** — staging, release integrity, operations, rollback and incident exercises pass.
+3. **Verified** — independent/reproducible evidence satisfies the gate.
+4. **Production-ready** — release, operations, rollback and incident exercises pass.
 
-No lower level may be described as a higher one.
+No lower state may be described as a higher one.
 
 ## 2. Current verified state
 
-### Merged
+### Implemented foundation
 
-- M0 charter, non-goals and APP-01 scope separation.
-- ADR-001 architecture boundary and minimal read-only slice.
-- ADR-002 contract-artifact signing/provenance design.
-- Threat Model, Privacy Model and MCP Consumer Profile.
-- Source/standards baseline and open-topics register.
-- Machine-readable CSP/security-header baseline.
-- Fail-closed CSP serializer, exact-origin `connect-src` allowlist and override/injection protections.
-- Documentation CI and security CI.
-- Real HTTP-response security-header integration test.
-- PR #15 reported 35 passing security tests.
+- static CSP, security-header and origin enforcement;
+- negative regression tests and real served-header readback;
+- deterministic npm and workflow policy;
+- SBOM/evidence and protected-main foundations;
+- CWAP-Strict-JSON v0.1.2 canonical-manifest core;
+- local CI-parity and ADR-governance gates.
 
-### Implemented on the current hardening branch
+### Not implemented
 
-- Referrer-Policy value allowlist.
-- Permissions-Policy parser requiring powerful M1 features to remain disabled.
-- HSTS `includeSubDomains` requirement and duplicate `max-age` rejection.
-- Regression tests for all three header-downgrade classes.
+- package container/verifier and strict signature path;
+- installer, atomic activation and recovery;
+- TUF client/repository and offline update bundles;
+- publisher/capability governance;
+- native runtime host and per-app isolation;
+- T3 outer sandbox/null-egress evidence;
+- production privacy, accessibility and operations.
 
-### Not yet implemented
+## 3. Binding decision map
 
-- Product-validated primary user and top task.
-- Accepted endpoint/trust/deployment architecture.
-- Pinned MCP runtime contract and conformance fixtures.
-- Actual TypeScript browser application and MCP runtime.
-- Browser E2E, privacy sink and full accessibility evaluation.
-- SBOM/provenance release pipeline, staging, rollback and incident exercises.
+- **ADR-001** — historical application boundary; superseded by ADR-005.
+- **ADR-002** — signed artifact provenance discipline; retained where applicable.
+- **ADR-003** — historical remote-endpoint topology; superseded by ADR-005/008.
+- **ADR-004** — not landed; former MCP-webapp framework decision superseded.
+- **ADR-005** — staged T1/T2/T3 trust classes.
+- **ADR-006** — measured runtime evaluation protocol.
+- **ADR-007** — signed package evaluation; Track-B manifest subset accepted.
+- **ADR-007a** — package-verifier and activation hardening requirements.
+- **ADR-008** — standalone repository and optional/internal MCP.
+- **ADR-009** — proposed TUF v1.0.35 update-metadata evaluation.
 
-## 3. ADR sequence
-
-Identifiers are unique and immutable:
-
-- **ADR-001** — APP-01 architecture boundary and M1 slice. **SUPERSEDED by ADR-005.**
-- **ADR-002** — contract artifact signature and provenance (substance retained; producer-neutral, no external `nigin-engine` producer assumed, ADR-008).
-- **ADR-003** — endpoint trust model, browser transport and deployment topology (#13). **SUPERSEDED by ADR-005** (network-security substance retained in `docs/security/*`).
-- **ADR-004** — framework/build/browser matrix and PWA decision (#7). *Runtime-framework choice now governed by ADR-006.*
-- **ADR-005** — offline runtime trust classes (T1/T2/T3). **Binding reframe record** (PR #22).
-- **ADR-006** — runtime evaluation protocol (measured runtime-framework comparison; binding runtime-framework decision) (PR #22).
-- **ADR-007** — signed package evaluation gate (PR #22).
-- Later decisions use the next free number; identifiers are never reused.
+ADR identifiers are unique and immutable. Sub-decisions use explicit suffixes.
 
 ## 4. Critical path
 
-T1-first, no external contract gate (ADR-005/008). Identical to the report
-`docs/reports/2026-07-16_STATE_OF_BROWSER_report.md` §4:
-
 ```text
-#14 product discovery (primary user + one read-only task + go/pivot/stop)
-  -> ADR-006 runtime spike (#23)  +  ADR-007 package spike (#24)
-  -> secure app/runtime bootstrap
-  -> T1 owner-controlled offline vertical slice (run a signed local webapp)
-  -> browser / privacy / accessibility / security verification
-  -> reproducible build, staging, provenance, rollback + incident gate
-  -> narrow release  ... then T2 (curated) ... then T3 (arbitrary foreign content)
+#14 product discovery + #30 acquisition-mode decision
+  -> #24 container/signed-byte/verifier decision
+  -> ADR-009 Track-C update metadata and recovery spike
+  -> package verifier + atomic installer
+  -> #23 Electron compatibility harness
+  -> outer T3 Linux isolation/null-egress experiment
+  -> #25 publisher and capability governance
+  -> T1 vertical slice
+  -> hostile-input, privacy, accessibility and release gates
 ```
 
-ADR-003 / #13 (endpoint/trust/deployment) is **no longer on the critical path** —
-superseded by ADR-005/008; its network-security substance is retained in
-`docs/security/*`. MCP is **off the T1 path** (internal/optional, ADR-008): T1 needs
-no MCP endpoint, no remote contract and no external `nigin-engine` artifact.
+Workstreams may overlap only when they do not silently choose another workstream's
+open trust boundary.
 
-Static security work may proceed in parallel only when it does not encode an unresolved endpoint, transport or authorization assumption.
-
-## 5. Program workstreams
+## 5. Workstreams and gates
 
 ### WS-0 — Governance and source of truth
 
 Deliverables:
 
-- This master roadmap is canonical for program state.
-- `docs/ROADMAP.md` is the short execution view.
-- ADR, requirement, risk and claim registers remain synchronized.
-- GitHub issues are the source of truth for open implementation work.
-- Internal/advisory documents are marked active, superseded or historical.
+- README, implementation status, roadmap and decision register synchronized;
+- unique ADR identifiers and valid local ADR links;
+- GitHub issues own open implementation work;
+- historical/advisory records clearly marked.
 
 Gate G0:
 
-- No duplicate ADR identifiers.
-- Every P0/P1 item has an owner, dependency and exit criterion.
-- No unsupported security/privacy/accessibility claim remains.
+- no duplicate ADR identity;
+- no closed/superseded gate listed as active;
+- every P0/P1 has an owner and exit criterion;
+- no unsupported production or T3 claim.
 
-### WS-1 — Product discovery (#14)
+### WS-1 — Product discovery and acquisition semantics
 
-Research questions:
-
-- Who is the primary user and anti-persona?
-- Which one read-only task creates measurable value?
-- Why is a new public browser client preferable to existing clients or an internal tool?
-- Which data crosses the network and what is the failure cost?
-
-Method:
-
-- Pre-register a falsifiable hypothesis and thresholds.
-- Conduct 5–8 structured interviews or documented proxy evaluations.
-- Test a task prototype covering endpoint, consent, capability, result and error comprehension.
-- Record observations separately from interpretation.
-- Include non-adoption evidence and a go/pivot/stop decision.
-
-Gate G1:
-
-- One primary persona, task and measurable success definition.
-- Product form and trust class are aligned with ADR-005/008 (runtime product).
-- Feature expansion is blocked until the decision is recorded.
-
-### WS-2 — Runtime navigation and network policy (re-scoped from #13 / ADR-003)
-
-> **Re-scoped (ADR-005/008).** The original endpoint/transport architecture (#13 /
-> ADR-003) is **superseded** for the runtime product. This workstream is re-pointed
-> at the **runtime navigation and network policy**: a **default-deny** navigation,
-> popup, download and external-protocol allowlist granted **per app**, plus per-app
-> network egress scoping. `connect-src` remains the fetch-class egress control but
-> does **not** cover navigation-based exfiltration (see
-> `docs/security/THREAT_MODEL.md`, residual-risk note). The CORS/redirect/URL-scheme
-> and CSP-feasibility evidence below is retained and re-applied to the runtime's
-> per-app network policy rather than to a single remote MCP endpoint.
-
-Evaluate:
-
-- controlled endpoints only;
-- arbitrary remote endpoints;
-- separate trust tiers;
-- backend-for-frontend/gateway mediation.
-
-Required evidence:
-
-- browser CORS/preflight/credential tests;
-- CSP `connect-src` feasibility;
-- redirect and URL-scheme policy;
-- OAuth/no-OAuth/BFF implications;
-- threat, privacy, availability and support deltas;
-- selected and rejected options with migration triggers.
-
-Gate G2:
-
-- Runtime navigation/network policy accepted (ADR-005/008; supersedes ADR-003).
-- Supported trust tier and default-deny egress/navigation surface are explicit.
-- No wildcard/scheme-wide CSP fallback.
-- Real endpoint integration remains blocked until this gate passes.
-
-### WS-3 — MCP contract and conformance (re-scoped: optional/internal, off T1)
-
-> **Re-scoped (ADR-008).** MCP consumption is an **internal, optional** `browser`
-> capability and is **not a prerequisite** for T1. This workstream is **not on the
-> T1 critical path**. Any signed contract `browser` chooses to consume may be sourced
-> internally or from any signed producer — **no external `nigin-engine` producer is
-> assumed**. The ADR-002 signature/provenance-verification discipline below is
-> retained but producer-neutral. Execute this workstream only if/when MCP is added,
-> after T1.
-
-Required input:
-
-- selected MCP revision and transport profile;
-- machine-readable schemas/types with immutable identity;
-- initialization/capability/success/negative fixtures;
-- deterministic conformance endpoint or command;
-- authorization profile or explicit no-OAuth decision;
-- timeout, cancellation, payload and disconnect limits;
-- compatibility/deprecation and artifact-provenance policy.
-
-APP-01 controls:
-
-- runtime validation at every external boundary;
-- endpoint/protocol identity visible to users;
-- capability snapshot bound to endpoint, session and contract identity;
-- material capability change invalidates consent;
-- unsupported mandatory/security-relevant semantics fail closed.
-
-Gate G3:
-
-- CI pins and verifies one contract artifact.
-- Positive and negative conformance vectors run deterministically.
-- No protocol behavior exists only as APP-01 assumption.
-
-### WS-4 — Stack and application architecture (#7 / ADR-004)
-
-Compare at least a minimal standards-first TypeScript option and one mature framework.
-
-Measure:
-
-- compatibility with the runtime navigation/network policy (ADR-005/008);
-- CSP without `unsafe-eval`;
-- dependency/transitive dependency count;
-- bundle and parse cost;
-- accessibility/focus primitives;
-- testability and supported browsers;
-- build reproducibility, SBOM and maintenance burden.
-
-Spike:
-
-- endpoint form, consent dialog, capability list;
-- bounded read-only mock result;
-- abort, timeout and error states;
-- keyboard-only flow, focus restoration and status announcement.
-
-Gate G4:
-
-- ADR-004 accepted with measured evidence and rejected alternatives.
-- PWA/service worker explicitly enabled or deferred.
-- Toolchain and browser matrix pinned.
-
-### WS-5 — Secure application foundation (#4)
+Owner issues: #14 and #30.
 
 Deliverables:
 
-- strict TypeScript application boundary;
-- deterministic install/build and pinned lockfile;
-- lint, format, typecheck, unit, integration and browser E2E harnesses;
-- minimum-permission CI and immutable action pins where practical;
-- dependency review, secret scan and SAST;
-- SPDX/CycloneDX SBOM and SLSA-compatible provenance plan;
-- CODEOWNERS, branch protection and release evidence retention.
+- primary persona and anti-persona;
+- one T1 offline task;
+- manual sideload workflow and recovery UX;
+- separate semantics for package, PWA, capture/replay and remote browsing;
+- go/pivot/stop decision.
 
-Existing reusable security foundation:
+Gate G1: one falsifiable T1 workflow with measurable success, consent and recovery.
 
-- CSP/header serializer and validation;
-- real HTTP-response header test;
-- static self-only `connect-src` enforcement.
+### WS-2 — Package identity and verifier
 
-Gate G5:
-
-- Clean checkout reproduces the build.
-- Required checks protect the default branch.
-- CI cannot expose secrets to untrusted contributions.
-
-### WS-6 — Security and adversarial verification (#5, #11, #16)
-
-Threat classes:
-
-- malformed/duplicate/late/out-of-order JSON-RPC;
-- capability drift and name collision;
-- prompt/tool/resource injection and Unicode obfuscation;
-- unsafe HTML/SVG/Markdown and dangerous URL schemes;
-- oversized/deep payloads and cancellation races;
-- redirect, session replay and cross-session event injection;
-- OAuth issuer/audience/state/PKCE failures;
-- storage/log/DOM secret canaries;
-- header and CSP downgrade attempts.
-
-Gate G6:
-
-- Every P0/P1 threat maps to a control and test.
-- Header value and CSP structural downgrade tests pass.
-- Runtime exfiltration/injection E2E passes once the application exists.
-- No high residual risk lacks an owner and rationale.
-
-### WS-7 — Privacy engineering
+Owner issue: #24. Binding records: ADR-007 and ADR-007a.
 
 Deliverables:
 
-- implementation-derived data-flow diagram and inventory;
-- purpose, minimization, retention and deletion per data class;
-- no credentials in URL, history, logs or persistent web storage;
-- no baseline third-party telemetry, ads, remote fonts or unrelated CDNs;
-- sensitive-data sink tests across storage, caches, DOM and diagnostics;
-- clear-session/forced-disconnect behavior;
-- endpoint/operator responsibility disclosure and accurate Privacy Notice.
+- exact container/specification selection or rejection;
+- exact signed-byte and identity model;
+- independent strict verifiers;
+- resource envelope and adversarial corpus;
+- manifest↔payload bijection;
+- content-addressed staging, atomic activation and last-good rollback.
 
-Gate G7:
+Gate G2: zero accepted malicious cases, zero accepted parser disagreement and full
+interruption recovery.
 
-- Network/storage observations match the inventory.
-- Secret canaries are absent from prohibited sinks.
-- Documentation matches verified behavior.
+### WS-3 — Secure update metadata
 
-### WS-8 — Accessibility and interaction quality
-
-Target: WCAG-2.2-AA-oriented critical flow, without claiming formal conformance before a scoped evaluation.
+Owner: #24 Track C. Binding proposal: ADR-009.
 
 Deliverables:
 
-- native semantic HTML first;
-- keyboard operation and no trap;
-- visible, ordered and unobscured focus;
-- accessible consent/error dialogs and live status;
-- contrast, target size, zoom/reflow and reduced motion;
-- supported screen-reader/browser smoke matrix.
+- project POUF pinned to TUF v1.0.35;
+- root/targets/delegation/snapshot/timestamp fixtures;
+- offline update bundle and disabled-update mode;
+- rollback/freeze/mix-and-match/threshold/key-loss/revocation corpus;
+- atomic metadata and package state transition.
 
-Gate G8:
+Gate G3: zero rollback, freeze, mix-and-match, wrong-target, namespace crossover or
+unauthorized capability expansion.
 
-- Automated checks have no blocking issue.
-- Manual keyboard and assistive-technology scripts pass.
-- Primary task works without pointer or vision-dependent cues.
+### WS-4 — Runtime compatibility and T2 boundary
 
-### WS-9 — Vertical product slice (#2)
+Owner issue: #23. Binding protocol: ADR-006.
 
-Flow:
+Deliverables:
 
-1. Select an allowed endpoint/trust tier.
-2. Display endpoint, origin, protocol and privacy boundary.
-3. Initialize and negotiate capabilities.
-4. Show capabilities as untrusted and disabled by default.
-5. Approve one bounded read-only operation with visible arguments.
-6. Enforce timeout, abort and size/depth limits.
-7. Validate and safely render the result as data.
-8. Normalize errors and clear all sensitive session state.
+- exact Electron baseline and patch policy;
+- CEF exit criteria and comparison only when triggered;
+- no Node/preload/raw IPC/native bridge in content;
+- one package per process tree and ephemeral profile;
+- default-deny permission, navigation, popup, download and external protocol policy;
+- browser E2E compatibility and resource measurements.
 
-Gate G9:
+Gate G4-T2: curated signed package runs with bounded persistence and no native bridge.
 
-- Full flow passes happy, error, cancel, privacy, security and accessibility tests against mocks.
-- The same contract suite passes against the pinned conformance endpoint.
+### WS-5 — T3 outer isolation
 
-### WS-10 — Reliability, release and operations (#6)
+Deliverables:
 
-Define and verify:
+- Linux namespace/container/VM experiment;
+- OS-enforced no-network policy active before untrusted bytes;
+- CPU/RAM/PID/FD/disk/wall-clock limits;
+- read-only content-addressed package mount;
+- independent process-tree, socket, DNS and persistence observation;
+- hostile corpus and evidence envelope.
 
-- browser support, latency and resource budgets;
-- deterministic retry/reconnect policy;
-- immutable release artifact, SBOM and provenance;
-- staging/production separation and configuration validation;
-- SECURITY.md and private vulnerability reporting;
-- supported versions and vulnerability SLA;
-- privacy-safe monitoring;
-- rollback, cache invalidation, session revocation and incident procedures;
-- tabletop incident and rollback exercise.
+Gate G5-T3: no external flow, DNS lookup, host loopback access, ungated child process
+or persistence artifact; independent review required. Chromium/Electron sandboxing
+alone cannot pass.
 
-Gate G10:
+### WS-6 — Publisher and capability governance
 
-- Staging deploys the attested artifact.
-- Header, smoke, rollback and incident exercises pass.
-- No public claim exceeds verified scope.
+Owner issue: #25.
 
-## 6. Priority model
+Deliverables:
 
-- **P0:** product/architecture blocker, credential exposure, arbitrary execution, consent bypass, unsafe rendering, contract ambiguity affecting security, release-integrity failure.
-- **P1:** major primary-flow privacy, accessibility, reliability or security defect.
-- **P2:** secondary hardening, maintainability or performance issue.
-- **P3:** optional enhancement.
+- publisher admission and namespace ownership;
+- declarative versioned capability grants;
+- package/version/evidence-bound consent;
+- revocation, emergency removal, support expiry and re-review;
+- capability-expansion re-consent.
 
-Work-in-progress limits:
+Gate G6: signature validity never implies admission, safety or capability authority.
 
-- one unresolved P0 architecture decision at a time;
-- one active vertical slice;
-- maximum two parallel P1 implementation streams;
-- blocked work creates a dependency ticket instead of speculative runtime code.
+### WS-7 — Verification, privacy, accessibility and release
 
-## 7. Evidence model
+Owner issues: #5, #6 and #11.
 
-```text
-REQ/RISK -> ADR/design -> implementation -> test -> evidence artifact -> gate
-```
+Deliverables:
 
-Statuses:
+- hostile package/updater/browser corpora;
+- privacy sink/canary tests and implementation-derived data flow;
+- keyboard, assistive-technology and WCAG-oriented critical flow;
+- reproducible signed release and independent digest comparison;
+- staging, rollback, incident, key-loss and vulnerability exercises;
+- public support, privacy and accessibility documentation.
 
-- NOT-TESTED
-- FAIL
-- PASS-LOCAL
-- PASS-CI
-- PASS-INDEPENDENT-REVIEW
-- ACCEPTED-RISK
+Gate G7: no P0 or unowned P1; all release and recovery evidence bound to the exact
+artifact.
 
-A checklist mark without linked evidence is not PASS.
+## 6. Measurement contract
 
-## 8. Empirical work cycle
+Report per candidate and trust class:
 
-1. Frame the question and decision owner.
-2. State a hypothesis and falsification condition.
-3. Select versioned primary sources.
-4. Design controlled tests and thresholds.
-5. Preserve inputs, commands, environment and raw output.
-6. Separate observation, inference, assumption and decision.
-7. Seek contradictory evidence and run negative cases.
-8. Accept, reject, defer or request more evidence.
-9. Implement the smallest reversible change.
-10. Verify automatically and manually where needed.
-11. Update ADR, requirement, risk and roadmap state.
-12. Retrospect on escapes, false positives and process quality.
+- valid-case precision and malicious-case recall;
+- differential disagreement count;
+- crash/hang/OOM count per corpus/fuzz run;
+- p50/p95 latency and peak memory;
+- successful recoveries / injected interruptions;
+- accepted rollback/freeze/mix-and-match/wrong-target attacks;
+- accepted unauthorized key/namespace/capability transitions;
+- external flows, DNS, loopback and persistent artifacts.
 
-## 9. Production-ready definition
+Any accepted malicious package, unauthorized state transition, verifier memory-safety
+failure, unrecoverable interruption or T3 egress is a hard veto.
 
-APP-01 is production-ready only when G0–G10 pass with linked evidence, the selected endpoint and contract boundaries are explicit, no P0 or unowned P1 remains, the primary flow passes against the pinned contract, privacy/accessibility/security claims match observed behavior, and the attested release has exercised rollback and incident procedures.
+## 7. Release statement
+
+The project remains pre-runtime and pre-production. Current evidence supports static
+policy and the CWAP canonical-manifest subset only. Release requires applicable
+G1–G7 gates and explicit owner approval.
