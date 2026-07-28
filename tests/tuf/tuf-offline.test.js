@@ -17,8 +17,8 @@ import {
 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 
 const NOW = new Date('2026-07-28T12:00:00.000Z');
-const FUTURE = '2027-07-28T12:00:00.000Z';
-const PAST = '2026-07-27T12:00:00.000Z';
+const FUTURE = '2027-07-28T12:00:00Z';
+const PAST = '2026-07-27T12:00:00Z';
 const TARGET_PATH = 'apps/demo.cwap';
 
 const ED25519_PKCS8_SEED_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
@@ -315,7 +315,7 @@ test('valid dual-threshold root rotation resets timestamp and snapshot rollback 
 test('rejects mix-and-match snapshot bytes before trusting snapshot signatures', () => {
   const root = rootMetadata();
   const bundle = cloneBundle(updateBundle({ root }));
-  bundle.snapshot.signed.expires = '2028-01-01T00:00:00.000Z';
+  bundle.snapshot.signed.expires = '2028-01-01T00:00:00Z';
   resign(bundle.snapshot, ['snapshotA']);
 
   assertCode('METADATA_HASH', () => verifyOfflineBundle({
