@@ -66,9 +66,13 @@ an explicit offline profile, client-state invariants and acceptance matrix.
 - consolidated ADR-007 around the actual partial decision;
 - replaced the colliding amendment with ADR-007a;
 - added ADR-009 for a pinned TUF v1.0.35 evaluation;
-- implemented an initial dependency-free TUF offline metadata verifier and 14-case
-  adversarial test matrix;
-- added an executable ADR identity/link governance check and regression tests;
+- implemented a dependency-free TUF offline metadata verifier with a 20-test
+  adversarial/workflow matrix;
+- corrected fast-forward recovery so timestamp/snapshot state can reset after key
+  rotation while separately trusted targets rollback state remains monotonic;
+- added canonical JSON depth/node bounds, cycle rejection, canonical expiry,
+  immutable app-version capability binding and validation of all signed target paths;
+- added an executable ADR identity/link governance check and four regression tests;
 - wired the governance check into the local verification chain;
 - recorded the next bounded execution sequence.
 
