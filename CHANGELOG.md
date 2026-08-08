@@ -21,5 +21,13 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   dokumentierte Luecke, ueber die eine private/link-local IPv4 als
   Uebergangs-IPv6-Origin an der Allowlist vorbeigeschmuggelt werden konnte.
   Regressionstests in `tests/security/production-boundary.test.js`.
+- Supply-Chain / `audit:ci`-Gate: vier Advisories im Markdown-Dev-Tooling
+  geschlossen (0 high/critical). `markdownlint-cli2` auf `0.23.2` angehoben
+  (gepatchtes `js-yaml` 5.2.2 gegen die YAML-DoS-CVEs) und `overrides` fuer
+  `ip-address@10.4.0` (u. a. GHSA-22jq-vg5j-6vgg — IPv4-mapped/NAT64-SSRF-
+  Fehlklassifikation), `undici@7.29.0` und `xmlbuilder2 > js-yaml@4.3.1`
+  ergaenzt. `package-lock.json` deterministisch regeneriert und registry-agnostisch
+  gehalten (nur `integrity`, keine `resolved`-URLs); `npm ci`, `lockfile:check`
+  und `docs:lint` weiterhin gruen.
 
 <!-- Leere Sektionen weglassen. Verfuegbar: Added, Changed, Deprecated, Removed, Fixed, Security. -->
