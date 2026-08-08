@@ -8,3 +8,7 @@ __pycache__/
 Thumbs.db
 *.log
 .env
+
+# Generated security-evidence artifact (written by scripts/run-audit.js, uploaded
+# by CI). Ephemeral and reflects the live advisory DB — never committed.
+npm-audit.json
