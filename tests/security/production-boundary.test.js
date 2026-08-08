@@ -108,6 +108,39 @@ test('canonical IPv6 literals with embedded or reserved non-public addresses hit
   }
 });
 
+test('transition-form IPv6 literals embedding a non-public IPv4 are rejected (Teredo, ISATAP, 6to4-relay)', () => {
+  // Canonical (WHATWG-URL-normalized) spellings — the form a browser actually
+  // resolves an origin to. Each smuggles a private/link-local IPv4 through a
+  // transition encoding that a naive allowlist would miss.
+  for (const origin of [
+    'https://[2001:0:808:808::f5ff:fffe]', // Teredo, client IPv4 = 10.0.0.1 (XOR-obfuscated)
+    'https://[2001:0:a00:1::fefe:fefe]', // Teredo, server IPv4 = 10.0.0.1 (plain)
+    'https://[2620:0:2d0:200:0:5efe:a00:1]', // ISATAP interface id embedding 10.0.0.1
+    'https://[2620:0:2d0::5efe:a9fe:a9fe]', // ISATAP embedding 169.254.169.254 (metadata)
+    'https://192.88.99.1', // 6to4 Relay Anycast (RFC 7526, deprecated)
+  ]) {
+    const errors = validateApprovedEndpointOrigins([origin]);
+    assert.ok(
+      errors.some((error) => /non-public\/reserved/.test(error)),
+      `expected ${origin} to be rejected as a non-public/reserved literal (got ${JSON.stringify(errors)})`,
+    );
+  }
+});
+
+test('transition-form IPv6 literals embedding only public IPv4 stay accepted', () => {
+  for (const origin of [
+    'https://[2001:0:808:808::fefe:fefe]', // Teredo, server+client both 8.8.8.8 / 1.1.1.1
+    'https://[2620:0:2d0:200:0:5efe:808:808]', // ISATAP embedding 8.8.8.8
+    'https://192.88.98.1', // adjacent public /24, must not be over-blocked
+  ]) {
+    assert.deepEqual(
+      validateApprovedEndpointOrigins([origin]),
+      [],
+      `expected ${origin} to remain accepted`,
+    );
+  }
+});
+
 test('dotted-quad IPv6 spellings of non-public hosts are rejected (canonicalized before allowlisting)', () => {
   for (const origin of [
     'https://[::192.168.1.1]', // IPv4-compatible dotted-quad → canonicalizes to ::c0a8:101

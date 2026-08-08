@@ -382,6 +382,10 @@ function isNonPublicIpv4(octets) {
     // are special-use; 192.0.1.0/24 etc. is ordinary public space.
     (a === 192 && b === 0 && (c === 0 || c === 2)) ||
     (a === 192 && b === 168) ||
+    // 192.88.99.0/24 — 6to4 Relay Anycast (RFC 7526, deprecated). Special-use
+    // and not a legitimate origin target; kept out of the allowlist so a 6to4
+    // literal that decodes to the relay block is also refused.
+    (a === 192 && b === 88 && c === 99) ||
     (a === 198 && (b === 18 || b === 19)) ||
     (a === 198 && b === 51 && c === 100) ||
     (a === 203 && b === 0 && c === 113) ||
@@ -445,35 +449,52 @@ function expandIpv6(hostname) {
 }
 
 /**
- * Return the embedded IPv4 octets when the IPv6 address carries one in a
- * transition range that aliases an IPv4 host, so a private target cannot be
- * smuggled past the allowlist by spelling it as IPv6. Handled forms:
+ * Return every IPv4 address a transition-form IPv6 literal embeds, so a private
+ * target cannot be smuggled past the allowlist by spelling it as IPv6. Multiple
+ * candidates can be present (Teredo carries both a server and a client IPv4);
+ * the caller rejects the origin if ANY embedded address is non-public. Handled
+ * forms:
  *   - IPv4-mapped        `::ffff:0:0/96`   (RFC 4291)
  *   - IPv4-compatible    `::/96`           (deprecated, RFC 4291)
  *   - NAT64 well-known   `64:ff9b::/96`    (RFC 6052)
- *   - 6to4               `2002::/16`       (RFC 3056) — the only transition
- *     form that sits inside accept-by-default global unicast, so it is the
- *     one residual embedding risk for an allowlist.
- * Known residual limitations (exotic / obfuscated encodings, not decoded
- * here): Teredo `2001:0::/32` (XOR-obfuscated), ISATAP `::5efe:a.b.c.d`, and
- * NAT64 local-use `64:ff9b:1::/48`. A browser cannot resolve DNS, so the
- * defence-in-depth stops at literal decoding; revisit if a resolved-IP check
- * is ever added. See docs/research + Codex PR#17 review.
+ *   - 6to4               `2002::/16`       (RFC 3056) — sits inside
+ *     accept-by-default global unicast, so it is an embedding risk.
+ *   - Teredo             `2001:0000::/32`  (RFC 4380) — server IPv4 in groups
+ *     3-4 (plain) and client IPv4 in groups 7-8 (each 16-bit group XOR 0xffff).
+ *   - ISATAP interface id `..:0:5efe:a.b.c.d` / `..:200:5efe:a.b.c.d`
+ *     (RFC 5214) — the low 32 bits are a plain IPv4 under any /64 prefix.
+ * Known residual limitations (not decoded here): NAT64 local-use
+ * `64:ff9b:1::/48` (RFC 8215) places the IPv4 at a network-specific,
+ * non-fixed offset. A browser cannot resolve DNS, so the defence-in-depth
+ * stops at literal decoding; revisit if a resolved-IP check is ever added.
+ * See docs/research + Codex PR#17 review.
  */
-function embeddedIpv4FromIpv6(groups) {
+function embeddedIpv4sFromIpv6(groups) {
   const [g0, g1, g2, g3, g4, g5, g6, g7] = groups;
+  const candidates = [];
+  const groupPair = (hi, lo) => [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff];
+
   const zeroTo5 = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0;
   const isMapped = zeroTo5 && g5 === 0xffff;
   const isCompatible = zeroTo5 && g5 === 0;
   const isNat64 = g0 === 0x0064 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0;
   if (isMapped || isCompatible || isNat64) {
-    return [g6 >> 8, g6 & 0xff, g7 >> 8, g7 & 0xff];
+    candidates.push(groupPair(g6, g7));
   }
   if (g0 === 0x2002) {
     // 6to4: the IPv4 address occupies the two groups after the 2002 prefix.
-    return [g1 >> 8, g1 & 0xff, g2 >> 8, g2 & 0xff];
+    candidates.push(groupPair(g1, g2));
   }
-  return null;
+  if (g0 === 0x2001 && g1 === 0x0000) {
+    // Teredo: server IPv4 (plain) then client IPv4 (each group XOR 0xffff).
+    candidates.push(groupPair(g2, g3));
+    candidates.push(groupPair(g6 ^ 0xffff, g7 ^ 0xffff));
+  }
+  if ((g4 === 0x0000 || g4 === 0x0200) && g5 === 0x5efe) {
+    // ISATAP: the OUI 00-00-5e-fe / 02-00-5e-fe marks a plain IPv4 tail.
+    candidates.push(groupPair(g6, g7));
+  }
+  return candidates;
 }
 
 function isNonPublicAddressLiteral(hostname) {
@@ -483,8 +504,9 @@ function isNonPublicAddressLiteral(hostname) {
   const groups = expandIpv6(hostname);
   if (!groups) return false;
 
-  const embedded = embeddedIpv4FromIpv6(groups);
-  if (embedded) return isNonPublicIpv4(embedded);
+  for (const embedded of embeddedIpv4sFromIpv6(groups)) {
+    if (isNonPublicIpv4(embedded)) return true;
+  }
 
   const [g0, g1] = groups;
   const isUnspecified = groups.every((group) => group === 0);
