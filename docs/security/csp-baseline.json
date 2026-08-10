@@ -1,7 +1,7 @@
 {
   "$schema-note": "Machine-readable emitted security-policy baseline for APP-01 M1. src/security/header-values.js independently enforces exact directives, exact header values, checked metadata and final-response restrictions so this data cannot silently widen. Any policy change must update baseline, contract, tests, security rationale and applicable ADR in one reviewed change.",
-  "version": "0.2.1",
-  "date": "2026-07-12",
+  "version": "0.3.0",
+  "date": "2026-08-10",
   "directives": {
     "default-src": ["'none'"],
     "base-uri": ["'none'"],
@@ -16,6 +16,7 @@
     "manifest-src": ["'self'"],
     "worker-src": ["'self'"],
     "require-trusted-types-for": ["'script'"],
+    "trusted-types": ["'none'"],
     "upgrade-insecure-requests": []
   },
   "connect_src_policy": {

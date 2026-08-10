@@ -104,6 +104,11 @@ const DIRECTIVE_POLICY = {
   'manifest-src': { keywords: ["'none'", "'self'"] },
   'worker-src': { keywords: ["'none'", "'self'"] },
   'require-trusted-types-for': { keywords: ["'script'"] },
+  // Companion to require-trusted-types-for: restrict which Trusted Types policy
+  // names may be created. "'none'" forbids policy creation entirely (the strict
+  // default), so a compromised script cannot register its own permissive policy
+  // to route raw strings back into DOM XSS sinks. See MDN CSP: trusted-types.
+  'trusted-types': { keywords: ["'none'"] },
   'upgrade-insecure-requests': { valueless: true },
 };
 

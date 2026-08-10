@@ -163,8 +163,29 @@ connect-src 'self';
 manifest-src 'self';
 worker-src 'self';
 require-trusted-types-for 'script';
+trusted-types 'none';
 upgrade-insecure-requests
 ```
+
+## Trusted Types (DOM-XSS sink hardening)
+
+`require-trusted-types-for 'script'` makes injection sinks (`innerHTML`,
+`document.write`, `eval`, `script.src`, …) reject raw strings — they only accept
+non-spoofable values minted by a Trusted Types policy. On its own that directive
+leaves policy *creation* unrestricted, so a compromised script could call
+`trustedTypes.createPolicy('anything', …)` and mint its own pass-through values,
+weakening the guarantee.
+
+The baseline therefore pairs it with `trusted-types 'none'`, which forbids
+creating **any** policy. Together they mean: DOM sinks demand typed values, yet no
+code — first- or third-party — can produce one. This is the strictest Trusted
+Types configuration and the correct fail-closed default for a repository with no
+runtime/script product code yet. When ADR-004 introduces a runtime that must
+write to a DOM sink, this relaxes to a *named* policy allowlist
+(`trusted-types <policy-name>`) justified by measured evidence — never back to an
+unrestricted policy space. Trusted Types is Chromium-only; on Firefox/Safari it is
+defence in depth, not a cross-browser guarantee (same caveat as Permissions-Policy
+below), and the ADR-004 browser matrix must record that.
 
 ## Permissions-Policy limitation
 
