@@ -35,6 +35,9 @@ test('serializeCsp emits the documented baseline CSP string', () => {
   assert.match(csp, /(^|; )script-src 'self'(;|$)/);
   assert.match(csp, /(^|; )frame-ancestors 'none'(;|$)/);
   assert.match(csp, /(^|; )require-trusted-types-for 'script'(;|$)/);
+  // Trusted Types is locked down on both axes: enforce sinks AND forbid any
+  // policy creation, so a compromised script cannot mint its own pass-through.
+  assert.match(csp, /(^|; )trusted-types 'none'(;|$)/);
 });
 
 test('valueless directive is serialized as the name alone (no trailing space)', () => {

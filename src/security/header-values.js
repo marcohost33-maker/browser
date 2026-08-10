@@ -96,6 +96,7 @@ const REQUIRED_EXACT_DIRECTIVES = new Map([
   ['manifest-src', ["'self'"]],
   ['worker-src', ["'self'"]],
   ['require-trusted-types-for', ["'script'"]],
+  ['trusted-types', ["'none'"]],
   ['upgrade-insecure-requests', []],
 ]);
 

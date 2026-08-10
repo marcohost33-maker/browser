@@ -24,6 +24,7 @@ const EXACT_DIRECTIVE_CASES = [
   ['manifest-src', ["'none'"]],
   ['worker-src', ["'none'"]],
   ['require-trusted-types-for', []],
+  ['trusted-types', ["'self'"]],
   ['upgrade-insecure-requests', ["'self'"]],
 ];
 

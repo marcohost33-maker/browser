@@ -13,6 +13,15 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- CSP (`docs/security/csp-baseline.json` → 0.3.0): `trusted-types 'none'` als
+  Gegenstueck zu `require-trusted-types-for 'script'` ergaenzt. Ohne sie bleibt
+  die Policy-Erstellung offen — ein kompromittiertes Skript koennte per
+  `trustedTypes.createPolicy()` eine eigene Pass-through-Policy anlegen und rohe
+  Strings zurueck in DOM-XSS-Sinks leiten. `'none'` verbietet jede Policy-
+  Erstellung (striktester Zustand, korrekter fail-closed-Default ohne Runtime-
+  Code); ADR-004 lockert bei Bedarf auf eine benannte Allowlist. Exact-Contract
+  in `csp.js`/`header-values.js` plus Drift- und Positiv-Test; Beleg MDN/Chrome/
+  W3C. Rationale in `docs/security/CSP_AND_SECURITY_HEADERS.md`.
 - Origin-Allowlist (`src/security/header-values.js`): eingebettete IPv4-Adressen
   werden jetzt auch aus Teredo- (`2001:0000::/32`, XOR-verschleierte
   Client-IPv4) und ISATAP-Literalen (`..:5efe:a.b.c.d`) dekodiert und gegen den
