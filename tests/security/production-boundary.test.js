@@ -137,9 +137,15 @@ test('remaining IANA special-purpose IPv6 prefixes are refused outright', () => 
     'https://[100::1]',
     'https://[100:0:0:1::1]', // 100:0:0:1::/64 dummy prefix (RFC 9780)
     'https://[64:ff9b:1::1]', // NAT64 local-use (RFC 8215) — the documented residual
+    'https://[::ffff:808:808]', // ::ffff:0:0/96 IPv4-mapped, PUBLIC embedded IPv4
     'https://[2001:2::1]', // benchmarking (RFC 5180)
+    'https://[2001:2:1::1]', // still inside 2001::/23, outside the /48 — pins the /48-vs-/32 edge
     'https://[2001:10::1]', // ORCHID, deprecated (RFC 4843)
     'https://[2001:1f:ffff::1]', // 2001:10::/28 upper edge
+    'https://[2001:5::1]', // unassigned remainder of 2001::/23 (RFC 2928)
+    'https://[2001:100::1]', // unassigned remainder, upper half of the /23
+    'https://[2001:1ff:ffff::1]', // 2001::/23 upper edge
+    'https://[2001:1::4]', // 2001:1::/32 outside the three reachable /128 anycasts
     'https://[3fff::1]', // documentation (RFC 9637)
     'https://[3fff:fff:ffff::1]', // 3fff::/20 upper edge
     'https://[5f00::1]', // SRv6 SIDs (RFC 9602)
@@ -163,10 +169,17 @@ test('address space adjacent to the special-purpose prefixes is not over-blocked
     'https://[64:ff9b:2::1]', // outside the NAT64 local-use /48
     'https://[64:ff9b::808:808]', // NAT64 well-known, public embedded IPv4 — reachable
     'https://[2001:3::1]', // AMT (RFC 7450) — Globally Reachable: True
+    'https://[2001:4:112::1]', // AS112-v6 (RFC 7535) — True
     'https://[2001:20::1]', // ORCHIDv2 (RFC 7343) — Globally Reachable: True
     'https://[2001:2f:ffff::1]', // ORCHIDv2 upper edge — must stay accepted
     'https://[2001:30::1]', // Drone Remote ID (RFC 9374) — Globally Reachable: True
     'https://[2001:1::1]', // Port Control Protocol Anycast (RFC 7723) — True
+    'https://[2001:1::2]', // TURN Anycast (RFC 8155) — True
+    'https://[2001:1::3]', // DNS-SD SRP Anycast (RFC 9665) — True
+    'https://[2002:808:808::]', // 6to4 with public embedded IPv4 — outside the /23
+    'https://[2000::1]', // below 2001::/23
+    'https://[2001:200::1]', // just above 2001::/23 (g1 = 0x0200)
+    'https://[3fff:1000::1]', // inside 3fff::/16 but OUTSIDE the /20 — pins the /20-vs-/16 edge
     'https://[4000::1]', // outside 3fff::/20
     'https://[3ffe::1]', // below 3fff::/20
     'https://[5f01::1]', // outside 5f00::/16
