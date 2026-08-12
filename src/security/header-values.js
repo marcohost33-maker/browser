@@ -521,17 +521,31 @@ function isNonPublicAddressLiteral(hostname) {
     (g0 & 0xffc0) === 0xfec0 || // fec0::/10 site-local (deprecated)
     (g0 & 0xff00) === 0xff00 || // ff00::/8 multicast
     (g0 === 0x2001 && g1 === 0x0db8) || // 2001:db8::/32 documentation
-    // Remaining IANA IPv6 Special-Purpose entries that are not globally
-    // reachable, so they can never be a legitimate approved endpoint. Blocking
-    // the whole prefix — rather than only decoding an embedded IPv4 — is what
-    // closes the NAT64 local-use residual noted above: RFC 8215 places the IPv4
-    // at a network-specific offset that cannot be decoded from the literal, but
-    // the /48 itself is local-use and is refused outright.
+    // Remaining IANA IPv6 Special-Purpose entries whose registry row carries
+    // "Globally Reachable: False", so they can never be a legitimate approved
+    // endpoint. The registry — not the intuition that a prefix "looks
+    // internal" — is the authority here: several special-purpose prefixes ARE
+    // globally reachable (64:ff9b::/96, 2001::/32 Teredo, 2001:20::/28
+    // ORCHIDv2, 2001:3::/32 AMT) and must NOT be refused by prefix. Where such
+    // a prefix embeds an IPv4 address, embeddedIpv4sFromIpv6 above decodes it
+    // instead, which is the correct narrower control.
+    //
+    // Blocking the whole prefix — rather than only decoding an embedded IPv4 —
+    // is also what closes the NAT64 local-use residual noted above: RFC 8215
+    // places the IPv4 at a network-specific offset that cannot be decoded from
+    // the literal, but the /48 itself is registry-False and is refused outright.
+    //
+    // Source: IANA IPv6 Special-Purpose Address Registry, column
+    // "Globally Reachable" (NOT the adjacent "Forwardable" column, which
+    // differs for 100::/64, 2001:2::/48, 5f00::/16 and 64:ff9b:1::/48).
     (g0 === 0x0100 && g1 === 0 && g2 === 0 && g3 === 0) || // 100::/64 discard-only (RFC 6666)
+    (g0 === 0x0100 && g1 === 0 && g2 === 0 && g3 === 1) || // 100:0:0:1::/64 dummy prefix (RFC 9780)
     (g0 === 0x0064 && g1 === 0xff9b && g2 === 0x0001) || // 64:ff9b:1::/48 NAT64 local-use (RFC 8215)
     (g0 === 0x2001 && g1 === 0x0002 && g2 === 0) || // 2001:2::/48 benchmarking (RFC 5180)
-    (g0 === 0x2001 && (g1 & 0xfff0) === 0x0010) || // 2001:10::/28 ORCHID, deprecated (RFC 4843)
-    (g0 === 0x2001 && (g1 & 0xfff0) === 0x0020) || // 2001:20::/28 ORCHIDv2 (RFC 7343)
+    // 2001:10::/28 — assignment terminated 2014-03, registry row carries no
+    // "Globally Reachable" value at all; a deprecated, unassigned block is not
+    // a valid endpoint either.
+    (g0 === 0x2001 && (g1 & 0xfff0) === 0x0010) || // ORCHID, deprecated (RFC 4843)
     (g0 === 0x3fff && (g1 & 0xf000) === 0) || // 3fff::/20 documentation (RFC 9637)
     g0 === 0x5f00 // 5f00::/16 SRv6 SIDs (RFC 9602)
   );
