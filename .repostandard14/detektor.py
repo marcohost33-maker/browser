@@ -29,9 +29,13 @@ except ImportError:  # pragma: no cover
     sys.stderr.write("FEHLER: PyYAML noetig (py -m pip install pyyaml)\n")
     sys.exit(2)
 
+# Der Standard selbst wird nicht mitgeliefert; er liegt ausserhalb des Repos.
+# Pfad ueber REPO_STANDARD14_YAML setzen. Der Fallback ist die repo-lokale Kopie
+# neben diesem Skript -- kein absoluter Pfad einer bestimmten Arbeitsstation,
+# damit der Detektor auf jedem Rechner und in CI ohne Anpassung laeuft.
 DEFAULT_YAML = os.environ.get(
     "REPO_STANDARD14_YAML",
-    r"G:/Meine Ablage/Vero/Vero Meta/REPO_STANDARD_14.yaml",
+    str(Path(__file__).resolve().parent / "standard.yaml"),
 )
 REIF_ORDER = ["scaffold", "jung", "aktiv", "stabil"]
 GITKEEP = {".gitkeep", ".keep"}

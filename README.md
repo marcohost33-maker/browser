@@ -151,6 +151,23 @@ contract, capability or authorization assumption.
 
 ## License and visibility
 
-The repository is private and licensed under MIT. A public/open-source release
-requires explicit approval and all applicable security, privacy, accessibility,
-legal, supply-chain and operational gates.
+The repository is **public** and licensed under MIT (see `LICENSE`).
+
+Visibility was changed from private to public on 2026-08-13 by the repository
+owner, which is the "explicit approval" the previous wording required. Publishing
+the repository is **not** a production or release claim: the production gate in
+the readiness matrix remains open, and the statement above — that no production
+or public-release claim is permitted while it is open — still holds. What is
+public is the work in progress, including its open decisions and its unfinished
+gates.
+
+Two consequences worth stating plainly, because they are irreversible:
+
+- The **entire git history** is public, not only the current tree, along with all
+  issues and pull requests.
+- Documents here name and describe sibling repositories (`nigin-engine`,
+  `browser-nigin`) that remain **private**. Their existence, roles and parts of
+  their decision history are therefore public; their contents are not.
+
+Security reports: see `SECURITY.md`. Please do not open a public issue for a
+suspected vulnerability.
