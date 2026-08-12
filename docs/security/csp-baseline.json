@@ -1,34 +1,74 @@
 {
   "$schema-note": "Machine-readable emitted security-policy baseline for APP-01 M1. src/security/header-values.js independently enforces exact directives, exact header values, checked metadata and final-response restrictions so this data cannot silently widen. Any policy change must update baseline, contract, tests, security rationale and applicable ADR in one reviewed change.",
-  "version": "0.3.0",
-  "date": "2026-08-10",
+  "version": "0.4.0",
+  "date": "2026-08-13",
   "directives": {
-    "default-src": ["'none'"],
-    "base-uri": ["'none'"],
-    "object-src": ["'none'"],
-    "frame-ancestors": ["'none'"],
-    "form-action": ["'self'"],
-    "img-src": ["'self'", "data:"],
-    "style-src": ["'self'"],
-    "font-src": ["'self'"],
-    "script-src": ["'self'"],
-    "connect-src": ["'self'"],
-    "manifest-src": ["'self'"],
-    "worker-src": ["'self'"],
-    "require-trusted-types-for": ["'script'"],
-    "trusted-types": ["'none'"],
+    "default-src": [
+      "'none'"
+    ],
+    "base-uri": [
+      "'none'"
+    ],
+    "object-src": [
+      "'none'"
+    ],
+    "frame-ancestors": [
+      "'none'"
+    ],
+    "form-action": [
+      "'self'"
+    ],
+    "img-src": [
+      "'self'",
+      "data:"
+    ],
+    "style-src": [
+      "'self'"
+    ],
+    "font-src": [
+      "'self'"
+    ],
+    "script-src": [
+      "'self'"
+    ],
+    "connect-src": [
+      "'self'"
+    ],
+    "manifest-src": [
+      "'self'"
+    ],
+    "worker-src": [
+      "'self'"
+    ],
+    "require-trusted-types-for": [
+      "'script'"
+    ],
+    "trusted-types": [
+      "'none'"
+    ],
     "upgrade-insecure-requests": []
   },
   "connect_src_policy": {
-    "seed": ["'self'"],
+    "seed": [
+      "'self'"
+    ],
     "append_only_from": "approved-endpoint-set",
-    "forbidden_tokens": ["*", "https:", "http:", "data:", "blob:", "'unsafe-inline'", "'unsafe-eval'"],
+    "forbidden_tokens": [
+      "*",
+      "https:",
+      "http:",
+      "data:",
+      "blob:",
+      "'unsafe-inline'",
+      "'unsafe-eval'"
+    ],
     "match": "exact-canonical-origin",
     "note": "Only reviewed HTTPS public origins or explicit HTTP loopback development origins may be appended. Wildcards, scheme sources, non-public or reserved address literals, paths and noncanonical hosts are rejected. DNS resolution, redirect and rebinding checks remain runtime/ADR-003 obligations."
   },
   "additional_headers": {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     "X-Content-Type-Options": "nosniff",
+    "Integrity-Policy": "blocked-destinations=(script style)",
     "Referrer-Policy": "no-referrer",
     "Permissions-Policy": "accelerometer=(), autoplay=(), bluetooth=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), hid=(), local-fonts=(), local-network=(), loopback-network=(), magnetometer=(), microphone=(), payment=(), picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), storage-access=(), usb=(), xr-spatial-tracking=()",
     "Cross-Origin-Opener-Policy": "same-origin",

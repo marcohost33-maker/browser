@@ -312,3 +312,63 @@ test('applyHardenedSecurityHeaders fails when response accessors are incomplete'
     TypeError,
   );
 });
+
+test('Integrity-Policy is required, exact, and cannot be served as a phantom', () => {
+  // Present and exact in the real baseline.
+  assert.deepEqual(validateSecurityHeaderValues(REAL), []);
+  assert.equal(
+    buildHardenedHeaderMap(REAL)['Integrity-Policy'],
+    'blocked-destinations=(script style)',
+  );
+
+  // Dropping it must fail closed — script-src 'self' does not cover same-origin
+  // integrity, so its absence is a real hole, not a cosmetic one.
+  const without = clone(REAL);
+  delete without.additional_headers['Integrity-Policy'];
+  assert.ok(
+    validateSecurityHeaderValues(without).some((error) => /integrity-policy.*missing/i.test(error)),
+    'expected a missing Integrity-Policy to be reported',
+  );
+  assert.throws(() => buildHardenedHeaderMap(without), CspValidationError);
+
+  // Narrowing or emptying the blocked list must fail: a policy that blocks
+  // nothing still serves and still reads as "present" in an audit.
+  for (const value of [
+    'blocked-destinations=()',
+    'blocked-destinations=(script)',
+    'blocked-destinations=(style)',
+    'sources=(inline)',
+    '',
+  ]) {
+    assert.ok(
+      validateSecurityHeaderValues(mutatedHeader('Integrity-Policy', value)).length >= 1,
+      `expected Integrity-Policy ${JSON.stringify(value)} to be rejected`,
+    );
+    assert.throws(
+      () => buildHardenedHeaderMap(mutatedHeader('Integrity-Policy', value)),
+      CspValidationError,
+      `expected Integrity-Policy ${JSON.stringify(value)} to fail closed`,
+    );
+  }
+});
+
+test('Integrity-Policy-Report-Only cannot be smuggled onto the served response', () => {
+  // The report-only twin enforces nothing and emits telemetry. It must be
+  // refused both in the baseline and at the final response boundary, exactly
+  // like content-security-policy-report-only.
+  assert.ok(
+    validateSecurityHeaderValues(
+      mutatedHeader('Integrity-Policy-Report-Only', 'blocked-destinations=(script)'),
+    ).length >= 1,
+    'expected the report-only twin to be refused in the baseline',
+  );
+
+  const served = {
+    ...buildHardenedHeaderMap(REAL),
+    'Integrity-Policy-Report-Only': 'blocked-destinations=(script)',
+  };
+  assert.ok(
+    validateServedHeaderMap(served, REAL).some((error) => /forbidden M1 header/.test(error)),
+    'expected the report-only twin to be refused at the response boundary',
+  );
+});

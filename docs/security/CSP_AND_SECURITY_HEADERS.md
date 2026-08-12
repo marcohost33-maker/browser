@@ -114,6 +114,7 @@ scrutiny because they can persist beyond a page load and mediate later requests.
 |---|---|
 | `Content-Security-Policy` | Generated from `directives` only; exact M1 contract |
 | `Strict-Transport-Security` | Exactly `max-age=63072000; includeSubDomains`; `preload` forbidden |
+| `Integrity-Policy` | Exactly `blocked-destinations=(script style)`; report-only twin forbidden |
 | `X-Content-Type-Options` | Exactly `nosniff` |
 | `Referrer-Policy` | Exactly `no-referrer` |
 | `Permissions-Policy` | Exact reviewed feature set, canonical order, each value `()` |
@@ -186,6 +187,41 @@ write to a DOM sink, this relaxes to a *named* policy allowlist
 unrestricted policy space. Trusted Types is Chromium-only; on Firefox/Safari it is
 defence in depth, not a cross-browser guarantee (same caveat as Permissions-Policy
 below), and the ADR-004 browser matrix must record that.
+
+## Subresource Integrity enforcement (Integrity-Policy)
+
+`script-src 'self'` answers *which origin may supply a script*. It does not answer
+*whether the script that origin supplied is the one we shipped*: `'self'` admits any
+same-origin script unconditionally, with no integrity check. An attacker who can
+replace a file inside our own origin — a writable storage bucket or CDN path, a
+poisoned build artefact, a misconfigured deploy target — therefore executes script
+that every other control here considers legitimate. CSP is satisfied; Trusted Types
+is satisfied, because the attacker's script simply never routes a raw string into a
+DOM sink; and `connect-src` constrains only where a payload may be sent, not whether
+hostile code runs.
+
+Classic SRI closes this but is opt-in per element: it protects only the tags that
+happen to carry `integrity=`, and it cannot be audited from the response headers.
+`Integrity-Policy` inverts that — missing integrity metadata becomes a **load
+failure** for the listed destinations.
+
+We block both `script` and `style`. `style-src 'self'` has the identical weakness, and a
+swapped stylesheet is not cosmetic: it is a UI-redressing and data-exfiltration
+primitive (`background: url(...)` on an attribute selector).
+
+`sources` is omitted deliberately — omitting it is defined as `sources=(inline)`,
+which is the wanted behaviour, and spelling it out adds a second value that can
+drift. `endpoints` is omitted and `Integrity-Policy-Report-Only` is forbidden: the
+report-only twin enforces nothing while emitting violation reports, so it would both
+introduce telemetry this repo deliberately does not have and read as "integrity is
+handled" in an audit while blocking nothing.
+
+**Support caveat.** `Integrity-Policy` is not Baseline (MDN: limited availability).
+Browsers that do not implement it ignore the header, so this is defence in depth
+layered on `script-src 'self'`, not a replacement for it. The ADR-004 browser matrix
+must record where it is actually in force — the same caveat as `trusted-types`.
+
+Rationale and rejected alternatives: ADR-010.
 
 ## Permissions-Policy limitation
 
