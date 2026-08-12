@@ -2,8 +2,8 @@
 
 - Date: 2026-07-16
 - Author: Vero (Claude Opus 4.8), for Marco
-- Repository: `marcohost33-maker/browser` (private)
-- Local clone: `C:\Users\marco\dev\browser`
+- Repository: `marcohost33-maker/browser` (private at the time of this report;
+  the repository was made public on 2026-08-13)
 - Canonical head at report time: `origin/main` @ `3fe912d`
 - Work branch produced this session (local, **not pushed** — GitHub budget freeze):
   `vero/2026-07-16-standalone-reframe-and-report`
