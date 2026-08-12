@@ -3,26 +3,28 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
+import { npmInvocation } from './npm-invocation.js';
+
 const packageJson = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 );
+
+// Portable, shell-free npm invocation — see scripts/npm-invocation.js.
+function npm(...args) {
+  const [command, argv] = npmInvocation(args);
+  return execFileSync(command, argv, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
 
 const expectedNode = packageJson.engines?.node;
 const expectedNpm = packageJson.engines?.npm;
 const packageManager = packageJson.packageManager;
 const actualNode = process.version.replace(/^v/, '');
-const actualNpm = execFileSync('npm', ['--version'], {
-  encoding: 'utf8',
-  stdio: ['ignore', 'pipe', 'pipe'],
-}).trim();
-const registry = execFileSync('npm', ['config', 'get', 'registry'], {
-  encoding: 'utf8',
-  stdio: ['ignore', 'pipe', 'pipe'],
-}).trim();
-const ignoreScripts = execFileSync('npm', ['config', 'get', 'ignore-scripts'], {
-  encoding: 'utf8',
-  stdio: ['ignore', 'pipe', 'pipe'],
-}).trim();
+const actualNpm = npm('--version');
+const registry = npm('config', 'get', 'registry');
+const ignoreScripts = npm('config', 'get', 'ignore-scripts');
 
 const errors = [];
 

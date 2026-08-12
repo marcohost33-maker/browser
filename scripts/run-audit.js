@@ -3,14 +3,19 @@
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
-const result = spawnSync(
-  'npm',
-  ['audit', '--json', '--audit-level=high', '--ignore-scripts'],
-  {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  },
-);
+import { npmInvocation } from './npm-invocation.js';
+
+const [command, args] = npmInvocation([
+  'audit',
+  '--json',
+  '--audit-level=high',
+  '--ignore-scripts',
+]);
+
+const result = spawnSync(command, args, {
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
 
 if (result.error) {
   throw result.error;
