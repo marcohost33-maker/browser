@@ -13,6 +13,27 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- Subresource-Integrity-Zwang (`docs/security/csp-baseline.json` -> 0.4.0):
+  `Integrity-Policy: blocked-destinations=(script style)` ergaenzt.
+  `script-src 'self'` beantwortet, WELCHE Herkunft ein Skript liefern darf --
+  nicht, OB das gelieferte Skript das ausgelieferte ist. `'self'` laesst jedes
+  same-origin-Skript ohne Integritaetspruefung zu; wer eine Datei in unserer
+  eigenen Herkunft ersetzen kann (schreibbarer Storage-Bucket, CDN-Pfad,
+  vergiftetes Build-Artefakt), fuehrt Code aus, den alle uebrigen Kontrollen
+  fuer legitim halten -- CSP ist erfuellt, Trusted Types ebenso (das fremde
+  Skript fasst schlicht keinen DOM-Sink an), und `connect-src` begrenzt nur,
+  WOHIN gesendet werden darf, nicht OB fremder Code laeuft. `style` ist
+  mitgesperrt: ein ausgetauschtes Stylesheet ist kein Schoenheitsfehler,
+  sondern ein UI-Redressing- und Exfiltrations-Primitiv. `sources` bewusst
+  weggelassen (Weglassen ist als `sources=(inline)` definiert), `endpoints`
+  ebenfalls -- und `Integrity-Policy-Report-Only` steht jetzt auf der
+  Verbotsliste der Endantwort: die Report-Only-Fassung erzwingt nichts, erzeugt
+  aber Telemetrie und liest sich im Audit als "Integritaet ist geregelt".
+  Entscheid, Alternativen und Ablehnungsgruende: ADR-010.
+  **Einschraenkung:** der Header ist NICHT Baseline; Browser ohne
+  Unterstuetzung ignorieren ihn -- Tiefenverteidigung ueber `script-src 'self'`,
+  kein Ersatz. Die ADR-004-Browsermatrix muss festhalten, wo er wirklich greift.
+
 - CSP (`docs/security/csp-baseline.json` → 0.3.0): `trusted-types 'none'` als
   Gegenstueck zu `require-trusted-types-for 'script'` ergaenzt. Ohne sie bleibt
   die Policy-Erstellung offen — ein kompromittiertes Skript koennte per

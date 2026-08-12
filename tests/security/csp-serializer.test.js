@@ -219,3 +219,23 @@ test('the real forbidden_tokens list covers *, https:, http:', () => {
 test('DEFAULT_BASELINE_PATH resolves to the committed source of truth', () => {
   assert.match(DEFAULT_BASELINE_PATH.replace(/\\/g, '/'), /docs\/security\/csp-baseline\.json$/);
 });
+
+test('validateBaseline on its own rejects a phantom Integrity-Policy', () => {
+  // header-values.js pins the exact string, so in the full stack this layer can
+  // never be the one that fires. It exists for a caller using validateBaseline()
+  // standalone — the same belt-and-suspenders shape as the HSTS max-age floor.
+  // Testing it directly is the only way this layer is load-bearing at all.
+  const baseline = loadBaseline();
+  assert.deepEqual(validateBaseline(baseline), []);
+
+  for (const value of ['blocked-destinations=()', 'sources=(inline)', '']) {
+    const phantom = structuredClone(baseline);
+    phantom.additional_headers['Integrity-Policy'] = value;
+    assert.ok(
+      validateBaseline(phantom).some((error) =>
+        /Integrity-Policy must declare a non-empty blocked-destinations/.test(error),
+      ),
+      `expected validateBaseline to reject Integrity-Policy ${JSON.stringify(value)}`,
+    );
+  }
+});

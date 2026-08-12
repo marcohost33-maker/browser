@@ -66,6 +66,7 @@ const HSTS_MAX_AGE_FLOOR = 31536000;
 // case-insensitive matching.
 const ALLOWED_ADDITIONAL_HEADERS = new Set([
   'strict-transport-security',
+  'integrity-policy',
   'x-content-type-options',
   'referrer-policy',
   'permissions-policy',
@@ -354,6 +355,17 @@ function validateAdditionalHeaders(additional, approved) {
     } else if (lower === 'permissions-policy') {
       if (value.includes('*')) {
         errors.push('Permissions-Policy grants a wildcard allowlist (*)');
+      }
+    } else if (lower === 'integrity-policy') {
+      // A policy that blocks nothing is a phantom control: it serves, it reads
+      // as present in an audit, and it enforces zero. Require a non-empty
+      // blocked-destinations list. Like the HSTS floor above, this is the
+      // weaker of two layers — header-values.js pins the exact string — and is
+      // what protects a caller using validateBaseline() on its own.
+      if (!/blocked-destinations=\(\s*[a-z]/.test(value)) {
+        errors.push(
+          `Integrity-Policy must declare a non-empty blocked-destinations list, got ${JSON.stringify(value)}`,
+        );
       }
     }
   }

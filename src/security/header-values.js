@@ -49,7 +49,18 @@ const REQUIRED_PERMISSIONS_POLICY = REQUIRED_DISABLED_PERMISSIONS
   .map((feature) => `${feature}=()`)
   .join(', ');
 
+// Integrity-Policy makes Subresource Integrity mandatory for the listed
+// destinations — including same-origin ones, which `script-src 'self'` does not
+// cover. Without it, an attacker who can swap a file in our own origin (storage
+// bucket, CDN path, build artefact) is fully inside the CSP. `sources` is
+// omitted deliberately: omitting it is defined as `sources=(inline)`, which is
+// what we want, and spelling it out adds a second thing that can drift.
+// `endpoints` is omitted because this repo forbids reporting headers outright
+// (see FORBIDDEN_SERVED_HEADER_NAMES) — enforcement without telemetry.
+const REQUIRED_INTEGRITY_POLICY = 'blocked-destinations=(script style)';
+
 const REQUIRED_EXACT_HEADERS = new Map([
+  ['integrity-policy', REQUIRED_INTEGRITY_POLICY],
   ['x-content-type-options', 'nosniff'],
   ['cross-origin-opener-policy', 'same-origin'],
   ['cross-origin-embedder-policy', 'require-corp'],
@@ -59,6 +70,7 @@ const REQUIRED_EXACT_HEADERS = new Map([
 
 const REQUIRED_HEADER_NAMES = new Set([
   'strict-transport-security',
+  'integrity-policy',
   'x-content-type-options',
   'referrer-policy',
   'permissions-policy',
@@ -73,6 +85,11 @@ const REQUIRED_HEADER_NAMES = new Set([
 // even when supplied after the baseline-derived map has been applied.
 const FORBIDDEN_SERVED_HEADER_NAMES = new Set([
   'content-security-policy-report-only',
+  // Report-only twin of Integrity-Policy: it enforces nothing and emits
+  // violation reports, so it can read as "integrity is handled" in an audit
+  // while blocking nothing. Same class as content-security-policy-report-only
+  // above.
+  'integrity-policy-report-only',
   'report-to',
   'reporting-endpoints',
   'nel',
