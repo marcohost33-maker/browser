@@ -464,11 +464,12 @@ function expandIpv6(hostname) {
  *     3-4 (plain) and client IPv4 in groups 7-8 (each 16-bit group XOR 0xffff).
  *   - ISATAP interface id `..:0:5efe:a.b.c.d` / `..:200:5efe:a.b.c.d`
  *     (RFC 5214) — the low 32 bits are a plain IPv4 under any /64 prefix.
- * Known residual limitations (not decoded here): NAT64 local-use
- * `64:ff9b:1::/48` (RFC 8215) places the IPv4 at a network-specific,
- * non-fixed offset. A browser cannot resolve DNS, so the defence-in-depth
- * stops at literal decoding; revisit if a resolved-IP check is ever added.
- * See docs/research + Codex PR#17 review.
+ * NAT64 local-use `64:ff9b:1::/48` (RFC 8215) is deliberately NOT decoded
+ * here — RFC 8215 puts the IPv4 at a network-specific, non-fixed offset — but
+ * `isNonPublicAddressLiteral` refuses the whole prefix instead, which is
+ * strictly stronger than decoding would be. A browser cannot resolve DNS, so
+ * the defence-in-depth stops at literal decoding plus prefix refusal; revisit
+ * if a resolved-IP check is ever added. See docs/research + Codex PR#17 review.
  */
 function embeddedIpv4sFromIpv6(groups) {
   const [g0, g1, g2, g3, g4, g5, g6, g7] = groups;
@@ -509,7 +510,7 @@ function isNonPublicAddressLiteral(hostname) {
     if (isNonPublicIpv4(embedded)) return true;
   }
 
-  const [g0, g1] = groups;
+  const [g0, g1, g2, g3] = groups;
   const isUnspecified = groups.every((group) => group === 0);
   const isLoopback = groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1;
   return (
@@ -519,7 +520,20 @@ function isNonPublicAddressLiteral(hostname) {
     (g0 & 0xffc0) === 0xfe80 || // fe80::/10 link-local
     (g0 & 0xffc0) === 0xfec0 || // fec0::/10 site-local (deprecated)
     (g0 & 0xff00) === 0xff00 || // ff00::/8 multicast
-    (g0 === 0x2001 && g1 === 0x0db8) // 2001:db8::/32 documentation
+    (g0 === 0x2001 && g1 === 0x0db8) || // 2001:db8::/32 documentation
+    // Remaining IANA IPv6 Special-Purpose entries that are not globally
+    // reachable, so they can never be a legitimate approved endpoint. Blocking
+    // the whole prefix — rather than only decoding an embedded IPv4 — is what
+    // closes the NAT64 local-use residual noted above: RFC 8215 places the IPv4
+    // at a network-specific offset that cannot be decoded from the literal, but
+    // the /48 itself is local-use and is refused outright.
+    (g0 === 0x0100 && g1 === 0 && g2 === 0 && g3 === 0) || // 100::/64 discard-only (RFC 6666)
+    (g0 === 0x0064 && g1 === 0xff9b && g2 === 0x0001) || // 64:ff9b:1::/48 NAT64 local-use (RFC 8215)
+    (g0 === 0x2001 && g1 === 0x0002 && g2 === 0) || // 2001:2::/48 benchmarking (RFC 5180)
+    (g0 === 0x2001 && (g1 & 0xfff0) === 0x0010) || // 2001:10::/28 ORCHID, deprecated (RFC 4843)
+    (g0 === 0x2001 && (g1 & 0xfff0) === 0x0020) || // 2001:20::/28 ORCHIDv2 (RFC 7343)
+    (g0 === 0x3fff && (g1 & 0xf000) === 0) || // 3fff::/20 documentation (RFC 9637)
+    g0 === 0x5f00 // 5f00::/16 SRv6 SIDs (RFC 9602)
   );
 }
 

@@ -127,6 +127,51 @@ test('transition-form IPv6 literals embedding a non-public IPv4 are rejected (Te
   }
 });
 
+test('remaining IANA special-purpose IPv6 prefixes are refused outright', () => {
+  // Not-globally-reachable prefixes that carry no decodable embedded IPv4, so
+  // the whole prefix must be refused. 64:ff9b:1::/48 is the NAT64 local-use
+  // residual that literal decoding provably cannot cover (RFC 8215 puts the
+  // IPv4 at a network-specific offset).
+  for (const origin of [
+    'https://[100::]', // 100::/64 discard-only (RFC 6666)
+    'https://[100::1]',
+    'https://[64:ff9b:1::1]', // NAT64 local-use (RFC 8215) — the documented residual
+    'https://[2001:2::1]', // benchmarking (RFC 5180)
+    'https://[2001:10::1]', // ORCHID, deprecated (RFC 4843)
+    'https://[2001:2f:ffff::1]', // ORCHIDv2 upper edge (RFC 7343)
+    'https://[3fff::1]', // documentation (RFC 9637)
+    'https://[3fff:fff:ffff::1]', // 3fff::/20 upper edge
+    'https://[5f00::1]', // SRv6 SIDs (RFC 9602)
+  ]) {
+    const errors = validateApprovedEndpointOrigins([origin]);
+    assert.ok(
+      errors.some((error) => /non-public\/reserved/.test(error)),
+      `expected ${origin} to be rejected as a non-public/reserved literal (got ${JSON.stringify(errors)})`,
+    );
+  }
+});
+
+test('address space adjacent to the special-purpose prefixes is not over-blocked', () => {
+  // Guards the boundary arithmetic: each of these sits one step outside a
+  // prefix added above and is ordinary global unicast.
+  for (const origin of [
+    'https://[100:0:0:1::1]', // outside 100::/64 (g3 non-zero)
+    'https://[101::1]', // outside 100::/64 (different g0)
+    'https://[64:ff9b:2::1]', // outside the NAT64 local-use /48
+    'https://[2001:3::1]', // AMT, outside the benchmarking /48
+    'https://[2001:30::1]', // outside ORCHIDv2 /28
+    'https://[4000::1]', // outside 3fff::/20
+    'https://[3ffe::1]', // below 3fff::/20
+    'https://[5f01::1]', // outside 5f00::/16
+  ]) {
+    assert.deepEqual(
+      validateApprovedEndpointOrigins([origin]),
+      [],
+      `expected ${origin} to remain accepted`,
+    );
+  }
+});
+
 test('transition-form IPv6 literals embedding only public IPv4 stay accepted', () => {
   for (const origin of [
     'https://[2001:0:808:808::fefe:fefe]', // Teredo, server+client both 8.8.8.8 / 1.1.1.1
