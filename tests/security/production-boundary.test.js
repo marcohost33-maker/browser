@@ -135,10 +135,11 @@ test('remaining IANA special-purpose IPv6 prefixes are refused outright', () => 
   for (const origin of [
     'https://[100::]', // 100::/64 discard-only (RFC 6666)
     'https://[100::1]',
+    'https://[100:0:0:1::1]', // 100:0:0:1::/64 dummy prefix (RFC 9780)
     'https://[64:ff9b:1::1]', // NAT64 local-use (RFC 8215) — the documented residual
     'https://[2001:2::1]', // benchmarking (RFC 5180)
     'https://[2001:10::1]', // ORCHID, deprecated (RFC 4843)
-    'https://[2001:2f:ffff::1]', // ORCHIDv2 upper edge (RFC 7343)
+    'https://[2001:1f:ffff::1]', // 2001:10::/28 upper edge
     'https://[3fff::1]', // documentation (RFC 9637)
     'https://[3fff:fff:ffff::1]', // 3fff::/20 upper edge
     'https://[5f00::1]', // SRv6 SIDs (RFC 9602)
@@ -153,13 +154,19 @@ test('remaining IANA special-purpose IPv6 prefixes are refused outright', () => 
 
 test('address space adjacent to the special-purpose prefixes is not over-blocked', () => {
   // Guards the boundary arithmetic: each of these sits one step outside a
-  // prefix added above and is ordinary global unicast.
+  // prefix refused above. The 2001:* entries are the important ones — the IANA
+  // registry marks them "Globally Reachable: True", so refusing them would be
+  // over-blocking that the registry does not support.
   for (const origin of [
-    'https://[100:0:0:1::1]', // outside 100::/64 (g3 non-zero)
+    'https://[100:0:0:2::1]', // outside both 100::/64 blocks (g3 = 2)
     'https://[101::1]', // outside 100::/64 (different g0)
     'https://[64:ff9b:2::1]', // outside the NAT64 local-use /48
-    'https://[2001:3::1]', // AMT, outside the benchmarking /48
-    'https://[2001:30::1]', // outside ORCHIDv2 /28
+    'https://[64:ff9b::808:808]', // NAT64 well-known, public embedded IPv4 — reachable
+    'https://[2001:3::1]', // AMT (RFC 7450) — Globally Reachable: True
+    'https://[2001:20::1]', // ORCHIDv2 (RFC 7343) — Globally Reachable: True
+    'https://[2001:2f:ffff::1]', // ORCHIDv2 upper edge — must stay accepted
+    'https://[2001:30::1]', // Drone Remote ID (RFC 9374) — Globally Reachable: True
+    'https://[2001:1::1]', // Port Control Protocol Anycast (RFC 7723) — True
     'https://[4000::1]', // outside 3fff::/20
     'https://[3ffe::1]', // below 3fff::/20
     'https://[5f01::1]', // outside 5f00::/16
