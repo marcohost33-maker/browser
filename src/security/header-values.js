@@ -499,6 +499,42 @@ function embeddedIpv4sFromIpv6(groups) {
   return candidates;
 }
 
+/**
+ * Is the literal inside 2001::/23 ("IETF Protocol Assignments", RFC 2928)?
+ *
+ * The /23 as a whole carries "Globally Reachable: False", but the registry then
+ * re-delegates several sub-blocks inside it that ARE individually reachable.
+ * Refusing the /23 wholesale would over-block those; accepting the /23 wholesale
+ * leaves the unassigned remainder (2001:5::/32, 2001:100::/24, …) reachable as
+ * an approved endpoint. So: refuse the /23 except the registered-True carve-outs.
+ *
+ * This also subsumes two prefixes that would otherwise need their own line —
+ * 2001:2::/48 (benchmarking, RFC 5180, False) and 2001:10::/28 (deprecated
+ * ORCHID, RFC 4843, assignment terminated 2014-03).
+ */
+function isReservedIetfProtocolAssignment(groups) {
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups;
+  if (g0 !== 0x2001 || (g1 & 0xfe00) !== 0) return false; // outside 2001::/23
+
+  // 2001::/32 TEREDO (RFC 4380) — Globally Reachable: True. The IPv4 addresses
+  // it embeds are decoded by embeddedIpv4sFromIpv6 instead.
+  if (g1 === 0x0000) return false;
+
+  // 2001:1::1/128 PCP, ::2/128 TURN, ::3/128 DNS-SD SRP anycast — each True.
+  // Only these three addresses, not the surrounding 2001:1::/32.
+  if (g1 === 0x0001) {
+    const restZero = g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0;
+    return !(restZero && (g7 === 1 || g7 === 2 || g7 === 3));
+  }
+
+  if (g1 === 0x0003) return false; // 2001:3::/32 AMT (RFC 7450) — True
+  if (g1 === 0x0004 && g2 === 0x0112) return false; // 2001:4:112::/48 AS112-v6 (RFC 7535) — True
+  if ((g1 & 0xfff0) === 0x0020) return false; // 2001:20::/28 ORCHIDv2 (RFC 7343) — True
+  if ((g1 & 0xfff0) === 0x0030) return false; // 2001:30::/28 Drone Remote ID (RFC 9374) — True
+
+  return true;
+}
+
 function isNonPublicAddressLiteral(hostname) {
   const ipv4 = parseCanonicalIpv4(hostname);
   if (ipv4) return isNonPublicIpv4(ipv4);
@@ -510,7 +546,7 @@ function isNonPublicAddressLiteral(hostname) {
     if (isNonPublicIpv4(embedded)) return true;
   }
 
-  const [g0, g1, g2, g3] = groups;
+  const [g0, g1, g2, g3, g4, g5] = groups;
   const isUnspecified = groups.every((group) => group === 0);
   const isLoopback = groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1;
   return (
@@ -538,14 +574,14 @@ function isNonPublicAddressLiteral(hostname) {
     // Source: IANA IPv6 Special-Purpose Address Registry, column
     // "Globally Reachable" (NOT the adjacent "Forwardable" column, which
     // differs for 100::/64, 2001:2::/48, 5f00::/16 and 64:ff9b:1::/48).
+    // ::ffff:0:0/96 IPv4-mapped (RFC 4291) — registry-False. The embedded IPv4
+    // is decoded above, but a mapped literal is not a routable IPv6 origin even
+    // when the IPv4 inside it is public, so the prefix is refused outright.
+    (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff) ||
     (g0 === 0x0100 && g1 === 0 && g2 === 0 && g3 === 0) || // 100::/64 discard-only (RFC 6666)
     (g0 === 0x0100 && g1 === 0 && g2 === 0 && g3 === 1) || // 100:0:0:1::/64 dummy prefix (RFC 9780)
     (g0 === 0x0064 && g1 === 0xff9b && g2 === 0x0001) || // 64:ff9b:1::/48 NAT64 local-use (RFC 8215)
-    (g0 === 0x2001 && g1 === 0x0002 && g2 === 0) || // 2001:2::/48 benchmarking (RFC 5180)
-    // 2001:10::/28 — assignment terminated 2014-03, registry row carries no
-    // "Globally Reachable" value at all; a deprecated, unassigned block is not
-    // a valid endpoint either.
-    (g0 === 0x2001 && (g1 & 0xfff0) === 0x0010) || // ORCHID, deprecated (RFC 4843)
+    isReservedIetfProtocolAssignment(groups) || // 2001::/23 minus its reachable carve-outs
     (g0 === 0x3fff && (g1 & 0xf000) === 0) || // 3fff::/20 documentation (RFC 9637)
     g0 === 0x5f00 // 5f00::/16 SRv6 SIDs (RFC 9602)
   );
