@@ -14,8 +14,9 @@
 
 import { spawnSync } from 'node:child_process';
 
+import { npmInvocation } from './npm-invocation.js';
+
 const withNetwork = process.argv.includes('--with-network');
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 // level: 'required' -> failure fails the run; 'advisory' -> failure warns only.
 const steps = [
@@ -48,7 +49,8 @@ for (const step of steps) {
     continue;
   }
   process.stdout.write(`\n── RUN   ${step.label}\n`);
-  const run = spawnSync(npm, step.args, { stdio: 'inherit', shell: process.platform === 'win32' });
+  const [command, argv] = npmInvocation(step.args);
+  const run = spawnSync(command, argv, { stdio: 'inherit' });
   const ok = run.status === 0;
   results.push({ ...step, status: ok ? 'PASS' : step.level === 'required' ? 'FAIL' : 'WARN' });
 }
