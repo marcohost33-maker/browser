@@ -86,9 +86,21 @@ async function main() {
     const full = path.join(FIXTURES_DIR, rel);
     if (!full.startsWith(FIXTURES_DIR)) return new Response('forbidden', { status: 403 });
     try {
-      const buf = fs.readFileSync(full);
+      let buf = fs.readFileSync(full);
       const ext = path.extname(full);
       const ct = ext === '.js' ? 'text/javascript' : ext === '.html' ? 'text/html' : 'application/octet-stream';
+      // The production header map serves Integrity-Policy
+      // `blocked-destinations=(script style)` (ADR-010). Without subresource
+      // integrity metadata Chromium refuses to execute app.js at all — the
+      // page would then never set window.__result and BOTH probe modes would
+      // report zero attacker hits, i.e. the discrimination proof would pass
+      // vacuously. The hash is computed from the bytes actually served, so it
+      // can never go stale against app.js.
+      if (ext === '.html') {
+        const appJs = fs.readFileSync(path.join(FIXTURES_DIR, 'app.js'));
+        const sri = 'sha256-' + require('node:crypto').createHash('sha256').update(appJs).digest('base64');
+        buf = Buffer.from(buf.toString('utf8').replace('__APP_JS_SRI__', sri), 'utf8');
+      }
       return new Response(buf, { status: 200, headers: { 'content-type': ct, ...servedHeaders } });
     } catch {
       return new Response('not found', { status: 404 });

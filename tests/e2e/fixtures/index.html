@@ -6,6 +6,11 @@
 </head>
 <body>
   <div id="status" data-state="running"></div>
-  <script src="app.js"></script>
+  <!-- The integrity value is substituted by the runner with the real SHA-256
+       of app.js at serve time (see run-exfil-probe.cjs). It is NOT hand-written:
+       a stale hand-written hash would silently block the script again and turn
+       this probe back into a no-op. The served Integrity-Policy header
+       (blocked-destinations=(script style), ADR-010) requires it. -->
+  <script src="app.js" integrity="__APP_JS_SRI__" crossorigin="anonymous"></script>
 </body>
 </html>
