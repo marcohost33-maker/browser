@@ -31,7 +31,7 @@
 // rewritten against the REAL renderer — not left skipped.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -48,15 +48,44 @@ function listSrcFilesRecursive(dir) {
   return out;
 }
 
+// Allowlist, not a name pattern. A filter such as /mcp|renderer/ only catches a
+// renderer that happens to be *named* like one: an MCP client landing as
+// `src/runtime/client.js` or `src/ui/view.js` would slip through and leave the
+// ASI01 test skipped long after its stated unskip condition was met. Listing the
+// files that are known NOT to be a renderer fails closed instead — anything new
+// under src/ trips this check and forces a decision.
+const KNOWN_NON_RENDERER_SRC = [
+  '.gitkeep',
+  path.join('security', 'csp.js'),
+  path.join('security', 'header-values.js'),
+  path.join('security', 'serialize-cli.js'),
+];
+
+// Second, independent signal: even within the allowlisted files, content that
+// receives or renders tool-result data would invalidate the precondition.
+const RENDERER_BEHAVIOUR = /modelcontextprotocol|tools\/call|tool_result|toolResult|innerHTML|insertAdjacentHTML|dangerouslySetInnerHTML/i;
+
 test('precondition check: no MCP client / result-content renderer exists in src/ yet', () => {
   const files = listSrcFilesRecursive(SRC_DIR).map((f) => path.relative(SRC_DIR, f));
-  const mcpRelated = files.filter((f) => /mcp|result.?content|renderer|tool.?result/i.test(f));
+
+  const unexpected = files.filter((f) => !KNOWN_NON_RENDERER_SRC.includes(f));
   assert.deepEqual(
-    mcpRelated,
+    unexpected,
     [],
-    `expected NO MCP-client/result-renderer files in src/ (found: ${mcpRelated.join(', ')}) — ` +
-      'if this fails, the precondition for the skip below no longer holds: replace the skip ' +
-      'below with a real test against the new renderer instead of leaving it skipped.',
+    `unexpected file(s) in src/: ${unexpected.join(', ')} — src/ has grown since the ASI01 skip ` +
+      'was recorded. Determine whether an MCP client or result-content renderer has landed. If it ' +
+      'has, replace the skip below with a real test against it; if it has not, add the new file to ' +
+      'KNOWN_NON_RENDERER_SRC with a one-line reason.',
+  );
+
+  const behavioural = files.filter((f) =>
+    RENDERER_BEHAVIOUR.test(readFileSync(path.join(SRC_DIR, f), 'utf8')),
+  );
+  assert.deepEqual(
+    behavioural,
+    [],
+    `file(s) in src/ now handle or render tool-result content: ${behavioural.join(', ')} — the ` +
+      'precondition for the skip below no longer holds; write the real ASI01 test against that code.',
   );
 });
 
