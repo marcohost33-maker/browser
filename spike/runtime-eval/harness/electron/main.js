@@ -432,12 +432,20 @@ async function realMain() {
   app.exit(exitCode);
 }
 
+// Escape a probe detail for a Markdown table cell. Backslash MUST be escaped
+// first: escaping `|` alone turns an input backslash into an escape character
+// for the pipe that follows it, so a detail containing `\|` still breaks out of
+// the cell. Newlines are folded to spaces because a raw newline ends the row.
+function mdCell(text) {
+  return String(text).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+}
+
 function writeResultsMd(s, comparison) {
   const now = new Date().toISOString();
   const memLines = Object.entries(s.memByTypeKB)
     .map(([t, kb]) => `  - ${t}: ${(kb / 1024).toFixed(1)} MiB (${kb} KB)`).join('\n');
   const probeRows = comparison.map((c) =>
-    `| ${c.index} | \`${c.id}\` | ${c.category} | ${c.status} | ${c.expected ? c.expected.join('/') : '—'} | ${c.verdict === 'as-expected' ? 'OK' : '**DEVIATION**'} | ${c.detail.replace(/\|/g, '\\|')} |`).join('\n');
+    `| ${c.index} | \`${c.id}\` | ${c.category} | ${c.status} | ${c.expected ? c.expected.join('/') : '—'} | ${c.verdict === 'as-expected' ? 'OK' : '**DEVIATION**'} | ${mdCell(c.detail)} |`).join('\n');
   const blockedRows = s.egress.blockedList.length
     ? s.egress.blockedList.map((b) => `  - ${b.method} ${b.scheme}: ${b.url} (${b.resourceType})`).join('\n')
     : '  - (none — no external request was ever attempted)';
