@@ -125,7 +125,39 @@ local toolchain-version check is advisory; CI owns exact-version enforcement.
 
 ## Release claim
 
-The repository is private and MIT-licensed. Public or production release requires
-explicit approval plus runtime, package, update, privacy, accessibility, legal,
-supply-chain and operational evidence. No current document or green static test
-permits a production-security claim.
+The repository is **public** and MIT-licensed (see [`LICENSE`](LICENSE)).
+Visibility was changed from private to public on 2026-08-13 by the repository
+owner, which is the explicit approval the previous wording required.
+
+Publishing is **not** a production or release claim. A production release
+additionally requires runtime, package, update, privacy, accessibility, legal,
+supply-chain and operational evidence that does not exist yet. No current
+document and no green static test permits a production-security claim. What is
+public is work in progress, including its open decisions and unfinished gates.
+
+Two consequences of publication are irreversible and worth stating plainly:
+
+- The **entire git history** is public, not only the current tree, together with
+  all issues and pull requests.
+- Documents here name and describe sibling repositories (`nigin-engine`,
+  `browser-nigin`) that remain **private**. Their existence, roles and parts of
+  their decision history are therefore public; their contents are not.
+
+## Governance
+
+- `main` is protected by the active `protect-main` ruleset: pull requests are
+  required, deletion and force-pushes are blocked, history stays linear, and the
+  policy/security-test, markdown-lint, link-check and `zizmor` workflow-audit
+  checks must pass.
+- Critical paths are listed in [`.github/CODEOWNERS`](.github/CODEOWNERS).
+- Dependency and GitHub Actions updates use Dependabot release cooldowns.
+- Pull requests must link exact-head evidence and preserve fail-closed negative
+  tests.
+
+## Contributing and security reports
+
+Contribution rules, the local gate you are expected to run and the review
+expectations are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+Please do **not** open a public issue for a suspected vulnerability — the
+private reporting path is described in [`SECURITY.md`](SECURITY.md).

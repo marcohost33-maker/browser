@@ -388,7 +388,20 @@ function parseCanonicalIpv4(hostname) {
 }
 
 function isNonPublicIpv4(octets) {
-  const [a, b, c] = octets;
+  const [a, b, c, d] = octets;
+
+  // 192.0.0.0/24 is registry-False as a block, but the registry re-delegates two
+  // /32s inside it that ARE globally reachable: 192.0.0.9 (Port Control Protocol
+  // Anycast, RFC 7723) and 192.0.0.10 (TURN Anycast, RFC 8155). Refusing the /24
+  // wholesale over-blocks them.
+  //
+  // The IPv6 side of this file already carves out the very same two services
+  // (2001:1::1 and 2001:1::2) inside 2001::/23 — this is that carve-out's
+  // missing IPv4 twin. Found by an independent audit, not by the bidirectional
+  // registry check that produced the IPv6 carve-outs: that check was run over
+  // the IPv6 registry only, so the IPv4 half of the same claim went untested.
+  if (a === 192 && b === 0 && c === 0 && (d === 9 || d === 10)) return false;
+
   return (
     a === 0 ||
     a === 10 ||

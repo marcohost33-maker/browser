@@ -372,3 +372,30 @@ test('Integrity-Policy-Report-Only cannot be smuggled onto the served response',
     'expected the report-only twin to be refused at the response boundary',
   );
 });
+
+test('the two globally reachable /32s inside 192.0.0.0/24 stay accepted', () => {
+  // 192.0.0.0/24 is registry-False as a block, but the registry re-delegates two
+  // /32s inside it that carry "Globally Reachable: True". Refusing the /24
+  // wholesale over-blocks them. This is the IPv4 twin of the 2001:1::1/2/3
+  // carve-out below — it was missing because the bidirectional registry check
+  // that produced the IPv6 carve-outs was only ever run over the IPv6 registry.
+  for (const origin of [
+    'https://192.0.0.9', // Port Control Protocol Anycast (RFC 7723)
+    'https://192.0.0.10', // TURN Anycast (RFC 8155)
+  ]) {
+    assert.deepEqual(
+      validateApprovedEndpointOrigins([origin]),
+      [],
+      `expected ${origin} to remain accepted (registry: Globally Reachable = True)`,
+    );
+  }
+
+  // The surrounding /24 must still be refused — the carve-out is exactly two
+  // addresses wide, not a hole in the block.
+  for (const origin of ['https://192.0.0.8', 'https://192.0.0.11', 'https://192.0.0.1']) {
+    assert.ok(
+      validateApprovedEndpointOrigins([origin]).some((e) => /non-public\/reserved/.test(e)),
+      `expected ${origin} to stay refused`,
+    );
+  }
+});
