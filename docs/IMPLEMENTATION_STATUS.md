@@ -1,183 +1,128 @@
 # `browser` — Implementation Status
 
-- Updated: 2026-07-14
+- Updated: 2026-07-28
 - Repository: `marcohost33-maker/browser`
-- Intended product scope: native, offline-capable browser/webapp **runtime program**
-  (runs foreign web apps locally; staged T1 → T2 → T3; north star **T3**) — reframed
-  2026-07-14 (ADR-005/006/007, PR #22)
-- Trust-scope decision: **DECIDED T3 (staged)** — Marco G1 (2026-07-14): T1 → T2 → T3
-  maturation with T3 (arbitrary foreign content) as the target state. **ADR-005 ACCEPTED**;
-  ADR-006 (runtime) and ADR-007 (package) remain PROPOSED pending measured spikes. For the
-  T3 target the APP-01 runtime shortlist is Chromium-based (Electron/CEF) with a shippable
-  engine security-patch path as a hard cut criterion. First shipping increment is T1.
-- Change set merged: PR #17 (static security/evidence foundation) + PR #22 (reframe trust-class ADRs)
-- Overall state: static security/governance/evidence foundation; **no runtime
-  implemented** (neither the prior MCP-client webapp nor the reframed runtime)
+- Product: standalone native, offline-capable web-application runtime
+- Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
+- First release scope: T1
+- Overall state: **security/evidence foundation plus manifest/update spikes; no runtime product**
 
-> **PRODUCT REFRAME (2026-07-14).** `browser` is reframed from a public MCP-client
-> webapp into a native, offline-capable runtime that executes foreign web apps
-> locally. `browser` is **standalone** (ADR-008, 2026-07-16): `nigin-engine` and
-> `browser-nigin` are separate, independent repositories linked only by knowledge
-> transfer (not dependencies). Binding record: ADR-005/006/007 (PR #22). The security/governance/
-> evidence foundation described below is real and framing-neutral; the
-> "MCP client / remote endpoint" product wording is superseded. **No runtime product
-> code exists** — do not read any item below as an implemented runtime capability.
+## Executive status
 
-## Merged foundation
+The repository has a strong static security, documentation and supply-chain
+foundation, but it does not yet install or execute an application. The main risk is
+not low-level CSP implementation; it is crossing from specification into a real
+package-verification, update and runtime boundary without collapsing distinct trust
+decisions.
 
-- APP-01/ENG-01 scope separation and non-goals.
-- Threat Model, Privacy Model and MCP Consumer Profile.
-- Initial architecture and supply-chain decision records.
-- Machine-readable CSP/security-header baseline.
-- CSP serializer, exact-origin allowlist and injection/override protections.
-- Security, documentation and workflow-audit CI.
-- In-process HTTP-response security-header tests.
+The canonical-manifest subset of ADR-007 Track B was promoted on 2026-07-22 as
+`CWAP-Strict-JSON v0.1.2`. This proves deterministic manifest representation over
+its accepted domain. It does not prove package integrity, publisher admission,
+capability approval, secure updates, safe extraction or runtime isolation.
 
-## Implemented in Draft PR #17
+## Effective decisions
 
-### Static security enforcement
+| Area | State | Effective position |
+|---|---|---|
+| Repository boundary | ACCEPTED | `browser` is standalone; `nigin-engine` and `browser-nigin` are not dependencies |
+| Trust classes | ACCEPTED | staged T1 → T2 → T3, with T3 as north star and T1 as first release |
+| MCP | ACCEPTED | internal, optional and off the T1 critical path |
+| Manifest canonicalization | ACCEPTED PART | CWAP-Strict-JSON v0.1.2 Track-B core promoted |
+| Package format | OPEN | no `.swbn`, NAR, ZIP or other container selected |
+| Secure update | OPEN | TUF-style evaluation specified in ADR-009; no updater implemented |
+| Runtime | OPEN | Electron is the pragmatic compatibility/harness baseline; no production runtime selected |
+| T3 boundary | OPEN / FAIL-CLOSED | outer OS/container/VM isolation and null-egress evidence required |
+| Publisher/capability governance | OPEN | issue #25 |
+| Product evidence | OPEN | issue #14 |
 
-- exact M1 CSP directive contract independent from emitted baseline values;
-- checked baseline version/date/top-level and `connect_src_policy` metadata;
-- case-insensitive duplicate-header rejection;
-- exact `max-age=63072000; includeSubDomains` HSTS value;
-- HSTS `preload` rejected pending deployment/rollback approval;
-- exact `Referrer-Policy: no-referrer`;
-- exact ordered Permissions-Policy deny set;
-- strict COOP, COEP, CORP, MIME and framing values;
-- canonical approved-origin validation;
+## Implemented and verified
+
+### Static policy enforcement
+
+- machine-readable CSP/security-header baseline;
+- independent exact directive/value contract;
+- exact-origin network-source validation;
 - HTTPS remote origins and explicit loopback-only HTTP development origins;
-- non-public/reserved IPv4, IPv6, mapped-address and localhost rejection;
-- source-level ban on application imports of raw serializer/map/apply validators;
-- final in-process protected-header readback;
-- rejection of final-response CORS, reporting, cookie and implementation-disclosure
-  headers;
-- negative tests for metadata drift, injection, casing, duplicates, malformed
-  values, downgrades, non-public origins and final-response mutation.
+- rejection of private, reserved, malformed and noncanonical address/origin forms;
+- strict HSTS, referrer, permissions, MIME, opener, embedder, resource and framing policies;
+- final-response protected-header readback;
+- negative regression tests for injection, casing, duplicates, downgrade and mutation;
+- source-level prevention of application use of raw security primitives.
 
-These controls do not verify DNS resolution, redirects, DNS rebinding, deployed
-edge transformations or supported-browser behavior.
+### Supply-chain and evidence foundation
 
-### Provisional capability debt
+- exact Node/npm policy and deterministic lockfile checks;
+- lifecycle scripts disabled for dependency installation;
+- vulnerability snapshot and high/critical gate;
+- SPDX SBOM and evidence-manifest workflows;
+- SHA-pinned, least-privilege GitHub Actions;
+- local CI-parity verification for required offline checks;
+- protected-main and independent-review foundation gates completed for the prior
+  static-security promotion.
 
-The static baseline still provisionally permits same-origin forms, `data:`
-images, fonts, a manifest and workers. ADR-004 must evaluate each capability and
-remove it unless measured product/runtime evidence justifies retaining it.
-Service-worker enablement additionally requires cache, update, persistence,
-offline-threat and emergency-removal evidence.
+### Package-manifest spike
 
-### Evidence and supply-chain foundation
+- Python, Rust and JavaScript CWAP implementations;
+- differential and external-oracle evidence;
+- fixed canonical subset profile with floats forbidden and safe-integer limits;
+- deterministic reject precedence and owner-promoted Track-B manifest specification.
 
-- exact Node `22.23.1` and npm `10.9.8` gates;
-- public npm registry and `ignore-scripts=true` enforced through `.npmrc` and
-  toolchain verification;
-- exact documentation tools in lockfile v3;
-- lockfile alignment, integrity, no-registry-URL and no-install-script checks;
-- `npm ci --ignore-scripts` in all Node workflows;
-- machine-readable high/critical vulnerability gate and archived
-  `npm-audit.json`;
-- SPDX 2.3 SBOM;
-- evidence manifest schema 1.2 binding source/tested SHA, tool/registry/runner
-  facts and package/lock/npmrc/audit/SBOM hashes;
-- 90-day immutable security evidence artifact;
-- `ubuntu-24.04` runner family, SHA-pinned Actions, least privilege and workflow
-  security audit.
+### Initial secure-update spike
 
-This is strong traceability, not bit-for-bit reproducibility. Hosted-runner image
-patches, the live advisory database and timestamped evidence can differ between
-reruns of the same source commit.
+- dependency-free Node.js verifier for a self-contained TUF v1.0.35 offline bundle;
+- top-level root, timestamp, snapshot and targets threshold verification;
+- old/new root dual-threshold rotation and correct timestamp/snapshot fast-forward reset;
+- preservation of separately trusted targets rollback state across key rotation;
+- rollback, freeze, mix-and-match, target-integrity and capability-expansion checks;
+- canonical JSON depth/node bounds, cycle rejection, canonical UTC expiry and full
+  signed-target path validation;
+- immutable bytes/capability identity for a reused application version;
+- 20 deterministic TUF tests plus four ADR-governance tests, all locally green.
 
-### Governance and operations foundation
+## Not implemented
 
-- active Charter and decision register;
-- ADR-001 enforcement boundaries (**SUPERSEDED by ADR-005**; boundary substance retained) and ADR-002 target trust design (producer-neutral; no external `nigin-engine` producer assumed, ADR-008);
-- ADR-003 endpoint/CORS/deployment decision (**SUPERSEDED by ADR-005**; network-security substance retained in `docs/security/*`);
-- falsifiable product-discovery protocol for issue #14;
-- SECURITY.md vulnerability-reporting process;
-- expanded CODEOWNERS coverage for security, workflows, npm policy and evidence
-  scripts;
-- Dependabot with release cooldowns;
-- pull-request evidence template;
-- MIT license matching package metadata;
-- evidence-gated roadmaps and production-readiness matrix;
-- issue #18 for enforced branch protection;
-- issue #20 for independent final-head review.
+- native application shell or Chromium host;
+- package parser/verifier and signature validation wired to a product path;
+- content-addressed staging, atomic activation and recovery;
+- production TUF client/repository, raw-byte parser, delegations, durable monotonic
+  state, revocation operations or atomic offline update activation;
+- publisher admission, namespace ownership and capability approval engine;
+- per-application process, profile, storage and permission isolation;
+- OS-enforced null-egress and independent process-tree/network observation;
+- hostile-content browser E2E, renderer-compromise or sandbox-escape exercises;
+- production privacy notice, accessibility statement, support, rollback and incident drills;
+- reproducible signed release artifacts.
 
-## Evidence protocol
+## Current P0/P1 gaps
 
-The repository intentionally does not hard-code a "current final SHA" in this
-file: changing the file would immediately create a different SHA. Exact candidate
-identity and artifact digest are recorded outside the candidate tree in the PR,
-GitHub Actions run, evidence artifact and independent review.
+1. **Product falsifiability (#14):** primary user, anti-persona, top task and go/pivot/stop criteria.
+2. **Acquisition semantics (#30):** distinguish signed package, installed PWA, captured archive and remote browsing.
+3. **Package completion (#24):** container, signed-byte scope, strict crypto, resource limits, extraction and activation evidence.
+4. **Update security (#24 / ADR-009):** raw-byte parser, delegated publishers,
+   durable monotonic state, revocation, independent differential evidence and
+   atomic metadata/package recovery.
+5. **Runtime evidence (#23):** exact Electron/CEF versions, sandbox configuration, compatibility and patch-SLA measurements.
+6. **T3 isolation:** outer sandbox/VM profile, OS-level deny, resource limits and independently observed null-egress.
+7. **T2 governance (#25):** publisher admission, capability approval, emergency removal and support lifecycle.
+8. **Release operations (#6):** incident, revocation, rollback, privacy and vulnerability handling.
 
-For every candidate head:
+## Next execution slice
 
-- security CI must pass toolchain, lockfile, install, audit, policy, tests, SBOM
-  generation and evidence upload;
-- Markdown lint and tracked-link checks must pass;
-- workflow security audit must pass;
-- the evidence artifact name, manifest and GitHub digest must bind to that head;
-- any subsequent commit invalidates the prior candidate and requires fresh gates;
-- independent review must name the exact final SHA it approved.
+The next implementation should be small and evidence-producing:
 
-## Open P0 promotion gates for this foundation PR
-
-1. **Repository enforcement (#18):** required checks, PR-only changes, resolved
-   conversations, code-owner/latest-pusher-independent review, no force-push and
-   minimized bypass.
-2. **Independent final-head review (#20):** a reviewer other than the latest
-   security-change author must review the exact final SHA and close P0/P1 findings.
-
-The PR remains Draft until both are completed or explicitly dispositioned by the
-Owner with evidence and bounded risk rationale.
-
-## Product/runtime P0 gates
-
-1. **Product evidence (#14):** primary user, anti-persona, one top read-only task
-   and falsifiable go/pivot/stop result.
-2. **ADR-003 (#13):** representative endpoint, CORS, auth, redirect, DNS/private
-   network and deployment evidence.
-3. **ENG-01 contract:** selected MCP revision, signed schemas/types, fixtures,
-   limits and deterministic conformance flow.
-4. **ADR-004 (#7):** framework/build/browser and capability-budget decision after
-   gates 1–3.
-
-## Runtime and release work not implemented
-
-- TypeScript browser application and MCP adapter;
-- endpoint manifest and runtime policy synchronization;
-- DNS/redirect/private-network enforcement;
-- real capability negotiation and bounded read-only request;
-- OAuth/credential implementation and token-passthrough prohibition tests;
-- hostile MCP corpus and browser exfiltration/injection E2E;
-- sensitive-data sink tests;
-- Permissions-Policy/COOP/COEP supported-browser compatibility matrix;
-- scoped WCAG 2.2 evaluation;
-- release artifact provenance and contract verifier;
-- bit-for-bit reproducible application build and independent digest comparison;
-- staging, raw-wire edge-header verification, monitoring, rollback and incident
-  exercises;
-- Privacy Notice and Accessibility Statement derived from actual behavior.
+1. keep the repository/document consistency gate required;
+2. freeze the T1 package/update interface without selecting a container prematurely;
+3. extend the initial TUF harness with raw parsing, delegated publishers,
+   differential evidence and atomic persistence/activation;
+4. implement the package verifier only after the exact container/signed-byte decision;
+5. build an Electron compatibility harness with no native bridge and an outer
+   Linux null-egress experiment;
+6. admit no third-party package and make no T3 claim before independent security evidence.
 
 ## Production-readiness statement
 
-APP-01 is **not production-ready** and is not a functioning MCP web client.
-Draft PR #17 raises the quality and auditability of the static repository
-foundation; it does not satisfy governance enforcement, product, contract,
-runtime, deployed-browser, accessibility, reproducible release or operational
-gates required for a production claim.
-
-The next correct execution order is:
-
-```text
-#18 branch/ruleset enforcement + #20 independent final-head review
-  -> merge static foundation if approved
-  -> #14 product evidence
-  -> #13 / ADR-003 endpoint spike and decision
-  -> signed/pinned ENG-01 contract + conformance
-  -> #7 / ADR-004 stack and capability-budget spike
-  -> secure TypeScript bootstrap
-  -> mock then real read-only vertical slice
-  -> browser/privacy/accessibility/security verification
-  -> reproducible build, staging, provenance, rollback and incident gate
-```
+`browser` is not production-ready and is not a functioning browser runtime. The
+current evidence supports claims about static policy enforcement, the accepted CWAP
+manifest subset and the bounded in-memory TUF spike only. It does not support
+claims that foreign content is safely executed, updates are secure or user data is
+protected in a deployed product.

@@ -1,146 +1,127 @@
 # ADR-007 — Signed Offline Package Evaluation
 
-- Status: PROPOSED
+- Status: PROPOSED, with Track-B manifest sub-decision accepted
 - Date: 2026-07-14
+- Updated: 2026-07-28
 - Depends on: ADR-005
+- Related: ADR-007a, ADR-009, issues #24, #25 and #30
 - Decision owner: Marco
 
-This ADR remains PROPOSED: it defines the two-track verifier spike and does not
-select a package format. ADR-005 (ACCEPTED) makes T3 (arbitrary foreign content)
-the target state; because foreign publishers then need verifiable provenance, the
-`.swbn`/IWA track (Track A) gains weight relative to the T1-oriented minimal
-manifest (Track B). Both tracks remain in the spike; nothing is decided here.
+## Context
 
-## Correction of prior recommendations
+T1 requires owner-controlled offline applications to have deterministic identity and
+verifiable provenance. T2 additionally requires publisher admission and capability
+governance. T3 may need compatibility with foreign packaging and browser semantics.
+These are related but distinct decisions.
 
-Two premature conclusions are rejected:
+A package signature answers only whether exact signed bytes were authorized by a
+key. It does not establish publisher admission, code safety, capability approval,
+update freshness or runtime isolation.
 
-1. `.swbn`/IWA is not automatically the product's v1 format merely because it is
-   the strongest current reference model.
-2. A new project-specific ZIP format is not automatically simpler or safer; it
-   creates a new parser, canonicalisation, key-rotation and update ecosystem.
+## Current decision state
 
-The decision is therefore a measured two-track verifier spike.
+The **canonical-manifest representation** from Track B is accepted:
+`CWAP-Strict-JSON v0.1.2` is a restricted-domain canonical JSON profile with
+owner-approved error precedence and differential/oracle evidence.
 
-## Track A — Signed Web Bundle / IWA compatibility
+This acceptance does **not** select a container or complete a package verifier. The
+following remain open:
 
-Evaluate:
+- the exact package container and on-wire grammar;
+- which bytes are signed and hashed;
+- app identity and publisher-key binding;
+- parser/verifier implementation and resource limits;
+- safe extraction, staging, activation and recovery;
+- publisher admission and capability approval;
+- secure update metadata and key recovery.
 
-- parsing the Web Bundle and integrity block;
-- Ed25519 and ECDSA P-256 verification;
-- deterministic extraction or resource serving;
-- bundle identity derivation;
-- duplicate resource and canonical URL handling;
-- malformed CBOR, oversized lengths and decompression/resource limits;
-- update continuity and signing-key loss/rotation behaviour;
-- availability and maintenance of Go, Node and experimental Rust tooling.
+## Architectural separation
 
-Important boundaries:
+The implementation must preserve five independent outcomes:
 
-- `.swbn` is signed, not encrypted; the runtime verifies and serves resources.
-- Using `app://` does not reproduce the browser-enforced `isolated-app://` origin,
-  storage, CSP, cross-origin isolation or permission semantics.
-- A custom host must explicitly implement every guarantee it claims.
-- IWA's initial product availability remains managed-ChromeOS/selected-partner
-  oriented; interoperability value does not equal cross-platform consumer
-  readiness.
-- Signed HTTP Exchanges (SXG) are a *different* specification from IWA Signed Web
-  Bundles (`.swbn`): SXG tooling is not evidence of an `.swbn`/IWA verifier and
-  must not be substituted for one (ChatGPT cross-family correction 2026-07-15).
-- Track A pins an exact Web Bundle / Integrity Block spec revision and exact
-  verifier tool versions (Go/Node/Rust) before any conformance claim; "latest"
-  is not a spec.
+1. `package-integrity-valid` — exact package identity and signature verified;
+2. `publisher-admitted` — the key/publisher is authorized for the namespace;
+3. `code-reviewed` — review and test evidence satisfies the trust class;
+4. `capability-approved` — exact grants are approved for this package/version;
+5. `update-authorized` — metadata proves freshness, consistency and authority.
 
-## Track B — Minimal manifest-root package
+No state implies another.
 
-Prototype only as a comparison baseline. Requirements:
+## Candidate tracks
 
-- archive bytes are not the identity;
-- one canonical manifest representation;
-- every payload path, size, media type and digest is bound by the signature;
-- standard cryptography only;
-- unknown critical fields fail closed;
-- path traversal, absolute paths, symlinks, device files, duplicate paths,
-  Unicode/case collisions and undeclared files are rejected;
-- resource, file-count and compression limits are enforced before extraction;
-- publisher trust, revocation, key rotation, downgrade prevention and rollback are
-  specified independently of signature verification.
+### Track A — Signed Web Bundle / IWA compatibility
 
-## Test corpus
+Evaluate a pinned Signed Web Bundle and Integrity Block revision with exact tool
+versions. Measure parsing, signature verification, bundle identity, duplicate
+resource handling, canonical URLs, limits, key rotation and resource serving.
 
-Both tracks must consume the same adversarial corpus:
+Track A is a reference architecture and interoperability candidate. A custom host
+must not claim Chrome's `isolated-app://` origin, storage, CSP, isolation, permission
+or update guarantees unless it independently implements and tests them.
 
-- valid package and valid update;
-- modified payload after signing;
-- modified manifest;
-- duplicate/colliding paths;
-- `..`, absolute, UNC and reserved Windows paths;
-- Unicode normalization and case-fold collisions;
-- truncated and oversized structures;
-- unsupported algorithms and versions;
-- old-version replay and unauthorized signing key;
-- permission expansion without explicit approval;
-- interrupted installation and rollback.
+### Track B — Project-controlled package
+
+The accepted manifest core may be combined with a project-controlled container only
+when the complete package format is smaller and more auditable than Track A.
+Candidates include a canonical single-pass archive such as NAR and a tightly
+restricted ZIP profile. The shared corpus must falsify each candidate rather than
+selecting one by preference.
+
+Track B requires the consolidated controls in ADR-007a.
+
+### Track C — Secure update metadata
+
+Track C is specified separately in ADR-009. The package format and update metadata
+must remain separable: a package can be immutable and correctly signed while an
+update is stale, rolled back, unauthorized or inconsistent.
+
+## Shared adversarial corpus
+
+Every container/verifier candidate must handle or reject:
+
+- payload or manifest modification after signing;
+- ambiguous, duplicate, colliding or undeclared paths/resources;
+- malformed, truncated, unsupported and recursively nested structures;
+- excessive counts, sizes, ratios, allocation and execution time;
+- path traversal, absolute/UNC/device/ADS/reparse/symlink cases;
+- Unicode normalization, case-fold and filename-source differentials;
+- unsupported or downgraded algorithms and versions;
+- unauthorized key, namespace crossover and app-id substitution;
+- capability expansion hidden in an update;
+- old-version replay, freeze, mix-and-match and rollback;
+- interrupted installation, partial activation and failed cleanup;
+- parser/verifier disagreement across independent implementations.
 
 ## Decision criteria
 
-Prefer `.swbn` if the chosen runtime can verify and serve it with a maintained,
-auditable implementation and without falsely claiming Chrome's IWA enforcement.
-Prefer a minimal format only if the `.swbn` path creates materially greater
-complexity and the new format's specification, parser, fuzz corpus, rotation and
-update model can be independently audited.
+Select a package path only when it:
 
-No format is accepted before the spike. The label "de-facto standard" is not a
-substitute for supported consumer implementations and maintained verifier code.
+- has an exact, versioned specification and deterministic identity;
+- minimizes parser differential and malleability surface;
+- has at least two independent verifier implementations or a justified equivalent;
+- survives the shared adversarial corpus and coverage-guided fuzzing;
+- supports bounded verification before extraction;
+- supports atomic activation, last-good rollback and key recovery;
+- can be maintained and patched within the project's staffing model;
+- does not imply unimplemented host/runtime guarantees.
 
-## Primary-source landscape (Quella 2026-07-16)
+Performance cannot compensate for an accepted malicious package, verifier memory
+safety failure, namespace crossover, rollback, freeze bypass or unauthorized
+capability expansion.
 
-This ADR stays **PROPOSED**; the review below focuses the two-track spike and decides
-nothing. Confidence markers carried over honestly.
+## Deliverables before acceptance
 
-- **IWA / `.swbn` is 2026-confirmed Enterprise/ChromeOS-only** — the initial release
-  and its high-trust APIs are available only to Chrome-Enterprise-administered ChromeOS
-  devices and select development partners; unmanaged cross-platform expansion is
-  "in the future" with **no date**. It is **not** a portable cross-platform format in
-  2026. The format's building blocks are: Ed25519 or ECDSA P-256 signatures →
-  Web-Bundle-ID → app identity; `isolated-app://` origin bound to the signing key
-  (not a domain); Integrity Block updated to **v2** (v1 bundles no longer installed
-  since ~M129). Architecturally this is the right model; interoperability value today
-  is low, reference-architecture value high. `[strong evidence]`
-- **Pragmatically best T1 solution today (recommendation, not decision):** an
-  **Electron bundle + an own signed Ed25519 / Merkle-SHA256 manifest** (over the root
-  hash) **+ OS code-signing** of the bundle, reproducing the IWA *semantics*
-  (key-bound app identity, signed offline package) without waiting for IWA's immature
-  cross-platform delivery. Ship this as T1; **observe IWA/`.swbn` as the target
-  architecture**, do not ship it in 2026. `[building blocks strong; overall
-  recommendation plausible]` — this is a recommendation for the spike to test, not an
-  accepted decision.
-- **Honest gaps to close before STABLE (carried from Quella):** Electron
-  `asar integrity` and the Tauri updater signature model were documented from
-  secondary snippets, not primary-fetched this session — look them up in the primary
-  docs before any STABLE claim. IWA v1-deprecation timing (M129) is plausible but
-  should be reconfirmed against the Chromium source before it is load-bearing.
+- [x] canonical manifest sub-profile accepted and promoted;
+- [ ] exact candidate specifications, versions, dependencies and licenses pinned;
+- [ ] property-parity matrix for Track A;
+- [ ] shared corpus versioned and hashed;
+- [ ] independent differential and fuzz evidence;
+- [ ] signed-byte, identity and publisher-key model;
+- [ ] safe extraction, activation and interruption recovery evidence;
+- [ ] ADR-009 update-security decision and tests;
+- [ ] publisher admission and capability-governance decision;
+- [ ] independent security review;
+- [ ] owner records selected/rejected tracks and residual risk.
 
-Primary sources (from the Quella 2026-07-16 deliverable):
-
-- IWA / `.swbn`: <https://developer.chrome.com/docs/iwa/introduction> ·
-  <https://chromeos.dev/en/tutorials/getting-started-with-isolated-web-apps/2>
-- Signing/identity building blocks: IWA Introduction (Ed25519/ECDSA-P256,
-  `isolated-app://`, Integrity Block v2), primary-fetched 2026-07-16.
-
-## Deliverables
-
-- [ ] exact parser/verifier dependencies and licenses
-- [ ] conformance and fuzz results
-- [ ] package identity and publisher trust policy
-- [ ] update, rollback, revocation and key-rotation model
-- [ ] resource-limit policy
-- [ ] independent security review
-
-## Amendments
-
-- 2026-07-16 — [Cross-family verifier hardening requirements](ADR-007-amendment-cross-family-verifier-hardening-2026-07-16.md)
-  (Gemini deep review + ChatGPT gates, vetted). Normative REJECT rules for the #24 spike:
-  ZIP anti-malleability (comment/ZIP64/encryption/SFX bans, CDH↔LFH consistency, overlap detection),
-  RFC 8785 canonicalization (UTF-16 key sort, float ban), Ed25519 strict (SUF-CMA), TOCTOU/atomic-staging/
-  path-containment, and the mandatory Python↔Rust differential-test gate.
+No package format or production verifier is accepted while any required item remains
+open.

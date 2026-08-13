@@ -1,102 +1,101 @@
 # ROADMAP — `browser`
 
-> Scope: only `marcohost33-maker/browser`. **Product reframed 2026-07-14:**
-> `browser` is a native, offline-capable browser/webapp **runtime program** that
-> runs foreign web apps locally (staged T1 → T2 → T3; north star **T3**), replaces
-> cloud hosting and runs without an AI layer. `browser` is **standalone** (ADR-008,
-> 2026-07-16): `nigin-engine` and `browser-nigin` are separate, independent
-> repositories linked only by knowledge transfer (not dependencies). Binding reframe
-> record: **ADR-005/006/007** (PR #22). The "MCP client webapp" wording below is
-> superseded product framing; the milestone/gate discipline is retained. This
-> repository is not `browser-nigin` and not `nigin-engine`.
+- Updated: 2026-07-28
+- Scope: only `marcohost33-maker/browser`
+- Product: standalone native offline web-application runtime
+- Delivery order: T1 → T2 → T3; T1 first release, T3 north star
 
-## M0 — Charter and scope — COMPLETE
+## M0 — Repository and evidence foundation — COMPLETE
 
-- [x] APP-01/ENG-01 boundary and non-goals.
-- [x] Active Charter and source-of-truth map.
-- [x] Historical engine-track material retained as provenance only.
+- [x] Standalone repository boundary and non-goals (ADR-008).
+- [x] Staged trust classes (ADR-005).
+- [x] Static CSP/header/origin enforcement and regression tests.
+- [x] Supply-chain, SBOM, evidence and repository-governance foundation.
+- [x] Local CI-parity gate.
+- [x] CWAP-Strict-JSON v0.1.2 canonical-manifest core promoted for ADR-007 Track B.
+- [x] ADR identity and local-link consistency gate added.
 
-## M1A — Product and architecture gates
+## M1 — Decide the smallest T1 product
 
-- [x] ADR-001: browser application and enforcement boundaries. **SUPERSEDED by ADR-005** (enforcement-boundary substance retained).
-- [x] ADR-002 accepted target design: signed/provenanced contract input (producer-neutral; no external `nigin-engine` producer assumed, ADR-008).
-- [x] Product-discovery protocol prepared for #14 (to be re-scoped to the runtime product).
-- [x] ADR-003 proposed: curated endpoint, CORS and deployment model. **SUPERSEDED by ADR-005** (network-security substance retained in `docs/security/*`).
-- [ ] Execute #14 and record go/pivot/stop evidence.
-- [ ] Complete representative endpoint/CORS/auth spike and accept ADR-003 (#13).
-- [ ] (Optional, off the T1 critical path) Verify any signed MCP contract `browser` chooses to consume — sourced internally or from any signed producer; no external `nigin-engine` blocker (ADR-008).
-- [ ] Complete ADR-004 framework/build/browser spike (#7).
+- [ ] Execute product discovery #14: primary user, anti-persona, top task and go/pivot/stop result.
+- [ ] Complete acquisition-mode taxonomy #30.
+- [ ] Select the exact T1 install/use workflow: manual offline sideload is mandatory;
+  updates remain optional and fully disableable.
+- [ ] Define the T1 shell UX, consent, recovery and evidence surfaces without
+  encoding a T2/T3 promise.
 
-**Gate M1A:** no real MCP runtime, OAuth implementation or dynamic endpoint
-support before product, ADR-003 and contract evidence pass.
+**Gate M1:** one falsifiable T1 workflow and no unresolved ambiguity between
+package installation, captured content, PWA installation and remote browsing.
 
-## M1B — Secure repository and application foundation
+## M2 — Package identity, verification and activation
 
-Implemented or included in PR #17:
+- [x] Canonical manifest representation and reject precedence (Track-B part).
+- [ ] Select or reject `.swbn`, NAR, ZIP-minimal and other candidates using one
+  shared adversarial corpus (#24).
+- [ ] Pin exact package specification, parser/verifier versions and licenses.
+- [ ] Define signed bytes, app identity, publisher-key binding and algorithm set.
+- [ ] Implement independent verifiers and differential/fuzz gates.
+- [ ] Enforce file-count, byte, ratio, nesting, path and time limits before allocation/extraction.
+- [ ] Implement content-addressed staging, same-volume atomic activation, last-good
+  rollback and interruption recovery.
 
-- [x] Node 22 security-policy core with no runtime dependencies.
-- [x] Complete fail-closed CSP/security-header policy and regression suite.
-- [x] HTTPS production origins; loopback-only HTTP development origins.
-- [x] Deterministic npm lockfile and `npm ci --ignore-scripts` gate.
-- [x] Security, documentation and workflow-security CI.
-- [x] SPDX SBOM artifact generation in CI.
-- [x] CODEOWNERS, SECURITY.md, Dependabot cooldowns and PR template.
-- [x] MIT license matching package metadata.
+**Gate M2:** zero accepted malicious corpus cases, zero verifier disagreement and
+successful recovery for every injected interruption.
 
-Still required after ADR-004:
+## M3 — Secure update metadata
 
-- [ ] Strict TypeScript webapp bootstrap and pinned build toolchain.
-- [ ] Lint, format, typecheck, unit, integration and browser E2E harnesses.
-- [ ] Secret scanning, dependency review and appropriate SAST.
-- [ ] Contract verification workflow and contract lock.
-- [ ] Release artifact provenance and reproducibility evidence.
-- [ ] Enforced branch protection/ruleset with required checks and code-owner
-  review.
-- [ ] No baseline telemetry, ads, remote fonts or unnecessary CDNs.
+- [x] Implement an initial dependency-free top-level-role offline verification
+  harness with adversarial rollback/freeze/mix-and-match/capability tests.
+- [ ] Ratify or reject ADR-009 after the complete measured TUF v1.0.35 spike.
+- [ ] Define root, targets/delegations, snapshot and timestamp roles and thresholds.
+- [ ] Keep package identity, publisher admission, capability approval and update
+  authority separate.
+- [ ] Implement rollback, freeze, mix-and-match, wrong-target, endless-data,
+  key-rotation and revocation tests.
+- [ ] Support offline update bundles and a fully disabled-update mode.
+- [ ] Require explicit re-consent for capability expansion.
 
-## M1C — Privacy-first read-only vertical slice
+**Gate M3:** no rollback, freeze, mix-and-match, namespace crossover or unauthorized
+capability escalation is accepted.
 
-Blocked by M1A:
+## M4 — Runtime compatibility and isolation
 
-- [ ] Select only an endpoint present in deployment policy.
-- [ ] Display endpoint URL, canonical origin, operator, trust tier and protocol.
-- [ ] Initialize and negotiate capabilities through the MCP adapter.
-- [ ] Treat capability metadata and remote content as untrusted.
-- [ ] Approve exactly one bounded read-only request with visible arguments.
-- [ ] Enforce cancellation, timeout, byte, depth, item and render limits.
-- [ ] Validate and safely render result data.
-- [ ] Normalize transport, protocol, auth, timeout, cancellation and schema
-  errors.
-- [ ] Clear credentials and sensitive state from memory, URL, caches, DOM and
-  diagnostics.
-- [ ] Keep selectable endpoints, full endpoint URLs and served CSP origins
-  synchronized by construction.
+- [ ] Execute #23 with exact versions and reproducible fixtures.
+- [ ] Use Electron as the pragmatic T2 compatibility/harness baseline.
+- [ ] Record CEF exit criteria; evaluate it only when Electron fails a measured
+  requirement.
+- [ ] Reject a project-owned Chromium fork unless staffing and patch-SLA evidence
+  changes materially.
+- [ ] Enforce one package per process tree and per ephemeral profile/storage partition.
+- [ ] Default-deny navigation, popups, downloads, external protocols, permissions,
+  service workers and native bridges.
+- [ ] Build an outer Linux sandbox/namespace/VM null-egress experiment with OS-level
+  network deny, cgroup limits and independent observation.
 
-## M1D — Verification and release gate
+**Gate M4-T2:** curated signed content runs with no native bridge and bounded
+persistence. **Gate M4-T3:** hostile content is contained by a separately reviewed
+outer boundary; an Electron/CEF window alone never satisfies T3.
 
-- [ ] Contract positive and negative conformance suite.
-- [ ] Malformed, duplicate, late and out-of-order JSON-RPC tests.
-- [ ] Capability drift, replay, injection, oversize and redirect tests.
-- [ ] Browser exfiltration and prompt/content-injection E2E (#11).
-- [ ] Sensitive-data canary test for storage, history, DOM, console and exports.
-- [ ] Automated plus manual WCAG-2.2-oriented critical-flow evaluation.
-- [ ] Implementation-derived data flow, Privacy Notice and Accessibility
-  Statement.
-- [ ] Staging deployment of an attested artifact.
-- [ ] Monitoring, support, rollback, cache invalidation and incident tabletop.
+## M5 — Publisher and capability governance
 
-**Gate M1:** all required evidence linked; no P0 or unowned P1; contract and
-endpoint policy pinned; consent cannot be bypassed; browser, privacy,
-accessibility, security, supply-chain and rollback tests pass.
+- [ ] Complete #25 publisher admission, namespace ownership and review lifecycle.
+- [ ] Use declarative, versioned, least-privilege capability grants.
+- [ ] Bind every grant to package identity, version and evidence record.
+- [ ] Implement emergency removal, revocation, support expiry and re-review.
+- [ ] Prevent signature validity from implying admission or capability approval.
 
-## M2 — Separate ADR required
+## M6 — Verification and release
 
-OAuth expansion, PWA/service worker, persisted endpoints, arbitrary remote
-endpoints, local MCP servers, write tools, sampling, elicitation, marketplace
-features and autonomous execution each require a separate product, architecture
-and threat-model decision.
+- [ ] Hostile package, updater and browser E2E corpora (#5, #11).
+- [ ] Privacy sink/canary tests and implementation-derived data-flow documentation.
+- [ ] Keyboard, screen-reader and WCAG-oriented critical-flow evaluation.
+- [ ] Reproducible signed release artifacts and independent digest comparison.
+- [ ] Staging, monitoring, rollback, cache invalidation, incident and key-loss drills.
+- [ ] Complete SECURITY.md, privacy notice, accessibility statement and support policy (#6).
 
-## Explicitly outside APP-01
+## Explicit exclusions
 
-Wasmtime host, WIT ownership, WASI guest/host, CAS, engine fabric, solver and
-orchestrator.
+- `nigin-engine` and `browser-nigin` are not dependencies.
+- MCP is optional and off the T1 critical path.
+- No public claim that T3 is achieved by Chromium sandboxing alone.
+- No package format, updater or publisher is trusted because it is popular or signed.
