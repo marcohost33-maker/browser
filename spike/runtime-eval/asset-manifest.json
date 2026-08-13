@@ -1,0 +1,13 @@
+{
+  "schema": "runtime-eval-asset-manifest/v1",
+  "algorithm": "sha256",
+  "assetCount": 5,
+  "aggregate": "59cc2ac145f149e3531a82e3456552394cfdc0cf908d346a5cf6e745499243ce",
+  "assets": {
+    "app.mjs": "35628d9e3f1dd53e2ff910f3e5e66ee11cefc2233737cfbcc6fbb29e43f783e2",
+    "index.html": "c7ac0fc9c9e90a7d61159c136c9b8ff3219a2d553f50570f6c6962ed6ea3cddc",
+    "probe-module.mjs": "c4bdd4a36528b5f7898b6e7303cc0dff980ac4542e681862e7c64f099e281c40",
+    "style.css": "c1645b373a395ecde29afec93d3b1c0c6ed83f80af267a71cb60e5bd74377218",
+    "sw.js": "43cf7372b591ba5c06cf651a849f7b5d856f7134e3a6d924fe511170f13ca693"
+  }
+}

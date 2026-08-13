@@ -1,0 +1,26 @@
+/* Static, deterministic styling for the runtime-evaluation payload.
+   No @import, no url() network fetches (connect-src 'none' forbids them). */
+:root { color-scheme: light dark; }
+body {
+  font: 14px/1.5 system-ui, sans-serif;
+  margin: 0;
+  padding: 1.5rem;
+}
+main { max-width: 60rem; margin: 0 auto; }
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.05rem; margin-top: 1.5rem; }
+#status[data-state="running"] { color: #8a6d00; }
+#status[data-state="done"] { color: #0a5a0a; }
+#status[data-state="error"] { color: #a30000; }
+table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+th, td { border: 1px solid #8886; padding: 4px 8px; text-align: left; vertical-align: top; }
+th { background: #8882; }
+td.status-PASS { color: #0a5a0a; font-weight: 600; }
+td.status-BLOCKED { color: #005a8a; font-weight: 600; }
+td.status-FAIL { color: #a30000; font-weight: 700; }
+td.status-READY { color: #6a4a00; font-weight: 600; }
+td.status-SKIP { color: #666; }
+pre#results-json {
+  background: #8881; border: 1px solid #8884; padding: 8px;
+  overflow: auto; white-space: pre-wrap; word-break: break-word;
+}

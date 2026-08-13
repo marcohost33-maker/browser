@@ -15,8 +15,12 @@
   "globs": [
     "**/*.md"
   ],
+  // `node_modules` alone only matches the repository-root directory. Isolated
+  // spikes carry their own dependency trees (for example the ADR-006 Electron
+  // harness required by the Issue #11 E2E probe), and linting vendored README
+  // files of third-party packages produces hundreds of irrelevant findings.
   "ignores": [
-    "node_modules",
-    ".git"
+    "**/node_modules",
+    "**/.git"
   ]
 }
