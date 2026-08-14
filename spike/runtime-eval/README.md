@@ -104,15 +104,53 @@ Each harness (Electron/CEF/WebView2/Tauri) is a thin native shell that:
 
 ### Reading `window.__spikeResults`
 
+Iterate the **assertion set**, never the list the payload happened to return
+(issue #41 P1): a probe the payload omits must surface as `MISSING`, otherwise
+every remaining entry is "expected", the deviation count stays 0, and the
+harness reports success for a security control it never exercised.
+
 ```js
 // inside the harness, after the page signals done (#status[data-state=done]):
 const results = await webContents.executeJavaScript('window.__spikeResults'); // Electron example
-for (const probe of results.probes) {
-  const rule = assertions.probes[probe.id];
-  const ok = rule && rule.expected.includes(probe.status);
-  record(candidate, probe.id, probe.status, ok ? 'as-expected' : 'DEVIATION');
+const byId = new Map((results?.probes ?? []).map((p) => [p.id, p]));
+for (const [id, rule] of Object.entries(assertions.probes)) {
+  const probe = byId.get(id);
+  if (!probe) {                       // control never exercised != control passed
+    record(candidate, id, 'MISSING', 'NOT-MEASURED');
+    continue;
+  }
+  const ok = rule.expected.includes(probe.status);
+  // The category comes from assertions.json, never from the payload, so a
+  // payload cannot relabel a security negative into a harmless category.
+  record(candidate, id, probe.status, ok ? 'as-expected' : 'DEVIATION', rule.category);
 }
 ```
+
+### Exit-code contract (Electron harness, issue #41)
+
+A run may only report `HARNESS_EXIT=0` when every control it claims to measure
+was demonstrably exercised **and** passed. "Not measured" gets its own code so
+it can never be read as a pass:
+
+| code | meaning |
+|---|---|
+| 0 | every claimed control was exercised and passed |
+| 1 | a control was exercised and **FAILED** |
+| 2 | harness crash |
+| 3 | watchdog timeout (180 s) |
+| 4 | **NOT MEASURED** — a control was absent, incomplete or inconclusive |
+| 5 | payload byte lock not satisfied; nothing was measured |
+
+Precedence when several apply: 5 > 1 > 4 > 0. The rules live in
+`harness/electron/harness-lib.js` (Electron-free on purpose) and are tested by
+`tests/spike/adr006-harness.test.js`.
+
+**Provenance note.** `harness/electron/RESULTS_WINDOWS_2026-07-22.md` was
+produced by the **pre-#41** harness, which could exit 0 on an unexercised
+control. It is kept unchanged as historical evidence; it is not a result of the
+hardened harness, and the ADR-006 Windows row should be re-measured before it is
+cited as settled. New runs write `RESULTS_<PLATFORM>_<run-date>.md` and never
+overwrite an existing document.
 
 ## Measurement TODO hooks (harness-owned, ADR-006 *Measurements*)
 

@@ -6,7 +6,20 @@
   "type": "commonjs",
   "main": "main.js",
   "scripts": {
+    "verify:payload": "node ../../verify-determinism.mjs",
+    "prestart": "npm run verify:payload",
     "start": "electron ."
+  },
+  "harnessContract": {
+    "byteLock": "issue #41 P1: the payload byte lock runs BEFORE any measurement. npm start chains it via prestart, and main.js additionally runs verify-determinism.mjs in-process so invoking `electron .` directly cannot bypass it (exit 5).",
+    "exitCodes": {
+      "0": "every claimed control was exercised and passed",
+      "1": "a control was exercised and FAILED",
+      "2": "harness crash",
+      "3": "watchdog timeout (180s)",
+      "4": "NOT MEASURED — a claimed control was absent, incomplete or inconclusive",
+      "5": "payload byte lock not satisfied; nothing was measured"
+    }
   },
   "engines": {
     "note": "Repo root requires Node 22.23.1 for its CSP/security tests. This harness is a separate, framework-neutral spike and does NOT go through that toolchain gate. It was driven by the local Node 24.17.0 launcher; the renderer/main run inside Electron 43.2.0's own bundled Node 22.x / Chromium."
