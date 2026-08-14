@@ -309,13 +309,20 @@ async function measureExternalProtocolOs() {
     return { verdict: 'INCONCLUSIVE', detail: 'process table unavailable — no OS-level observation was possible', probed };
   }
 
-  const openBefore = hostLevel.windowOpenDenied;
-  const navBefore = hostLevel.externalNavDenied;
   const attempts = [];
   let win = null;
+  let openBefore = hostLevel.windowOpenDenied;
+  let navBefore = hostLevel.externalNavDenied;
   try {
     win = makeWindow();
     await win.loadURL('app://local/index.html');
+    // Let the page's own probes finish FIRST, then take the counters. The
+    // payload runs a popup and an external_protocol probe on load; counting
+    // from before that would let the page's own window.open satisfy the
+    // "was it exercised?" control instead of the attempts made here.
+    await waitForDone(win.webContents, 20000);
+    openBefore = hostLevel.windowOpenDenied;
+    navBefore = hostLevel.externalNavDenied;
     for (const p of probed) {
       const u = JSON.stringify(p.url);
       let opened = 'no-result';
