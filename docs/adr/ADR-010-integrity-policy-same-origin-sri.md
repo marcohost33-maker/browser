@@ -77,6 +77,33 @@ unverified one.
 hash-and-substitute step, but it is a real build-pipeline requirement that did not
 exist before, and it lands on whoever introduces the first script.
 
+**Measured constraint — a correct hash alone is not enough (issue #40).** Observed on
+Electron 43.2.0 / Chromium while making the issue #11 exfil probe actually execute
+(PR #39): under `blocked-destinations=(script style)` a **same-origin** script carrying
+a **valid** SHA-256 `integrity` attribute is still refused. It executes only when the
+request is additionally made in CORS mode:
+
+```html
+<!-- blocked, despite a valid hash -->
+<script src="app.js" integrity="sha256-..."></script>
+
+<!-- executes -->
+<script src="app.js" integrity="sha256-..." crossorigin="anonymous"></script>
+```
+
+This is a property of the policy adopted here, not of the test fixture. **Every
+same-origin script and stylesheet in a future T1 application must therefore be loaded
+in CORS mode with integrity metadata**, and anything that generates or packages T1
+application HTML must emit both the hash *and* `crossorigin`, keeping the hash in sync
+with the bytes it ships.
+
+The dangerous part is the failure mode, not the requirement: refusal is **silent**.
+There is no CSP-violation event and no console error attributable to the cause. In the
+probe it presented as a payload that simply never ran — which let a downstream
+discrimination test pass vacuously, because "did not execute" and "executed and was
+blocked" produced the same observable. Any harness relying on this policy must be able
+to tell those two apart before it reports a result.
+
 **Rejected alternative — `Integrity-Policy-Report-Only` first.** The usual advice is
 to stage a new enforcing header through report-only. It is rejected here because the
 app has **zero** scripts and styles today: there is nothing to break, so there is
@@ -103,3 +130,7 @@ the policy is in force — then the ordering advice applies again.
 - Whether a future build step emits SRI hashes automatically or fails the build when
   an asset lacks one is an implementation decision for the first script-shipping
   change, not for this ADR.
+- The CORS-mode requirement recorded above lands in the package/verifier work
+  (issue #24), which is where hash-to-bytes binding is actually implemented. That work
+  must emit `crossorigin` alongside the hash; emitting only the hash produces assets
+  that fail silently at runtime.
