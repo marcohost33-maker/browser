@@ -11,7 +11,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, cpSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -48,11 +49,28 @@ function goodFixtures() {
 
 const REQUIRED_FIXTURES = ['navigateExternal', 'triggerDownload', 'crash', 'hang'];
 
+// PR#42 P1: the host-level assertions of the contract are required too. The
+// list is derived from assertions.json, exactly as main.js derives it.
+const REQUIRED_HOST_ASSERTIONS = Object.keys(ASSERTIONS.hostLevelAssertions);
+
+function goodHostAssertions() {
+  const out = {};
+  for (const k of REQUIRED_HOST_ASSERTIONS) out[k] = PASS(`${k} observed at host level`);
+  return out;
+}
+
+// A warm load whose window.__spikeResults were read and compared.
+function goodWarmProbes() {
+  return { ran: true, deviations: 0, missing: [] };
+}
+
 function runVerdict(overrides = {}) {
   const results = 'results' in overrides ? overrides.results : goodResults();
   const report = lib.compareProbes(ASSERTIONS.probes, results);
   return lib.evaluateRun({
     byteLock: { ok: true, detail: 'ok' },
+    contractLock: { ok: true, detail: 'assertions.json sha256 matches' },
+    sessionMode: 'in-memory-partition',
     ran: report.ran,
     deviations: report.deviations,
     missing: report.missing,
@@ -60,8 +78,11 @@ function runVerdict(overrides = {}) {
     egressBlockedExternal: 0,
     coldDoneState: 'done',
     warmDoneState: 'done',
+    warmProbes: goodWarmProbes(),
     fixtures: goodFixtures(),
     requiredFixtures: REQUIRED_FIXTURES,
+    hostAssertions: goodHostAssertions(),
+    requiredHostAssertions: REQUIRED_HOST_ASSERTIONS,
     ...overrides,
   });
 }
@@ -276,8 +297,198 @@ test('P2: a cold load that never settled is NOT MEASURED too', () => {
   assert.equal(runVerdict({ coldDoneState: 'timeout' }).exitCode, lib.EXIT.NOT_MEASURED);
 });
 
-test('P2: state=error still counts as a completed load (probe FAIL echo)', () => {
-  assert.equal(runVerdict({ warmDoneState: 'error', coldDoneState: 'error' }).exitCode, 0);
+// -------------------------------------------------------------------------
+// PR#42 P1 (harness-lib.js:199) — a warm error state was accepted as complete
+// -------------------------------------------------------------------------
+test('PR42 P1: a warm state=error whose probes deviate forces exit 1, not 0', () => {
+  // The cold load is clean; a state-dependent control fails only on the second
+  // load. Before the fix this was exit 0 with warmDoneState=error in the report.
+  const v = runVerdict({
+    warmDoneState: 'error',
+    warmProbes: { ran: true, deviations: 1, missing: [] },
+  });
+  assert.equal(v.exitCode, lib.EXIT.CONTROL_FAILED);
+  assert.match(v.failed.join('\n'), /warm-run probe deviation/);
+});
+
+test('PR42 P1: a settled warm load whose results were never read is exit 4', () => {
+  for (const state of ['done', 'error']) {
+    const v = runVerdict({ warmDoneState: state, warmProbes: undefined });
+    assert.equal(v.exitCode, lib.EXIT.NOT_MEASURED, `state=${state}`);
+    assert.match(v.notMeasured.join('\n'), /window\.__spikeResults were never read/);
+  }
+});
+
+test('PR42 P1: a warm probe missing from the second load is exit 4', () => {
+  const v = runVerdict({ warmProbes: { ran: true, deviations: 0, missing: ['service_worker'] } });
+  assert.equal(v.exitCode, lib.EXIT.NOT_MEASURED);
+  assert.match(v.notMeasured.join('\n'), /absent from the warm run: service_worker/);
+});
+
+test('PR42 P1: a state=error that no compared probe explains is exit 4, never 0', () => {
+  const warm = runVerdict({ warmDoneState: 'error' });
+  assert.equal(warm.exitCode, lib.EXIT.NOT_MEASURED);
+  assert.match(warm.notMeasured.join('\n'), /warm load reported state=error that no compared probe explains/);
+  const cold = runVerdict({ coldDoneState: 'error' });
+  assert.equal(cold.exitCode, lib.EXIT.NOT_MEASURED);
+  assert.match(cold.notMeasured.join('\n'), /cold load reported state=error that no compared probe explains/);
+});
+
+test('P2: state=error explained by a compared deviation is exit 1 (FAIL echo)', () => {
+  // The old contract accepted this as "completed load" and returned 0.
+  const results = goodResults();
+  results.probes.find((p) => p.id === 'cachestorage').status = 'FAIL';
+  const v = runVerdict({
+    results,
+    coldDoneState: 'error',
+    warmDoneState: 'error',
+    warmProbes: { ran: true, deviations: 1, missing: [] },
+  });
+  assert.equal(v.exitCode, lib.EXIT.CONTROL_FAILED);
+});
+
+// -------------------------------------------------------------------------
+// PR#42 P1 (main.js:495) — the host-level assertions were not required
+// -------------------------------------------------------------------------
+test('PR42 P1: external_protocol_os is part of the required contract set', () => {
+  assert.ok(REQUIRED_HOST_ASSERTIONS.includes('external_protocol_os'));
+});
+
+test('PR42 P1: a missing external_protocol_os verdict cannot exit 0', () => {
+  const host = goodHostAssertions();
+  delete host.external_protocol_os;
+  const v = runVerdict({ hostAssertions: host });
+  assert.equal(v.exitCode, lib.EXIT.NOT_MEASURED);
+  assert.match(v.notMeasured.join('\n'), /host assertion external_protocol_os: NOT-RUN/);
+});
+
+test('PR42 P1: an INCONCLUSIVE OS observation is exit 4, a launched handler is exit 1', () => {
+  const inconclusive = runVerdict({
+    hostAssertions: {
+      ...goodHostAssertions(),
+      external_protocol_os: { verdict: 'INCONCLUSIVE', detail: 'no OS handler registered for any probed scheme' },
+    },
+  });
+  assert.equal(inconclusive.exitCode, lib.EXIT.NOT_MEASURED);
+  const launched = runVerdict({
+    hostAssertions: {
+      ...goodHostAssertions(),
+      external_protocol_os: { verdict: 'FAIL', detail: 'OS handler process launched: mailto->outlook.exe' },
+    },
+  });
+  assert.equal(launched.exitCode, lib.EXIT.CONTROL_FAILED);
+  assert.match(launched.failed.join('\n'), /host assertion external_protocol_os: FAIL/);
+});
+
+test('PR42 P1: every host assertion of the contract is required, not just one', () => {
+  for (const key of REQUIRED_HOST_ASSERTIONS) {
+    const host = goodHostAssertions();
+    delete host[key];
+    assert.notEqual(runVerdict({ hostAssertions: host }).exitCode, 0, key);
+  }
+});
+
+test('PR42 P1: an empty required-host list is not a vacuous pass', () => {
+  for (const empty of [[], undefined, null]) {
+    const v = runVerdict({ requiredHostAssertions: empty, hostAssertions: {} });
+    assert.equal(v.exitCode, lib.EXIT.NOT_MEASURED, String(empty));
+    assert.match(v.notMeasured.join('\n'), /no host-level assertions were required/);
+  }
+});
+
+// -------------------------------------------------------------------------
+// PR#42 P1 (main.js:258) — the byte lock did not cover assertions.json
+// -------------------------------------------------------------------------
+test('PR42 P1: an unlocked assertion contract exits 5 and measures nothing', () => {
+  const v = runVerdict({ contractLock: { ok: false, detail: 'assertions.json: sha256 aaa != committed bbb' } });
+  assert.equal(v.exitCode, lib.EXIT.BYTE_LOCK);
+  assert.deepEqual(v.failed, []);
+  assert.match(v.reasons.join('\n'), /assertion contract lock/);
+});
+
+test('PR42 P1: an absent contract lock is fail-closed (exit 5), not assumed good', () => {
+  assert.equal(runVerdict({ contractLock: undefined }).exitCode, lib.EXIT.BYTE_LOCK);
+});
+
+test('PR42 P1: widening a security probe in assertions.json breaks the contract hash', () => {
+  const manifest = JSON.parse(readFileSync(join(SPIKE_DIR, 'asset-manifest.json'), 'utf8'));
+  const real = readFileSync(join(SPIKE_DIR, 'assertions.json'));
+  const ok = lib.verifyContractLock({ bytes: real, manifest, key: 'assertions.json' });
+  assert.equal(ok.ok, true, ok.detail);
+
+  // The exact attack from the review: allow FAIL for a security negative.
+  const widened = JSON.parse(real.toString('utf8'));
+  widened.probes.native_ipc_zero_grant.expected.push('FAIL');
+  const bad = lib.verifyContractLock({
+    bytes: Buffer.from(JSON.stringify(widened, null, 2)),
+    manifest,
+    key: 'assertions.json',
+  });
+  assert.equal(bad.ok, false);
+  assert.equal(runVerdict({ contractLock: bad }).exitCode, lib.EXIT.BYTE_LOCK);
+});
+
+test('PR42 P1: a manifest without a contracts section cannot satisfy the lock', () => {
+  const real = readFileSync(join(SPIKE_DIR, 'assertions.json'));
+  for (const manifest of [{}, { contracts: {} }, { contracts: { 'other.json': 'x' } }, null]) {
+    const v = lib.verifyContractLock({ bytes: real, manifest, key: 'assertions.json' });
+    assert.equal(v.ok, false, JSON.stringify(manifest));
+  }
+});
+
+test('PR42 P1: the real gate script REFUSES a widened contract (end-to-end, copy of the spike)', () => {
+  // Runs the actual verify-determinism.mjs against an isolated copy: the
+  // payload bytes stay untouched (that was the whole point of the finding) and
+  // only assertions.json is widened by adding FAIL to a security probe.
+  const tmp = mkdtempSync(join(tmpdir(), 'runtime-eval-contract-'));
+  try {
+    for (const entry of ['payload', 'assertions.json', 'asset-manifest.json', 'verify-determinism.mjs']) {
+      cpSync(join(SPIKE_DIR, entry), join(tmp, entry), { recursive: true });
+    }
+    const clean = spawnSync(process.execPath, [join(tmp, 'verify-determinism.mjs')], { encoding: 'utf8' });
+    assert.equal(clean.status, 0, `the untouched copy must pass: ${clean.stderr}`);
+
+    const widened = JSON.parse(readFileSync(join(tmp, 'assertions.json'), 'utf8'));
+    widened.probes.csp_eval.expected.push('FAIL');
+    writeFileSync(join(tmp, 'assertions.json'), `${JSON.stringify(widened, null, 2)}\n`);
+
+    const after = spawnSync(process.execPath, [join(tmp, 'verify-determinism.mjs')], { encoding: 'utf8' });
+    assert.equal(after.status, 1, 'a widened contract must fail the gate');
+    assert.match(after.stderr, /contract hash mismatch: assertions\.json/);
+    assert.doesNotMatch(after.stderr, /hash mismatch: app\.mjs/); // payload untouched
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('PR42 P1: the real gate script locks assertions.json, not only payload/', () => {
+  const manifest = JSON.parse(readFileSync(join(SPIKE_DIR, 'asset-manifest.json'), 'utf8'));
+  assert.ok(manifest.contracts && manifest.contracts['assertions.json'], 'manifest must lock the contract');
+  const gate = readFileSync(join(SPIKE_DIR, 'verify-determinism.mjs'), 'utf8');
+  assert.match(gate, /CONTRACT_FILES/);
+  assert.match(gate, /contracts/);
+});
+
+// -------------------------------------------------------------------------
+// PR#42 P2 (main.js:245) — a failed session clear was measured as "cold"
+// -------------------------------------------------------------------------
+test('PR42 P2: a session whose clear failed is NOT MEASURED (exit 4)', () => {
+  const v = runVerdict({ sessionMode: 'default-session-CLEAR-FAILED (EBUSY)' });
+  assert.equal(v.exitCode, lib.EXIT.NOT_MEASURED);
+  assert.match(v.notMeasured.join('\n'), /not provably cold/);
+});
+
+test('PR42 P2: an unknown or absent session mode is fail-closed', () => {
+  for (const mode of [undefined, null, '', 'default-session', 'persist:whatever', 42]) {
+    assert.equal(runVerdict({ sessionMode: mode }).exitCode, lib.EXIT.NOT_MEASURED, String(mode));
+  }
+});
+
+test('PR42 P2: exactly the two genuinely cold session modes exit 0', () => {
+  assert.deepEqual([...lib.COLD_SESSION_MODES], ['in-memory-partition', 'default-session-cleared']);
+  for (const mode of lib.COLD_SESSION_MODES) {
+    assert.equal(runVerdict({ sessionMode: mode }).exitCode, 0, mode);
+  }
 });
 
 // -------------------------------------------------------------------------
@@ -331,4 +542,23 @@ test('main.js derives its exit code from evaluateRun, not from a local expressio
   assert.match(main, /const verdict = lib\.evaluateRun\(/);
   assert.match(main, /const exitCode = verdict\.exitCode;/);
   assert.doesNotMatch(main, /const exitCode = \(deviations === 0/);
+});
+
+// The four PR#42 findings are all "main.js never hands the observation to the
+// decision". These guards fail if that wiring is removed again; the semantics
+// of each input are covered by the exit-code tests above.
+test('PR42: main.js feeds warm results, host assertions, contract lock and session mode into evaluateRun', () => {
+  const main = readFileSync(join(HARNESS_DIR, 'main.js'), 'utf8');
+  const call = /const verdict = lib\.evaluateRun\(\{([\s\S]*?)\n  \}\);/.exec(main);
+  assert.ok(call, 'evaluateRun call not found');
+  for (const key of ['contractLock', 'sessionMode:', 'warmProbes', 'hostAssertions', 'requiredHostAssertions']) {
+    assert.match(call[1], new RegExp(key.replace('.', '\\.')), `evaluateRun must receive ${key}`);
+  }
+  // The warm page's results are actually read, and the host list comes from the
+  // contract file rather than a hand-written literal.
+  assert.match(main, /warmWin\.webContents\.executeJavaScript\('window\.__spikeResults'\)/);
+  assert.match(main, /lib\.compareProbes\(ASSERTIONS\.probes, warmResults\)/);
+  assert.match(main, /Object\.keys\(ASSERTIONS\.hostLevelAssertions/);
+  assert.match(main, /lib\.verifyContractLock\(/);
+  assert.match(main, /measureExternalProtocolOs/);
 });

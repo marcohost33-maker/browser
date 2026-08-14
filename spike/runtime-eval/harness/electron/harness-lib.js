@@ -24,6 +24,8 @@
 
 'use strict';
 
+const { createHash } = require('node:crypto');
+
 const EXIT = Object.freeze({
   OK: 0,
   CONTROL_FAILED: 1,
@@ -152,21 +154,81 @@ function evaluateFixtures(fixtures, required) {
 }
 
 // ---------------------------------------------------------------------------
+// PR#42 P2 — "a fallback session whose clear failed is still measured as cold"
+// createEvalSession falls back to Electron's PERSISTENT default session when the
+// build exposes no Session#protocol. If clearStorageData()/clearCache() then
+// rejects, the run continued against warmed storage and published a "cold"
+// number. Only these two modes are cold; anything else (including an unknown or
+// missing mode) is NOT MEASURED, never a silent pass.
+// ---------------------------------------------------------------------------
+const COLD_SESSION_MODES = Object.freeze(['in-memory-partition', 'default-session-cleared']);
+
+function sessionIsCold(mode) {
+  return typeof mode === 'string' && COLD_SESSION_MODES.includes(mode);
+}
+
+// ---------------------------------------------------------------------------
+// PR#42 P1 — "the byte lock does not cover the assertion contract"
+// verifyByteLock only covers payload/. assertions.json decides what "expected"
+// means and therefore decides exit 0, but it was unlocked: adding "FAIL" to a
+// security probe's expected[] produced green evidence against a widened
+// contract with the payload bytes untouched. The contract is hashed against the
+// committed asset-manifest.json, in-process, over the very bytes the harness
+// parsed (so a swap between hashing and reading cannot slip through).
+// ---------------------------------------------------------------------------
+function sha256Hex(bytes) {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function verifyContractLock(opts) {
+  const { bytes, manifest, key } = opts;
+  if (bytes === null || bytes === undefined || bytes.length === 0) {
+    return { ok: false, detail: `${key}: no bytes to hash — contract was never read` };
+  }
+  const contracts = manifest && manifest.contracts;
+  const committed = contracts && typeof contracts[key] === 'string' ? contracts[key] : null;
+  if (!committed) {
+    return { ok: false, detail: `${key}: no committed hash (asset-manifest.json has no contracts.${key})` };
+  }
+  let actual;
+  try {
+    actual = sha256Hex(bytes);
+  } catch (e) {
+    return { ok: false, detail: `${key}: could not be hashed: ${e && e.message}` };
+  }
+  if (actual !== committed) {
+    return { ok: false, actual, committed, detail: `${key}: sha256 ${actual} != committed ${committed}` };
+  }
+  return { ok: true, actual, committed, detail: `${key}: sha256 matches asset-manifest.json (${actual.slice(0, 12)}...)` };
+}
+
+// ---------------------------------------------------------------------------
 // The single place that decides HARNESS_EXIT.
 // ---------------------------------------------------------------------------
 function evaluateRun(input) {
   const failed = [];
   const notMeasured = [];
 
-  const byteLock = input.byteLock;
-  if (!byteLock || byteLock.ok !== true) {
-    return {
-      exitCode: EXIT.BYTE_LOCK,
-      failed: [],
-      notMeasured: [],
-      byteLockProblem: (byteLock && byteLock.detail) || 'payload byte lock was never verified',
-      reasons: [`byte lock: ${(byteLock && byteLock.detail) || 'never verified'}`],
-    };
+  // Preconditions. BOTH locks must hold before a single measurement counts:
+  // the payload bytes AND the contract they are judged against.
+  for (const [what, lock] of [
+    ['payload byte lock', input.byteLock],
+    ['assertion contract lock', input.contractLock],
+  ]) {
+    if (!lock || lock.ok !== true) {
+      const detail = (lock && lock.detail) || 'never verified';
+      return {
+        exitCode: EXIT.BYTE_LOCK,
+        failed: [],
+        notMeasured: [],
+        byteLockProblem: `${what}: ${detail}`,
+        reasons: [`${what}: ${detail}`],
+      };
+    }
+  }
+
+  if (!sessionIsCold(input.sessionMode)) {
+    notMeasured.push(`evaluation session is not provably cold: mode=${String(input.sessionMode)}`);
   }
 
   if (!input.ran) notMeasured.push('payload module never produced window.__spikeResults');
@@ -192,15 +254,59 @@ function evaluateRun(input) {
     failed.push(`${egressCount} external request(s) attempted`);
   }
 
-  // #41 P2 — an incomplete warm run must not be accepted as a measurement.
+  // #41 P2 — an incomplete load must not be accepted as a measurement.
   for (const [label, state] of [['cold', input.coldDoneState], ['warm', input.warmDoneState]]) {
     if (state === 'timeout') notMeasured.push(`${label} load never settled (state=timeout)`);
     else if (state !== 'done' && state !== 'error') notMeasured.push(`${label} load state=${state}`);
   }
 
+  // PR#42 P1 — "a warm error state counts as a complete run".
+  // data-state="error" is the payload's echo of "some probe FAILed". The warm
+  // load used to be judged by that pixel alone: its window.__spikeResults were
+  // never read, so a control that only fails on the SECOND load (warm cache,
+  // registered service worker, existing IndexedDB) produced exit 0 while the
+  // report printed warmDoneState=error. A settled load is only measured when
+  // its own results were read and compared, and an error state that no compared
+  // probe explains is inconclusive, not green.
+  const warmSettled = input.warmDoneState === 'done' || input.warmDoneState === 'error';
+  if (warmSettled) {
+    const warm = input.warmProbes;
+    if (!warm || warm.ran !== true) {
+      notMeasured.push(`warm load settled (state=${input.warmDoneState}) but its window.__spikeResults were never read`);
+    } else {
+      const warmMissing = Array.isArray(warm.missing) ? warm.missing : [];
+      if (warmMissing.length) notMeasured.push(`probes absent from the warm run: ${warmMissing.join(', ')}`);
+      if (warm.deviations > 0) failed.push(`${warm.deviations} warm-run probe deviation(s) against assertions.json`);
+      if (input.warmDoneState === 'error' && warm.deviations === 0 && warmMissing.length === 0) {
+        notMeasured.push('warm load reported state=error that no compared probe explains');
+      }
+    }
+  }
+  if (input.coldDoneState === 'error' && input.deviations === 0
+      && !(Array.isArray(input.missing) && input.missing.length)) {
+    notMeasured.push('cold load reported state=error that no compared probe explains');
+  }
+
   const fx = evaluateFixtures(input.fixtures, input.requiredFixtures);
   failed.push(...fx.failed);
   notMeasured.push(...fx.notMeasured);
+
+  // PR#42 P1 — "the required list omits the host-level assertions".
+  // assertions.json states host-level facts that JS inside the page cannot
+  // observe (above all external_protocol_os: no OS handler process was
+  // spawned). A payload result of external_protocol: BLOCKED only proves that
+  // window.open returned null. The required list is derived from
+  // assertions.json itself by main.js, so a host assertion cannot be dropped by
+  // forgetting to add it here; a verdict that is absent reads as NOT-RUN.
+  const requiredHost = input.requiredHostAssertions;
+  if (!Array.isArray(requiredHost) || requiredHost.length === 0) {
+    // An empty required set would make the host layer a vacuous pass.
+    notMeasured.push('no host-level assertions were required — the host layer was not evaluated');
+  } else {
+    const host = evaluateFixtures(input.hostAssertions, requiredHost);
+    failed.push(...host.failed.map((r) => `host assertion ${r}`));
+    notMeasured.push(...host.notMeasured.map((r) => `host assertion ${r}`));
+  }
 
   let exitCode = EXIT.OK;
   if (failed.length) exitCode = EXIT.CONTROL_FAILED;
@@ -321,6 +427,10 @@ module.exports = {
   platformLabel,
   resolveResultsPath,
   verifyByteLock,
+  verifyContractLock,
+  sha256Hex,
+  sessionIsCold,
   mdCell,
   FIXTURE_VERDICTS,
+  COLD_SESSION_MODES,
 };

@@ -47,7 +47,13 @@ const lib = require('./harness-lib.js');
 // ---------------------------------------------------------------------------
 const SPIKE_DIR = path.resolve(__dirname, '..', '..');        // spike/runtime-eval
 const PAYLOAD_DIR = path.join(SPIKE_DIR, 'payload');
-const ASSERTIONS = JSON.parse(fs.readFileSync(path.join(SPIKE_DIR, 'assertions.json'), 'utf8'));
+// PR#42 P1: read the contract ONCE as bytes and judge THOSE bytes. Hashing the
+// path a second time would leave a window in which the file changes between the
+// hash and the parse; ASSERTIONS below is parsed from the hashed buffer.
+const ASSERTIONS_PATH = path.join(SPIKE_DIR, 'assertions.json');
+const ASSERTIONS_BYTES = fs.readFileSync(ASSERTIONS_PATH);
+const ASSERTIONS = JSON.parse(ASSERTIONS_BYTES.toString('utf8'));
+const ASSET_MANIFEST_PATH = path.join(SPIKE_DIR, 'asset-manifest.json');
 const VERIFY_DETERMINISM = path.join(SPIKE_DIR, 'verify-determinism.mjs');
 // #41 P2: the results path is derived from the real platform + run date and
 // never overwrites an existing document (see lib.resolveResultsPath).
@@ -141,6 +147,75 @@ async function waitForDone(wc, timeoutMs = 30000) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Host-level observation (PR#42 P1 — external_protocol_os)
+//
+// assertions.json requires, separately from the in-page probe, that "no
+// external URL handler process is spawned when external_protocol /
+// navigateExternal is exercised". The payload can only see that window.open
+// returned null; whether the OS launched a handler is invisible to it. These
+// helpers take a process-table snapshot around a real external-protocol attempt
+// and compare it against the handler the OS has registered for that scheme.
+//
+// The payload's own scheme (web+spikeext) usually has NO registered handler, so
+// "nothing launched" would be vacuously true. A scheme that IS registered on
+// this host is therefore exercised as a POSITIVE CONTROL: only then does
+// "no handler process appeared" carry information.
+// ---------------------------------------------------------------------------
+const EXTERNAL_PROTOCOL_ATTEMPTS = [
+  { scheme: 'web+spikeext', url: 'web+spikeext://launch' }, // the scheme the payload probes
+  { scheme: 'ms-settings', url: 'ms-settings:about' },      // Windows: registered by the OS
+  { scheme: 'mailto', url: 'mailto:spike@cwap.invalid' },   // RFC 6761 .invalid, never resolvable
+];
+
+function snapshotProcesses() {
+  try {
+    const counts = new Map();
+    if (process.platform === 'win32') {
+      const out = execFileSync('tasklist', ['/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+      for (const line of out.split(/\r?\n/)) {
+        const m = /^"([^"]+)","(\d+)"/.exec(line.trim());
+        if (m) counts.set(m[1].toLowerCase(), (counts.get(m[1].toLowerCase()) || 0) + 1);
+      }
+    } else {
+      const out = execFileSync('ps', ['-eo', 'comm='], { encoding: 'utf8', timeout: 30000 });
+      for (const line of out.split(/\r?\n/)) {
+        const name = line.trim().split('/').pop().toLowerCase();
+        if (name) counts.set(name, (counts.get(name) || 0) + 1);
+      }
+    }
+    return counts.size ? counts : null;
+  } catch {
+    return null; // fail-closed: the caller reports INCONCLUSIVE, never PASS
+  }
+}
+
+// Image name of the process the OS would launch for `scheme:`, or null.
+function registeredHandlerImage(scheme) {
+  if (process.platform !== 'win32') return null;
+  try {
+    const out = execFileSync('reg', ['query', `HKCR\\${scheme}\\shell\\open\\command`, '/ve'], {
+      encoding: 'utf8', windowsHide: true, timeout: 15000,
+    });
+    const m = /REG_[A-Z_]+\s+(.*)$/m.exec(out);
+    if (!m) return null;
+    const cmd = m[1].trim();
+    const exe = /^"([^"]+)"/.exec(cmd) || /^(\S+\.exe)/i.exec(cmd);
+    if (!exe) return null;
+    return path.basename(exe[1]).toLowerCase();
+  } catch {
+    return null; // no handler registered for this scheme on this host
+  }
+}
+
+function newProcessImages(before, after) {
+  const grown = [];
+  for (const [name, n] of after) {
+    if (n > (before.get(name) || 0)) grown.push(name);
+  }
+  return grown;
+}
+
 // Apply the ADR-006 Electron security gate + deny handlers to a window's webContents.
 function harden(win) {
   const wc = win.webContents;
@@ -215,6 +290,87 @@ function makeWindow() {
   return win;
 }
 
+// PR#42 P1 — the structured host-level verdict for `external_protocol_os`.
+// Runs in its OWN window so a mishandled navigation cannot disturb the measured
+// cold window. Returns the {verdict, detail} vocabulary of the fixtures, so the
+// exit decision treats it exactly like any other required control.
+async function measureExternalProtocolOs() {
+  const probed = EXTERNAL_PROTOCOL_ATTEMPTS.map((a) => ({ ...a, handler: registeredHandlerImage(a.scheme) }));
+  const withHandler = probed.filter((p) => p.handler);
+  const before = snapshotProcesses();
+  if (!before) {
+    return { verdict: 'INCONCLUSIVE', detail: 'process table unavailable — no OS-level observation was possible', probed };
+  }
+
+  const openBefore = hostLevel.windowOpenDenied;
+  const navBefore = hostLevel.externalNavDenied;
+  const attempts = [];
+  let win = null;
+  try {
+    win = makeWindow();
+    await win.loadURL('app://local/index.html');
+    for (const p of probed) {
+      const u = JSON.stringify(p.url);
+      let opened = 'no-result';
+      try {
+        opened = await win.webContents.executeJavaScript(
+          `(() => { try { const w = window.open(${u}, '_blank', 'noopener');`
+          + ` if (w) { try { w.close(); } catch (e) {} return 'window-returned'; } return 'null-returned'; }`
+          + ` catch (e) { return 'threw:' + e.name; } })()`,
+        );
+      } catch (e) {
+        opened = `eval-rejected:${e && e.name}`;
+      }
+      // Also try a real top-level navigation to the external protocol; never awaited
+      // as a navigation, the denial handler resolves it.
+      win.webContents.executeJavaScript(`try { window.location.assign(${u}); } catch (e) {}`).catch(() => {});
+      attempts.push({ scheme: p.scheme, handler: p.handler, windowOpen: opened });
+      await sleep(400);
+    }
+    await sleep(1200); // give a launched handler time to appear in the table
+  } catch (e) {
+    return { verdict: 'ERROR', detail: `external-protocol probe threw: ${e && e.message}`, probed, attempts };
+  } finally {
+    try { if (win) win.destroy(); } catch { /* ignore */ }
+  }
+
+  const after = snapshotProcesses();
+  if (!after) {
+    return { verdict: 'INCONCLUSIVE', detail: 'second process snapshot failed — no OS-level observation', probed, attempts };
+  }
+  const grown = newProcessImages(before, after);
+  const launched = withHandler.filter((p) => grown.includes(p.handler));
+  const exercised = (hostLevel.windowOpenDenied - openBefore) > 0 || (hostLevel.externalNavDenied - navBefore) > 0;
+  const schemeList = probed.map((p) => `${p.scheme}${p.handler ? `->${p.handler}` : '(no handler)'}`).join(', ');
+
+  if (launched.length) {
+    return {
+      verdict: 'FAIL',
+      detail: `OS handler process launched: ${launched.map((p) => `${p.scheme}->${p.handler}`).join(', ')}`,
+      probed, attempts, newProcesses: grown,
+    };
+  }
+  if (!exercised) {
+    return {
+      verdict: 'INCONCLUSIVE',
+      detail: `the external-protocol attempt never reached the deny handlers (windowOpenDenied +0, externalNavDenied +0) — the control was not exercised [${schemeList}]`,
+      probed, attempts, newProcesses: grown,
+    };
+  }
+  if (!withHandler.length) {
+    return {
+      verdict: 'INCONCLUSIVE',
+      detail: `no OS handler is registered for any probed scheme on this host [${schemeList}] — "nothing launched" would be vacuously true`,
+      probed, attempts, newProcesses: grown,
+    };
+  }
+  return {
+    verdict: 'PASS',
+    detail: `no OS handler process appeared; positive control present: ${withHandler.map((p) => `${p.scheme}->${p.handler}`).join(', ')} [attempts: ${schemeList}; ${grown.length} unrelated new process image(s) in the window]`,
+    probed, attempts, newProcesses: grown,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -242,6 +398,10 @@ async function createEvalSession() {
     await ses.clearCache();
     return { ses, mode: 'default-session-cleared', partition: null };
   } catch (e) {
+    // PR#42 P2: this used to be reported only. The run then measured a "cold"
+    // start against Electron's PERSISTENT profile with stale storage/cache
+    // still in place and could still exit 0. lib.sessionIsCold() rejects this
+    // mode and evaluateRun turns it into NOT MEASURED (exit 4).
     return { ses, mode: `default-session-CLEAR-FAILED (${e && e.message})`, partition: null };
   }
 }
@@ -276,6 +436,31 @@ async function realMain() {
   if (!byteLock.ok) {
     if (byteLock.output) process.stdout.write(`${byteLock.output}\n`);
     process.stdout.write('NOTHING WAS MEASURED: refusing to evaluate a payload that is not byte-identical to asset-manifest.json\n');
+    process.stdout.write(`HARNESS_EXIT=${lib.EXIT.BYTE_LOCK}\n`);
+    app.exit(lib.EXIT.BYTE_LOCK);
+    return;
+  }
+
+  // ---- PR#42 P1: the ASSERTION CONTRACT is locked too ----------------------
+  // The byte lock above covers payload/ only. Every "expected" outcome that
+  // decides exit 0 comes from assertions.json, which was unlocked: adding FAIL
+  // to a security probe's expected[] left all payload hashes intact and turned
+  // a real deviation into green evidence. Hash the very bytes that were parsed
+  // against the committed manifest, in-process, before anything is measured.
+  let contractLock;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(ASSET_MANIFEST_PATH, 'utf8'));
+    contractLock = lib.verifyContractLock({
+      bytes: ASSERTIONS_BYTES,
+      manifest,
+      key: 'assertions.json',
+    });
+  } catch (e) {
+    contractLock = { ok: false, detail: `asset-manifest.json unreadable: ${e && e.message}` };
+  }
+  process.stdout.write(`contract lock: ok=${contractLock.ok} — ${contractLock.detail}\n`);
+  if (!contractLock.ok) {
+    process.stdout.write('NOTHING WAS MEASURED: refusing to evaluate against an assertion contract that is not byte-identical to asset-manifest.json\n');
     process.stdout.write(`HARNESS_EXIT=${lib.EXIT.BYTE_LOCK}\n`);
     app.exit(lib.EXIT.BYTE_LOCK);
     return;
@@ -371,6 +556,18 @@ async function realMain() {
   await warmWin.loadURL('app://local/index.html');
   const warmDone = await waitForDone(warmWin.webContents, 30000);
   const warmStartMs = Date.now() - tWarm0;
+  // PR#42 P1: READ the warm results before destroying the window. Judging the
+  // warm load by its #status pixel alone accepted data-state="error" as a
+  // completed run: a probe that only fails on the second load (warm HTTP cache,
+  // already-registered service worker, existing IndexedDB) never reached the
+  // exit code, and the report printed warmDoneState=error next to "all
+  // controls passed".
+  let warmResults = null;
+  try {
+    warmResults = await warmWin.webContents.executeJavaScript('window.__spikeResults');
+  } catch (e) {
+    warmResults = { error: String(e && e.message) };
+  }
   warmWin.destroy();
 
   // ---- Compare probes against assertions.json -----------------------------
@@ -382,6 +579,15 @@ async function realMain() {
   const comparison = probeReport.comparison;
   const deviations = probeReport.deviations;
   const secNegatives = lib.securityNegatives(comparison);
+
+  // PR#42 P1: the warm load is compared against the SAME contract, so a
+  // state-dependent FAIL on the second load reaches the exit code.
+  const warmReport = lib.compareProbes(ASSERTIONS.probes, warmResults);
+  const warmProbes = {
+    ran: warmReport.ran,
+    deviations: warmReport.deviations,
+    missing: warmReport.missing,
+  };
 
   // ---- Destructive fixtures (isolated) ------------------------------------
   // #41 P1: structured {verdict, detail}; the verdict feeds the exit code and
@@ -399,6 +605,19 @@ async function realMain() {
   const navBefore = hostLevel.externalNavDenied;
   const dlBefore = hostLevel.downloadsDenied;
   const urlBefore = coldWin.webContents.getURL();
+  // PR#42 P1 — host assertion `download_os` says "no file is written to the
+  // download directory". The will-download counter alone does not show that;
+  // the file itself is the observation.
+  let downloadDir = null;
+  let downloadFile = null;
+  let downloadExistedBefore = null;
+  try {
+    downloadDir = app.getPath('downloads');
+    downloadFile = path.join(downloadDir, 'spike-fixture.bin');
+    downloadExistedBefore = fs.existsSync(downloadFile);
+  } catch (e) {
+    downloadDir = `(unavailable: ${e && e.message})`;
+  }
   try {
     await coldWin.webContents.executeJavaScript('window.__spikeFixtures.navigateExternal(); "ok"');
   } catch { /* navigation denial can reject the eval; that's fine */ }
@@ -414,6 +633,26 @@ async function realMain() {
   fixtures.triggerDownload = (hostLevel.downloadsDenied > dlBefore)
     ? { verdict: 'PASS', detail: `DENIED (will-download prevented, count +${hostLevel.downloadsDenied - dlBefore})` }
     : { verdict: 'FAIL', detail: 'NOT-DENIED (no will-download event observed)' };
+
+  // Host-level download observation (see above): the file, not the counter.
+  let downloadOs;
+  if (downloadFile === null) {
+    downloadOs = { verdict: 'INCONCLUSIVE', detail: `download directory unavailable ${downloadDir}` };
+  } else if (downloadExistedBefore) {
+    downloadOs = { verdict: 'INCONCLUSIVE', detail: `a file named spike-fixture.bin already existed in ${downloadDir} before the run — no delta can be attributed` };
+  } else if (fs.existsSync(downloadFile)) {
+    downloadOs = { verdict: 'FAIL', detail: `the denied download was written to disk: ${downloadFile}` };
+  } else {
+    downloadOs = { verdict: 'PASS', detail: `no file written to ${downloadDir} (checked spike-fixture.bin before and after the fixture)` };
+  }
+
+  // PR#42 P1 — the OS-level external-protocol observation.
+  let externalProtocolOs;
+  try {
+    externalProtocolOs = await measureExternalProtocolOs();
+  } catch (e) {
+    externalProtocolOs = { verdict: 'ERROR', detail: `external_protocol_os measurement threw: ${e && e.message}` };
+  }
 
   // (2) real renderer crash containment
   try {
@@ -480,10 +719,31 @@ async function realMain() {
   // makes this false), and false unless at least one negative was exercised.
   const secBlockedAll = secNegatives.allBlocked;
 
-  // #41 P1/P2: the single decision point. Fixture verdicts, missing probes and
-  // an unfinished warm run all reach the exit code now.
+  // PR#42 P1 — the host-level assertions of assertions.json get a STRUCTURED
+  // verdict each and are required by the exit decision. The required list is
+  // derived from the (now hash-locked) contract itself, so a host assertion
+  // cannot be silently dropped from the required set: every key without a
+  // verdict below reads as NOT-RUN and forces exit 4.
+  const hostAssertions = {
+    network: egress.blockedExternal === 0
+      ? { verdict: 'PASS', detail: `zero external requests reached Chromium's network stack (allowedLocal=${egress.allowedLocal}); NOT an OS kernel socket/DNS observation` }
+      : { verdict: 'FAIL', detail: `${egress.blockedExternal} external request(s) attempted (all cancelled, but the assertion is "no activity")` },
+    external_protocol_os: { verdict: externalProtocolOs.verdict, detail: externalProtocolOs.detail },
+    download_os: downloadOs,
+    navigation_os: fixtures.navigateExternal,
+    crash_containment: fixtures.crash,
+    hang_detection: fixtures.hang,
+  };
+  const requiredHostAssertions = Object.keys(ASSERTIONS.hostLevelAssertions || {});
+
+  // #41 P1/P2 + PR#42: the single decision point. Fixture verdicts, missing
+  // probes, an unfinished OR unread warm run, a session that is not provably
+  // cold, the assertion-contract lock and the host-level assertions all reach
+  // the exit code now.
   const verdict = lib.evaluateRun({
     byteLock,
+    contractLock,
+    sessionMode: evalSession.mode,
     ran: probeReport.ran,
     deviations,
     missing: probeReport.missing,
@@ -491,8 +751,11 @@ async function realMain() {
     egressBlockedExternal: egress.blockedExternal,
     coldDoneState: coldDone.state,
     warmDoneState: warmDone.state,
+    warmProbes,
     fixtures,
     requiredFixtures: ['navigateExternal', 'triggerDownload', 'crash', 'hang'],
+    hostAssertions,
+    requiredHostAssertions,
   });
 
   const summary = {
@@ -521,7 +784,15 @@ async function realMain() {
     hardening,
     fixtures,
     byteLock,
+    contractLock,
     session: evalSession.mode,
+    sessionCold: lib.sessionIsCold(evalSession.mode),
+    // PR#42 P1: the warm load is now compared, not just watched.
+    warmProbes,
+    warmProbesReported: warmResults && Array.isArray(warmResults.probes) ? warmResults.probes.length : 0,
+    hostAssertions,
+    requiredHostAssertions,
+    externalProtocolOs,
     verdict,
   };
 
@@ -564,7 +835,12 @@ async function realMain() {
   for (const [name, f] of Object.entries(fixtures)) {
     process.stdout.write(`  fixture ${name.padEnd(18)} ${f.verdict.padEnd(12)} ${f.detail}\n`);
   }
-  process.stdout.write(`session: ${summary.session}; byte lock: ${byteLock.detail}\n`);
+  for (const name of requiredHostAssertions) {
+    const h = hostAssertions[name] || { verdict: 'NOT-RUN', detail: 'no verdict produced' };
+    process.stdout.write(`  host    ${name.padEnd(18)} ${String(h.verdict).padEnd(12)} ${h.detail}\n`);
+  }
+  process.stdout.write(`warm run: probesReported=${summary.warmProbesReported} deviations=${warmProbes.deviations} missing=${warmProbes.missing.length} (state=${warmDone.state})\n`);
+  process.stdout.write(`session: ${summary.session} (cold=${summary.sessionCold}); byte lock: ${byteLock.detail}; contract lock: ${contractLock.detail}\n`);
   process.stdout.write(`RESULTS written: ${RESULTS_PATH}\n`);
   for (const r of verdict.failed) process.stdout.write(`FAILED CONTROL: ${r}\n`);
   for (const r of verdict.notMeasured) process.stdout.write(`NOT MEASURED:   ${r}\n`);
@@ -649,7 +925,8 @@ ${[
 - Runtime: **Electron ${s.electron}** (Chromium ${s.chromium}, Node ${s.node}, V8 ${s.v8})
 - Host: ${s.platformLabel} (${s.platform})
 - Payload byte lock (\`verify-determinism.mjs\`, run BEFORE any measurement): **${s.byteLock.ok}** — ${s.byteLock.detail}
-- Evaluation session: \`${s.session}\` (a non-persistent partition is required for a genuinely cold sample; \`default-session-cleared\` is the weaker fallback)
+- Assertion contract lock (\`assertions.json\` hashed in-process against \`asset-manifest.json\`): **${s.contractLock.ok}** — ${mdCell(s.contractLock.detail)}
+- Evaluation session: \`${s.session}\` — provably cold: **${s.sessionCold}** (a non-persistent partition is required for a genuinely cold sample; \`default-session-cleared\` is the weaker fallback, a failed clear is NOT cold and yields exit 4)
 - Security gate applied: \`sandbox:true\` + \`contextIsolation:true\` + \`nodeIntegration:false\` + \`webSecurity:true\`, no preload (zero native bridge). Popups/new-windows denied, external navigation denied, all permissions denied, all downloads denied.
 - Defense-in-depth hardening (beyond the 4 flags): WebRTC IP policy \`${s.hardening.webrtcIpHandlingPolicy}\` (applied ${s.hardening.webrtcPolicyApplied}x, errors ${s.hardening.webrtcPolicyErrors.length}); \`disableBlinkFeatures:'${s.hardening.disableBlinkFeatures}'\`; \`will-redirect\` origin-pin; \`setPermissionCheckHandler\` deny-all; privileged scheme \`${s.hardening.privilegedScheme}\`.
 - Payload origin: \`app://local/\` privileged local scheme (standard+secure), not \`file://\` (file:// blocks ES-module loading in Chromium).
@@ -666,6 +943,7 @@ ${[
 | Security negatives all BLOCKED | ${s.securityNegativesAllBlocked}${s.securityNegatives.incomplete ? ' (set INCOMPLETE — not a pass)' : ''} |
 | Cold start (spawn→#status settled) | ${s.coldStartMs} ms (state=${s.coldDoneState}) |
 | Warm start (2nd load, same session) | ${s.warmStartMs === null ? '**NOT MEASURED** (load never settled)' : `${s.warmStartMs} ms`} (state=${s.warmDoneState}) |
+| Warm-run probes read + compared | ${s.warmProbes.ran ? `${s.warmProbesReported} reported, ${s.warmProbes.deviations} deviation(s), ${s.warmProbes.missing.length} missing` : '**NOT READ** (the warm load was judged by its status pixel only)'} |
 | Idle resident memory (sum workingSetSize) | ${(s.idleResidentKB / 1024).toFixed(1)} MiB (${s.idleResidentKB} KB) |
 | External egress requests attempted | ${s.egress.blockedExternal} |
 | External egress requests allowed | 0 (deny-all in \`onBeforeRequest\`) |
@@ -731,6 +1009,27 @@ measured (exit 4). No fixture outcome is prose-only any more.
 - **Download** (\`triggerDownload\`): **${s.fixtures.triggerDownload.verdict}** — ${s.fixtures.triggerDownload.detail}
 - **Renderer crash containment** (\`forcefullyCrashRenderer\`): **${s.fixtures.crash.verdict}** — ${s.fixtures.crash.detail}
 - **Hang / unresponsive** (\`hang\`): **${s.fixtures.hang.verdict}** — ${s.fixtures.hang.detail}
+
+## Host-level assertions (\`assertions.json\` → \`HARNESS_EXIT\`)
+
+\`assertions.json\` states facts that JS inside the page cannot observe. They are required
+individually: the list comes from the contract file itself, so none can be dropped by forgetting
+it here. \`PASS\` = observed and held, \`FAIL\` = observed and did not hold (exit 1),
+\`NOT-RUN\`/\`INCONCLUSIVE\`/\`ERROR\` = not measured (exit 4).
+
+| Assertion | Verdict | Observation |
+|---|---|---|
+${s.requiredHostAssertions.map((k) => {
+    const h = s.hostAssertions[k] || { verdict: 'NOT-RUN', detail: 'no verdict was produced' };
+    return `| \`${k}\` | **${h.verdict}** | ${mdCell(h.detail)} |`;
+  }).join('\n')}
+
+**On \`external_protocol_os\`:** the payload can only see that \`window.open('web+spikeext://…')\`
+returned \`null\`. Whether the OS launched a handler is invisible to it, so the harness snapshots the
+process table around a real external-protocol attempt and compares it against the handler the OS has
+registered for that scheme. Because \`web+spikeext\` normally has no registered handler, schemes that
+DO have one on this host are exercised as a **positive control** — without one, "no handler
+launched" is vacuously true and the verdict is INCONCLUSIVE, never PASS.
 
 ## Honest scope / limits
 

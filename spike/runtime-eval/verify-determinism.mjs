@@ -23,7 +23,15 @@ import { dirname, join, relative, sep } from 'node:path';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAYLOAD_DIR = join(HERE, 'payload');
 const MANIFEST_PATH = join(HERE, 'asset-manifest.json');
-const SCHEMA = 'runtime-eval-asset-manifest/v1';
+const SCHEMA = 'runtime-eval-asset-manifest/v2';
+
+// PR#42 P1: the byte lock used to cover payload/ only. assertions.json is the
+// contract that decides which probe outcome counts as "expected" and therefore
+// decides HARNESS_EXIT=0 — widening it (e.g. adding "FAIL" to a security
+// probe's expected[]) produced green evidence against a manipulated contract
+// while every payload hash still matched. Contract files are hashed here and
+// re-checked in-process by the harness (harness-lib.verifyContractLock).
+const CONTRACT_FILES = ['assertions.json'];
 
 function walk(dir) {
   const out = [];
@@ -52,15 +60,37 @@ function buildManifest() {
   const aggregate = sha256(
     Object.keys(assets).sort().map((k) => `${k}:${assets[k]}`).join('\n'),
   );
-  return { schema: SCHEMA, algorithm: 'sha256', assetCount: Object.keys(assets).length, aggregate, assets };
+  const contracts = {};
+  for (const name of [...CONTRACT_FILES].sort()) {
+    const full = join(HERE, name);
+    if (!existsSync(full)) fail(`contract file missing: ${full}`);
+    contracts[name] = sha256(readFileSync(full));
+  }
+  return {
+    schema: SCHEMA,
+    algorithm: 'sha256',
+    assetCount: Object.keys(assets).length,
+    aggregate,
+    assets,
+    contracts,
+  };
 }
 
 function stableStringify(m) {
   // Deterministic serialization: sorted asset keys, fixed field order.
   const assets = {};
   for (const k of Object.keys(m.assets).sort()) assets[k] = m.assets[k];
+  const contracts = {};
+  for (const k of Object.keys(m.contracts || {}).sort()) contracts[k] = m.contracts[k];
   return JSON.stringify(
-    { schema: m.schema, algorithm: m.algorithm, assetCount: m.assetCount, aggregate: m.aggregate, assets },
+    {
+      schema: m.schema,
+      algorithm: m.algorithm,
+      assetCount: m.assetCount,
+      aggregate: m.aggregate,
+      assets,
+      contracts,
+    },
     null, 2,
   ) + '\n';
 }
@@ -110,12 +140,31 @@ function main() {
     if (!(k in passA.assets)) problems.push(`missing asset (in manifest, not on disk): ${k}`);
   }
 
+  // Contract lock: fail-closed. A manifest without a contracts section is an
+  // OLD manifest and must not be accepted, otherwise the widening it is meant
+  // to catch would simply pass through an absent hash.
+  const committedContracts = committed.contracts;
+  if (!committedContracts || typeof committedContracts !== 'object') {
+    problems.push('asset-manifest.json has no "contracts" section — the assertion contract is unlocked');
+  } else {
+    for (const k of Object.keys(passA.contracts)) {
+      if (!(k in committedContracts)) problems.push(`contract not locked in the manifest: ${k}`);
+      else if (committedContracts[k] !== passA.contracts[k]) {
+        problems.push(`contract hash mismatch: ${k}\n    committed ${committedContracts[k]}\n    actual    ${passA.contracts[k]}`);
+      }
+    }
+    for (const k of Object.keys(committedContracts)) {
+      if (!(k in passA.contracts)) problems.push(`contract in manifest is not verified: ${k}`);
+    }
+  }
+
   if (problems.length) {
     for (const p of problems) process.stderr.write(`  - ${p}\n`);
     fail(`${problems.length} determinism problem(s) — payload assets diverged from asset-manifest.json`);
   }
 
   process.stdout.write(`OK: ${actualKeys.length} assets byte-identical to asset-manifest.json\n`);
+  process.stdout.write(`OK: ${Object.keys(passA.contracts).length} contract file(s) byte-identical: ${Object.keys(passA.contracts).join(', ')}\n`);
   process.stdout.write(`aggregate: ${passA.aggregate}\n`);
   process.exit(0);
 }
