@@ -172,13 +172,17 @@ function snapshotProcesses() {
   try {
     const counts = new Map();
     if (process.platform === 'win32') {
-      const out = execFileSync('tasklist', ['/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+      const out = execFileSync('tasklist', ['/fo', 'csv', '/nh'], {
+        encoding: 'utf8', windowsHide: true, timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'],
+      });
       for (const line of out.split(/\r?\n/)) {
         const m = /^"([^"]+)","(\d+)"/.exec(line.trim());
         if (m) counts.set(m[1].toLowerCase(), (counts.get(m[1].toLowerCase()) || 0) + 1);
       }
     } else {
-      const out = execFileSync('ps', ['-eo', 'comm='], { encoding: 'utf8', timeout: 30000 });
+      const out = execFileSync('ps', ['-eo', 'comm='], {
+        encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'],
+      });
       for (const line of out.split(/\r?\n/)) {
         const name = line.trim().split('/').pop().toLowerCase();
         if (name) counts.set(name, (counts.get(name) || 0) + 1);
@@ -194,8 +198,11 @@ function snapshotProcesses() {
 function registeredHandlerImage(scheme) {
   if (process.platform !== 'win32') return null;
   try {
+    // stderr is piped, not inherited: `reg query` writes a localized
+    // "key not found" line for every unregistered scheme, which is an expected
+    // outcome here and must not pollute the run log.
     const out = execFileSync('reg', ['query', `HKCR\\${scheme}\\shell\\open\\command`, '/ve'], {
-      encoding: 'utf8', windowsHide: true, timeout: 15000,
+      encoding: 'utf8', windowsHide: true, timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const m = /REG_[A-Z_]+\s+(.*)$/m.exec(out);
     if (!m) return null;
