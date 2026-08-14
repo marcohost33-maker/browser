@@ -254,6 +254,15 @@ test('P1: an unparseable target is external (fail-closed)', () => {
   assert.equal(lib.isExternalNavigation('app://local/x', ''), true);
 });
 
+test('an attempted external request forces exit 1, a broken counter forces exit 4', () => {
+  assert.equal(runVerdict({ egressBlockedExternal: 1 }).exitCode, lib.EXIT.CONTROL_FAILED);
+  for (const broken of [-5, 1.5, NaN, undefined, '0']) {
+    const v = runVerdict({ egressBlockedExternal: broken });
+    assert.equal(v.exitCode, lib.EXIT.NOT_MEASURED, `egress=${String(broken)}`);
+    assert.match(v.notMeasured.join('\n'), /egress counter unusable/);
+  }
+});
+
 // -------------------------------------------------------------------------
 // P2 #6 — an incomplete warm run is accepted
 // -------------------------------------------------------------------------

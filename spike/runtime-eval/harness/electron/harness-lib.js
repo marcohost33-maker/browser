@@ -183,8 +183,13 @@ function evaluateRun(input) {
     notMeasured.push('security-negative set incomplete');
   }
 
-  if (input.egressBlockedExternal > 0) {
-    failed.push(`${input.egressBlockedExternal} external request(s) attempted`);
+  // A counter that is not a plain non-negative number means the egress ledger
+  // itself is broken — that is "not measured", never a silent pass.
+  const egressCount = input.egressBlockedExternal;
+  if (!Number.isInteger(egressCount) || egressCount < 0) {
+    notMeasured.push(`egress counter unusable: ${JSON.stringify(egressCount)}`);
+  } else if (egressCount > 0) {
+    failed.push(`${egressCount} external request(s) attempted`);
   }
 
   // #41 P2 — an incomplete warm run must not be accepted as a measurement.
