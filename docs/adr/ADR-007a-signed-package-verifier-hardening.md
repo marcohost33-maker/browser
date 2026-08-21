@@ -34,6 +34,17 @@ At minimum pin and test:
 Every abort must produce a deterministic machine-readable reason and leave no active
 or partially trusted installation.
 
+**Measured gap (2026-08-21).** Of the limits above, only JSON nesting depth is
+implemented today: `MAX_DEPTH = 64` in all three canonical-manifest implementations
+(`spike/cwap-canonical-json/cwap_strict_json.py:28`, `rust/cwap_strict_json.rs:30`,
+`js/cwap_strict_json.mjs:29`). There is **no** manifest-bytes-before-parsing limit —
+an 8 MiB input is accepted. The "4 MiB, fail-closed" value in circulation is an
+undecided proposal (letter item E6, 2026-07-19), not an implemented default, and no
+test asserts it. Duplicate-key detection is O(n log n) or better in all three
+implementations (letter item E5), but that property is documented, not required:
+no normative bound and no timing test exist. Both remain owner decisions; see
+`spike/cwap-canonical-json/SPEC_v0.1.2_DRAFT.md`, section "E5/E6/E7".
+
 ## 2. Canonical manifest
 
 The on-wire manifest must:

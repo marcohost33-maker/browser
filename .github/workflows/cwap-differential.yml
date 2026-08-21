@@ -83,6 +83,11 @@ jobs:
           sha256sum -c results/sha256.txt
       - name: reference anti-regression suite (31 vectors)
         run: python3 test_cwap_v012_r1.py
+      # NOT WIRED (2026-08-21): test_ist_zustand_e5_e7.py pins the measured E5/E7
+      # ist-state (13 cases) but needs pytest, which this job does not install.
+      # It was run locally (13 passed, exit 0) and rollback-probed 5/5, but no CI
+      # run has executed it — do not read the green gate below as covering it.
+      # Wire it up together with the pytest dependency when #24 promotion resumes.
       - name: two-way differential (Python vs Rust)
         run: python3 differential.py
       - name: three-way differential (Python vs Rust vs JS)

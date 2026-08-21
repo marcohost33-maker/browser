@@ -24,6 +24,16 @@ The **canonical-manifest representation** from Track B is accepted:
 `CWAP-Strict-JSON v0.1.2` is a restricted-domain canonical JSON profile with
 owner-approved error precedence and differential/oracle evidence.
 
+Within that accepted manifest profile, one further sub-decision is now recorded:
+Unicode **noncharacters are passed through**, not rejected (letter item E7 of
+2026-07-19; measured across the Python, Rust and JS implementations on 2026-08-21,
+test-borne and rollback-probed). Two sibling items from the same letter are
+**deliberately still open** — the normative form of the duplicate-detection cost
+bound (E5) and the maximum verifier input size (E6, where no limit exists in any
+implementation today). Details and evidence:
+`spike/cwap-canonical-json/SPEC_v0.1.2_DRAFT.md`, section "E5/E6/E7"; the E6 limit
+belongs to the envelope required by ADR-007a section 1.
+
 This acceptance does **not** select a container or complete a package verifier. The
 following remain open:
 

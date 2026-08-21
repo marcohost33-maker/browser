@@ -55,6 +55,11 @@ Resolved subset:
 
 - CWAP-Strict-JSON v0.1.2 is the accepted canonical-manifest profile for its
   restricted input domain.
+- Unicode noncharacter handling (letter item E7, 2026-07-19) is decided as
+  pass-through: a conforming verifier must not reject a codepoint for being a
+  noncharacter. Measured across all three implementations, test-borne and
+  rollback-probed (2026-08-21). Record: `spike/cwap-canonical-json/SPEC_v0.1.2_DRAFT.md`,
+  section "E5/E6/E7".
 
 Still open:
 
@@ -63,6 +68,20 @@ Still open:
 - strict signature-verifier implementation;
 - resource limits, extraction, staging, activation and recovery;
 - independent parser/verifier and fuzz evidence.
+
+Two limits from the same letter remain open and are now stated rather than
+implied:
+
+- **E5 — duplicate-detection cost.** All three implementations are O(n log n) or
+  better today (measured 2026-08-21: 200 000 keys in 0.74 s Python / 0.17 s Rust /
+  0.45 s JS). What is undecided is the *normative form* — a complexity MUST for
+  every conforming implementation, or a CI recommendation with a time budget.
+  Code cannot answer a normative question; the owner must.
+- **E6 — maximum verifier input size.** No implementation has any size limit; an
+  8 MiB input is accepted. The "4 MiB, fail-closed" figure in circulation is the
+  letter's *proposal*, never implemented, with neither code nor test behind it.
+  Deciding it belongs to ADR-007a section 1, whose "manifest bytes before parsing"
+  requirement is currently unmet.
 
 A canonical manifest is not an accepted package format.
 
