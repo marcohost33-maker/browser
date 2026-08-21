@@ -63,7 +63,11 @@ Resolved subset:
 
 Still open:
 
-- `.swbn`, NAR, ZIP-minimal or another exact container;
+- `.swbn`, NAR, ZIP-minimal or another exact container — a sourced side-by-side
+  comparison with a recommendation now exists for the owner decision:
+  `docs/reports/2026-08-21_CWAP_CONTAINERFORMAT_ENTSCHEIDUNGSVORLAGE.md`
+  (proposal: NAR; effort figures are estimates, no candidate has been run against
+  the shared adversarial corpus yet);
 - signed-byte scope and package identity;
 - strict signature-verifier implementation;
 - resource limits, extraction, staging, activation and recovery;

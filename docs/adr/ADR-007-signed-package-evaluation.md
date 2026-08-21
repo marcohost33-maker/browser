@@ -79,6 +79,15 @@ selecting one by preference.
 
 Track B requires the consolidated controls in ADR-007a.
 
+### Owner decision aid (2026-08-21)
+
+`docs/reports/2026-08-21_CWAP_CONTAINERFORMAT_ENTSCHEIDUNGSVORLAGE.md` compares
+`.swbn`/IWA, NAR and ZIP-minimal against effort, binding, interoperability and tool
+maturity, with external sources. It proposes NAR and states its price. It is a
+decision aid, not a decision, and explicitly does not satisfy the corpus
+requirement above: no candidate has been run against the shared adversarial corpus,
+and its effort figures are estimates.
+
 ### Track C — Secure update metadata
 
 Track C is specified separately in ADR-009. The package format and update metadata
