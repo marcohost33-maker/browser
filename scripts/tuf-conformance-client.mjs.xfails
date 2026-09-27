@@ -4,9 +4,14 @@
 # ML-DSA is not available in the pinned Node 22 crypto surface used by APP-01.
 test_mldsa_keytype_and_scheme
 
-# Delegated targets traversal/revocation is the next ADR-009 slice.
+# Delegated targets traversal is the next ADR-009 slice.
 test_graph_traversal
-test_targetfile_search
-test_cached_role_is_verified_against_current_delegator
-test_delegation_not_in_snapshot
+test_targetfile_search[targetpath matches wildcard]
+test_targetfile_search[targetpath with separators x]
+test_targetfile_search[targetpath with separators y]
+test_targetfile_search[targetpath is not delegated by all roles in the chain]
+test_targetfile_search[targetpath matches question mark wildcard]
 test_unusual_role_name
+
+# This static repository's selected artifact is delegated.
+test_static_repository[tuf-on-ci-0.11]
