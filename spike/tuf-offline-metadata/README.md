@@ -87,7 +87,6 @@ noncanonical envelope whitespace/key order is accepted when the signed descripto
 binds those exact bytes, while a descriptor computed from a reconstructed
 serialization is rejected.
 
-
 Run:
 
 ```text
