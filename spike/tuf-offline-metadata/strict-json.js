@@ -51,7 +51,7 @@ class StrictJsonParser {
 
   parse() {
     this.skipWhitespace();
-    const value = this.parseValue('
+    const value = this.parseValue('$', 0);
     this.skipWhitespace();
     if (this.index !== this.text.length) {
       fail('INVALID_JSON', `unexpected trailing JSON data at offset ${this.index}`);
