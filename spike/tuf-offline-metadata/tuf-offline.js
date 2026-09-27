@@ -6,7 +6,7 @@ import {
 } from 'node:crypto';
 
 export const POUF = Object.freeze({
-  specVersion: '1.0.35',
+  specVersion: '1.0.36',
   signatureScheme: 'ed25519',
   hashAlgorithm: 'sha256',
 });
