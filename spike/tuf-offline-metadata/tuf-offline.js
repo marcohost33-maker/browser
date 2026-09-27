@@ -442,7 +442,7 @@ function verifyMetadataDescriptor(metadata, descriptor, label, limits, rawBytes 
   assertDigest(sha256(bytes), descriptor.hashes.sha256, 'METADATA_HASH', label);
 }
 
-function validateTargetPath(targetPath, limits) {
+export function validateTargetPath(targetPath, limits = DEFAULT_LIMITS) {
   assertStringWellFormed(targetPath, 'target path');
   const components = targetPath.split('/');
   if (targetPath.length === 0
@@ -474,25 +474,36 @@ function normalizeCapabilities(value, limits) {
   return result.sort();
 }
 
-function verifyTargetDescriptor(target, descriptor, limits) {
-  if (!Buffer.isBuffer(target.bytes)) fail('INVALID_TARGET', 'target bytes must be a Buffer');
-  if (target.bytes.length > boundedLimit(limits, 'targetBytes')) {
+export function verifyTargetBytes(bytes, descriptor, limits = DEFAULT_LIMITS) {
+  if (!(Buffer.isBuffer(bytes) || bytes instanceof Uint8Array)) {
+    fail('INVALID_TARGET', 'target bytes must be Buffer or Uint8Array');
+  }
+  const targetBytes = Buffer.from(bytes);
+  if (targetBytes.length > boundedLimit(limits, 'targetBytes')) {
     fail('TARGET_TOO_LARGE', 'target exceeds the configured byte limit');
   }
   if (!isPlainObject(descriptor)
       || !Number.isSafeInteger(descriptor.length)
       || descriptor.length < 0
       || !isPlainObject(descriptor.hashes)
-      || !isPlainObject(descriptor.custom)) {
+      || typeof descriptor.hashes.sha256 !== 'string') {
     fail('INVALID_TARGET_DESCRIPTOR', 'target descriptor is invalid');
   }
-  if (target.bytes.length !== descriptor.length) {
+  if (targetBytes.length !== descriptor.length) {
     fail('TARGET_LENGTH', 'target length mismatch', {
-      actual: target.bytes.length,
+      actual: targetBytes.length,
       expected: descriptor.length,
     });
   }
-  assertDigest(sha256(target.bytes), descriptor.hashes.sha256, 'TARGET_HASH', 'target');
+  assertDigest(sha256(targetBytes), descriptor.hashes.sha256, 'TARGET_HASH', 'target');
+  return targetBytes;
+}
+
+function verifyTargetDescriptor(target, descriptor, limits) {
+  if (!isPlainObject(descriptor?.custom)) {
+    fail('INVALID_TARGET_DESCRIPTOR', 'Browser target descriptor requires custom policy');
+  }
+  verifyTargetBytes(target.bytes, descriptor, limits);
 }
 
 function assertTimestampMetaMap(timestamp) {
