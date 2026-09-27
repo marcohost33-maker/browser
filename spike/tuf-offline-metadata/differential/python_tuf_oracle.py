@@ -29,6 +29,10 @@ def decide(case: dict) -> dict:
         for root in case["roots_b64"]:
             trusted.update_root(decode(root))
 
+        preload_timestamp = case.get("preload_timestamp_b64")
+        if preload_timestamp is not None:
+            trusted.update_timestamp(decode(preload_timestamp))
+
         trusted.update_timestamp(decode(case["timestamp_b64"]))
         trusted.update_snapshot(decode(case["snapshot_b64"]))
         trusted.update_targets(decode(case["targets_b64"]))
