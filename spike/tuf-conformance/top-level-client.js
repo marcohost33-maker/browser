@@ -224,10 +224,15 @@ function verifyOneSignature(key, message, signatureHex) {
   return false;
 }
 
-function verifyRoleSignatures(metadata, trustedRootSigned, role) {
-  const roleSpec = trustedRootSigned.roles?.[role];
-  if (!isObject(roleSpec) || !Array.isArray(roleSpec.keyids)) {
-    fail('UNKNOWN_ROLE', `trusted root does not define role ${role}`);
+function verifySignatureSet(metadata, keys, roleSpec, label) {
+  if (!isObject(keys) || !isObject(roleSpec) || !Array.isArray(roleSpec.keyids)) {
+    fail('UNKNOWN_ROLE', `trust data for ${label} is invalid`);
+  }
+  positiveInteger(roleSpec.threshold, `${label}.threshold`);
+
+  const uniqueRoleKeys = new Set(roleSpec.keyids);
+  if (uniqueRoleKeys.size !== roleSpec.keyids.length) {
+    fail('DUPLICATE_ROLE_KEY', `${label} contains duplicate key ids`);
   }
 
   const message = tufCanonicalBytes(metadata.signed);
@@ -237,22 +242,27 @@ function verifyRoleSignatures(metadata, trustedRootSigned, role) {
   for (const signature of metadata.signatures) {
     if (!isObject(signature) || typeof signature.keyid !== 'string') continue;
     if (seen.has(signature.keyid)) {
-      fail('DUPLICATE_SIGNATURE', `${role} repeats signature key ${signature.keyid}`);
+      fail('DUPLICATE_SIGNATURE', `${label} repeats signature key ${signature.keyid}`);
     }
     seen.add(signature.keyid);
 
-    if (!roleSpec.keyids.includes(signature.keyid)) continue;
-    const key = trustedRootSigned.keys?.[signature.keyid];
+    if (!uniqueRoleKeys.has(signature.keyid)) continue;
+    const key = keys[signature.keyid];
     if (!key) continue;
     if (verifyOneSignature(key, message, signature.sig)) valid += 1;
   }
 
   if (valid < roleSpec.threshold) {
-    fail('SIGNATURE_THRESHOLD', `${role} signature threshold was not met`, {
+    fail('SIGNATURE_THRESHOLD', `${label} signature threshold was not met`, {
       valid,
       threshold: roleSpec.threshold,
     });
   }
+}
+
+function verifyRoleSignatures(metadata, trustedRootSigned, role) {
+  const roleSpec = trustedRootSigned.roles?.[role];
+  verifySignatureSet(metadata, trustedRootSigned.keys, roleSpec, role);
 }
 
 function sameRoleKeys(leftRoot, rightRoot, role) {
