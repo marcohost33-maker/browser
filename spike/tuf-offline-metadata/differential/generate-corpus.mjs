@@ -268,6 +268,18 @@ cases.push(makeCase({
   note: 'Exact descriptor bytes are pretty-printed, not canonical full-envelope JSON.',
 }));
 
+cases.push(makeCase({
+  name: 'valid-unicode-key-ordering',
+  expected: 'accept',
+  chain: buildChain({
+    mutateTargets(metadata) {
+      metadata.signed['\uE000'] = 'bmp-private-use';
+      metadata.signed['\u{10000}'] = 'astral-plane';
+    },
+  }),
+  note: 'Exercises canonical object-key ordering across BMP and astral Unicode code points.',
+}));
+
 {
   const chain = buildChain();
   const original = chain.objects.timestamp.signatures[0].sig;
