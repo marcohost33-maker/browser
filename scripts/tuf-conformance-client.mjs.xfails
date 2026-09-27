@@ -1,17 +1,3 @@
-# Deliberate first-slice limitations of the generic conformance adapter.
-# Keep this list narrow: a new xfail requires an explicit implementation/scope reason.
-
-# ML-DSA is not available in the pinned Node 22 crypto surface used by APP-01.
+# Deliberate limitation of the generic conformance adapter.
+# Node 22 does not expose the ML-DSA verification surface used by TAP 21.
 test_mldsa_keytype_and_scheme
-
-# Delegated targets traversal is the next ADR-009 slice.
-test_graph_traversal
-test_targetfile_search[targetpath matches wildcard]
-test_targetfile_search[targetpath with separators x]
-test_targetfile_search[targetpath with separators y]
-test_targetfile_search[targetpath is not delegated by all roles in the chain]
-test_targetfile_search[targetpath matches question mark wildcard]
-test_unusual_role_name
-
-# This static repository's selected artifact is delegated.
-test_static_repository[tuf-on-ci-0.11]
