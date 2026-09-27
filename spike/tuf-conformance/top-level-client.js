@@ -463,8 +463,10 @@ export async function refreshTopLevel({
   }
   assertNotExpired(rootEntry.metadata.signed.expires, now, 'root');
 
-  const trustedTimestamp = roleRotation.timestampKeysRotated ? null : previousTimestamp;
-  const trustedSnapshot = roleRotation.snapshotKeysRotated ? null : previousSnapshot;
+  const metadataRollbackStateReset = roleRotation.timestampKeysRotated
+    || roleRotation.snapshotKeysRotated;
+  const trustedTimestamp = metadataRollbackStateReset ? null : previousTimestamp;
+  const trustedSnapshot = metadataRollbackStateReset ? null : previousSnapshot;
 
   const timestampBytes = await fetchBytes(
     fetchImpl,
@@ -478,6 +480,12 @@ export async function refreshTopLevel({
 
   if (trustedTimestamp && timestamp.signed.version < trustedTimestamp.metadata.signed.version) {
     fail('TIMESTAMP_ROLLBACK', 'timestamp version rolled back');
+  }
+  if (trustedTimestamp) {
+    const oldSnapshotDescriptor = assertTimestampMeta(trustedTimestamp.metadata);
+    if (snapshotDescriptor.version < oldSnapshotDescriptor.version) {
+      fail('SNAPSHOT_ROLLBACK', 'timestamp rolled back its snapshot version');
+    }
   }
   if (trustedTimestamp && timestamp.signed.version === trustedTimestamp.metadata.signed.version) {
     return {
