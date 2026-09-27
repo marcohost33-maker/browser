@@ -592,7 +592,14 @@ export function verifyTopLevelMetadata({
     fail('TIMESTAMP_ROLLBACK', 'timestamp version rolled back');
   }
   if (timestampVersion === trustedTimestampVersion && trustedTimestampVersion !== 0) {
-    return { status: 'no-update', trustedState };
+    return {
+      status: 'no-update',
+      trustedState: {
+        ...trustedState,
+        root: trustedRoot,
+      },
+      rootUpdated: trustedRoot.signed.version !== trustedState.root.signed.version,
+    };
   }
 
   assertNotExpired(bundle.timestamp.signed.expires, now, 'timestamp');
