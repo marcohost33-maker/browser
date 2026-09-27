@@ -378,6 +378,40 @@ test('valid dual-threshold root rotation resets timestamp and snapshot rollback 
   assert.equal(result.nextState.versions.snapshot, 1);
 });
 
+test('rejects timestamp metadata that describes anything beyond snapshot.json', () => {
+  const root = rootMetadata();
+  const bundle = cloneBundle(updateBundle({ root }));
+  bundle.timestamp.signed.meta['extra.json'] = {
+    version: 1,
+    length: 1,
+    hashes: { sha256: '0'.repeat(64) },
+  };
+  resign(bundle.timestamp, ['timestampA']);
+
+  assertCode('INVALID_TIMESTAMP_META', () => verifyOfflineBundle({
+    trustedState: trustedState(root),
+    bundle,
+    targetPath: TARGET_PATH,
+    now: NOW,
+  }));
+});
+
+test('rejects delegated snapshot entries until delegation traversal is implemented', () => {
+  const root = rootMetadata();
+  const bundle = cloneBundle(updateBundle({ root }));
+  bundle.snapshot.signed.meta['publisher.json'] = metadataDescriptor(bundle.targets);
+  resign(bundle.snapshot, ['snapshotA']);
+  bundle.timestamp.signed.meta['snapshot.json'] = metadataDescriptor(bundle.snapshot);
+  resign(bundle.timestamp, ['timestampA']);
+
+  assertCode('UNSUPPORTED_SNAPSHOT_META', () => verifyOfflineBundle({
+    trustedState: trustedState(root),
+    bundle,
+    targetPath: TARGET_PATH,
+    now: NOW,
+  }));
+});
+
 test('rejects mix-and-match snapshot bytes before trusting snapshot signatures', () => {
   const root = rootMetadata();
   const bundle = cloneBundle(updateBundle({ root }));
