@@ -30,6 +30,7 @@ jobs:
           npm run toolchain:check
           npm run lockfile:check
           npm ci --ignore-scripts --audit=false --fund=false
+          npm run audit:ci
           npm test
       - name: prepare client-under-test entrypoint
         run: chmod +x scripts/tuf-conformance-client.mjs
