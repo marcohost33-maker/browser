@@ -609,14 +609,226 @@ function delegatedMetadataPath(metadataDir, roleName) {
 }
 
 function delegationPatternRegex(pattern) {
-  if (typeof pattern !== 'string') fail('INVALID_DELEGATION', 'delegation path pattern must be a string');
+  if (typeof pattern !== 'string') {
+    fail('INVALID_DELEGATION', 'delegation path pattern must be a string');
+  }
   let expression = '^';
+  const regexSpecial = new Set(['\\', '^', '$', '.', '+', '(', ')', '[', ']', '{', '}', '|']);
   for (const char of pattern) {
     if (char === '*') expression += '[^/]*';
     else if (char === '?') expression += '[^/]';
-    else expression += char.replace(/[\\^$.*+?()[\]{}|]/g, '\\function safeTargetPath(targetDir, targetName) {');
+    else if (regexSpecial.has(char)) expression += `\\\\${char}`;
+    else expression += char;
   }
-  expression += '
+  expression += '$';
+  return new RegExp(expression, 'u');
+}
+
+function delegationMatchesPath(roleSpec, targetName) {
+  if (Array.isArray(roleSpec.paths)) {
+    return roleSpec.paths.some((pattern) => delegationPatternRegex(pattern).test(targetName));
+  }
+  if (Array.isArray(roleSpec.path_hash_prefixes)) {
+    const digest = hashHex(Buffer.from(targetName, 'utf8'), 'sha256');
+    return roleSpec.path_hash_prefixes.some((prefix) => (
+      typeof prefix === 'string'
+      && prefix.length > 0
+      && prefix.length <= digest.length
+      && HEX.test(prefix)
+      && digest.startsWith(prefix.toLowerCase())
+    ));
+  }
+  return false;
+}
+
+function delegationRoles(metadata) {
+  const delegations = metadata.signed.delegations;
+  if (delegations === undefined) return [];
+  if (!isObject(delegations) || !isObject(delegations.keys)) {
+    fail('INVALID_DELEGATIONS', 'delegations must contain a keys object');
+  }
+  if (delegations.succinct_roles !== undefined) {
+    fail('UNSUPPORTED_SUCCINCT_ROLES', 'succinct roles are not implemented in this conformance slice');
+  }
+  if (!Array.isArray(delegations.roles)) {
+    fail('INVALID_DELEGATIONS', 'delegations.roles must be an ordered array');
+  }
+
+  for (const [keyId, key] of Object.entries(delegations.keys)) {
+    if (conformanceKeyIdFor(key) !== keyId) {
+      fail('KEYID_MISMATCH', `delegated key id does not match canonical key object: ${keyId}`);
+    }
+  }
+
+  const roleNames = new Set();
+  for (const role of delegations.roles) {
+    if (!isObject(role)
+        || typeof role.name !== 'string'
+        || role.name.length === 0
+        || !Array.isArray(role.keyids)
+        || typeof role.terminating !== 'boolean') {
+      fail('INVALID_DELEGATION', 'delegated role entry is malformed');
+    }
+    positiveInteger(role.threshold, `${role.name}.threshold`);
+    if (roleNames.has(role.name)) {
+      fail('DUPLICATE_DELEGATION', `delegated role name is repeated: ${role.name}`);
+    }
+    roleNames.add(role.name);
+
+    const uniqueKeys = new Set(role.keyids);
+    if (uniqueKeys.size !== role.keyids.length) {
+      fail('DUPLICATE_ROLE_KEY', `${role.name} contains duplicate key ids`);
+    }
+    for (const keyId of uniqueKeys) {
+      if (!Object.hasOwn(delegations.keys, keyId)) {
+        fail('UNKNOWN_ROLE_KEY', `${role.name} references unknown delegated key ${keyId}`);
+      }
+    }
+
+    const hasPaths = role.paths !== undefined;
+    const hasPrefixes = role.path_hash_prefixes !== undefined;
+    if (hasPaths === hasPrefixes) {
+      fail('INVALID_DELEGATION', `${role.name} must define exactly one path selector`);
+    }
+    if (hasPaths && !Array.isArray(role.paths)) {
+      fail('INVALID_DELEGATION', `${role.name}.paths must be an array`);
+    }
+    if (hasPrefixes && !Array.isArray(role.path_hash_prefixes)) {
+      fail('INVALID_DELEGATION', `${role.name}.path_hash_prefixes must be an array`);
+    }
+  }
+  return delegations.roles;
+}
+
+function verifyDelegatedSignatures(metadata, delegatorMetadata, roleSpec) {
+  const delegations = delegatorMetadata.signed.delegations;
+  if (!isObject(delegations) || !isObject(delegations.keys)) {
+    fail('INVALID_DELEGATIONS', 'delegator has no usable delegation keys');
+  }
+  verifySignatureSet(metadata, delegations.keys, roleSpec, `delegated role ${roleSpec.name}`);
+}
+
+async function readDelegatedCache(metadataDir, roleName, limits) {
+  const bytes = await readOptional(delegatedMetadataPath(metadataDir, roleName));
+  if (!bytes) return null;
+  return {
+    bytes,
+    metadata: parseBytes(bytes, `delegated ${roleName}`, limits),
+  };
+}
+
+async function loadDelegatedRole({
+  roleSpec,
+  delegatorMetadata,
+  snapshotEntry,
+  metadataDir,
+  metadataUrl,
+  consistentSnapshot,
+  fetchImpl,
+  now,
+  limits,
+  cache,
+}) {
+  const roleName = roleSpec.name;
+  const descriptor = snapshotEntry.metadata.signed.meta?.[`${roleName}.json`];
+  if (!isObject(descriptor)) {
+    fail('DELEGATION_NOT_IN_SNAPSHOT', `snapshot does not describe delegated role ${roleName}`);
+  }
+  positiveInteger(descriptor.version, `${roleName}.version`);
+
+  let entry = cache.get(roleName);
+  if (!entry) entry = await readDelegatedCache(metadataDir, roleName, limits);
+
+  let reusable = false;
+  if (entry && entry.metadata.signed.version === descriptor.version) {
+    try {
+      verifyMetaDescriptor(entry.bytes, descriptor, roleName);
+      reusable = true;
+    } catch (error) {
+      if (!(error instanceof TufSpikeError)) throw error;
+    }
+  }
+
+  if (!reusable) {
+    const encodedRole = encodeURIComponent(roleName);
+    const remoteName = consistentSnapshot
+      ? `${descriptor.version}.${encodedRole}.json`
+      : `${encodedRole}.json`;
+    const maxBytes = Number.isSafeInteger(descriptor.length)
+      ? Math.min(limits.metadataBytes, Math.max(descriptor.length, 1))
+      : limits.metadataBytes;
+    const bytes = await fetchBytes(fetchImpl, urlJoin(metadataUrl, remoteName), { maxBytes });
+    verifyMetaDescriptor(bytes, descriptor, roleName);
+    const metadata = parseBytes(bytes, `delegated ${roleName}`, limits);
+    assertRoleMetadata(metadata, 'targets', now);
+    if (metadata.signed.version !== descriptor.version) {
+      fail('DELEGATED_VERSION', `${roleName} version does not match snapshot descriptor`);
+    }
+    entry = { bytes, metadata };
+    cache.set(roleName, entry);
+    await atomicWrite(delegatedMetadataPath(metadataDir, roleName), bytes);
+  }
+
+  // Re-verify cache hits against the current delegator. A role name can be
+  // reachable through multiple parents with different authorization keys.
+  assertRoleMetadata(entry.metadata, 'targets', now);
+  verifyDelegatedSignatures(entry.metadata, delegatorMetadata, roleSpec);
+  return entry;
+}
+
+async function findTargetDescriptor({
+  roleName,
+  metadata,
+  targetName,
+  visited,
+  cache,
+  context,
+}) {
+  if (visited.has(roleName)) return { descriptor: null, terminated: false };
+  if (visited.size >= context.limits.delegatedRoles) {
+    return { descriptor: null, terminated: false };
+  }
+  visited.add(roleName);
+
+  if (!isObject(metadata.signed.targets)) {
+    fail('INVALID_TARGETS', `${roleName} targets map is invalid`);
+  }
+  const direct = metadata.signed.targets[targetName];
+  if (direct) return { descriptor: direct, terminated: false };
+
+  for (const roleSpec of delegationRoles(metadata)) {
+    if (!delegationMatchesPath(roleSpec, targetName)) continue;
+
+    const child = await loadDelegatedRole({
+      roleSpec,
+      delegatorMetadata: metadata,
+      snapshotEntry: context.snapshotEntry,
+      metadataDir: context.metadataDir,
+      metadataUrl: context.metadataUrl,
+      consistentSnapshot: context.consistentSnapshot,
+      fetchImpl: context.fetchImpl,
+      now: context.now,
+      limits: context.limits,
+      cache,
+    });
+    const result = await findTargetDescriptor({
+      roleName: roleSpec.name,
+      metadata: child.metadata,
+      targetName,
+      visited,
+      cache,
+      context,
+    });
+    if (result.descriptor) return result;
+    if (result.terminated || roleSpec.terminating) {
+      return { descriptor: null, terminated: true };
+    }
+  }
+
+  return { descriptor: null, terminated: false };
+}
+
+function safeTargetPath(targetDir, targetName) {
   if (typeof targetName !== 'string' || targetName.length === 0 || targetName.includes('\\')) {
     fail('INVALID_TARGET_PATH', 'invalid target path');
   }
