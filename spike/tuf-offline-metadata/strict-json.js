@@ -229,11 +229,25 @@ class StrictJsonParser {
 
     const token = match[0];
     this.index += token.length;
-    const value = Number(token);
-    if (!Number.isFinite(value)) {
-      fail('INVALID_JSON_NUMBER', `non-finite JSON number at ${path}`);
+
+    // The project POUF accepts integer tokens only. Checking the raw token is
+    // essential: JSON.parse/Number would collapse 1.0 and 1e0 to the integer 1,
+    // making the representation rule impossible to enforce afterwards.
+    if (/[.eE]/.test(token)) {
+      fail('FLOAT_FORBIDDEN', `non-integer JSON number at ${path}`);
     }
-    return value;
+
+    let integer;
+    try {
+      integer = BigInt(token);
+    } catch {
+      fail('INVALID_JSON_NUMBER', `invalid integer at ${path}`);
+    }
+    const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+    if (integer > maxSafe || integer < -maxSafe) {
+      fail('INVALID_NUMBER', `${path} must be a safe integer`);
+    }
+    return Number(integer);
   }
 }
 
