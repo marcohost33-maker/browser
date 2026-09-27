@@ -473,11 +473,29 @@ function verifyTargetDescriptor(target, descriptor, limits) {
   assertDigest(sha256(target.bytes), descriptor.hashes.sha256, 'TARGET_HASH', 'target');
 }
 
+function assertTimestampMetaMap(timestamp) {
+  if (!isPlainObject(timestamp.signed.meta)) {
+    fail('INVALID_TIMESTAMP', 'timestamp meta must be an object');
+  }
+  const metaPaths = Object.keys(timestamp.signed.meta);
+  if (metaPaths.length !== 1 || metaPaths[0] !== 'snapshot.json') {
+    fail('INVALID_TIMESTAMP_META', 'timestamp meta must describe exactly snapshot.json');
+  }
+  return timestamp.signed.meta;
+}
+
 function assertMetaMap(snapshot, limits) {
   if (!isPlainObject(snapshot.signed.meta)) fail('INVALID_SNAPSHOT', 'snapshot meta must be an object');
   const entries = Object.entries(snapshot.signed.meta);
   if (entries.length === 0 || entries.length > boundedLimit(limits, 'targetCount')) {
     fail('INVALID_SNAPSHOT', 'snapshot metadata count is outside the accepted envelope');
+  }
+
+  // Delegated targets are deliberately unsupported by the current POUF. Reject
+  // extra metadata names instead of silently ignoring state that would acquire
+  // security meaning once delegation traversal is implemented.
+  if (entries.length !== 1 || entries[0][0] !== 'targets.json') {
+    fail('UNSUPPORTED_SNAPSHOT_META', 'top-level-only POUF accepts exactly targets.json');
   }
   return snapshot.signed.meta;
 }
@@ -560,8 +578,8 @@ export function verifyOfflineBundle({
 
   assertNotExpired(bundle.timestamp.signed.expires, now, 'timestamp');
 
-  const snapshotDescriptor = bundle.timestamp.signed.meta?.['snapshot.json'];
-  if (!snapshotDescriptor) fail('MISSING_SNAPSHOT', 'timestamp does not describe snapshot.json');
+  const timestampMeta = assertTimestampMetaMap(bundle.timestamp);
+  const snapshotDescriptor = timestampMeta['snapshot.json'];
   if (snapshotDescriptor.version < trustedSnapshotVersion) {
     fail('SNAPSHOT_ROLLBACK', 'timestamp points to an older snapshot version');
   }
