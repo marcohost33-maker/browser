@@ -130,10 +130,34 @@ mix-and-match checks, app identity/version/capability binding, bounded canonical
 JSON, canonical UTC expiry and validation of every signed target path. Twenty TUF
 tests plus four ADR-governance tests pass locally.
 
-This is partial evidence only. Raw JSON parsing, duplicate-key rejection, delegated
-targets, networking, durable monotonic state, atomic coupling to package activation,
-independent differential verification, fuzzing and recovery drills remain blockers.
-See `spike/tuf-offline-metadata/README.md`.
+This is partial evidence only. Delegated targets, networking, durable monotonic
+state, atomic coupling to package activation, independent differential verification,
+fuzzing and recovery drills remain blockers. See
+`spike/tuf-offline-metadata/README.md`.
+
+## Raw-byte ingress amendment — 2026-09-27
+
+The candidate implementation now adds a strict raw-byte ingress before the in-memory
+verifier. It rejects duplicate JSON object names before ordinary object construction,
+uses fatal UTF-8 decoding, applies byte/depth/node resource limits during parsing and
+retains the exact received bytes for metadata descriptor checks.
+
+A review correction is normative for this candidate: **the complete metadata
+envelope is not required to equal its canonical re-serialization.** The two byte
+domains are kept separate:
+
+- metadata signatures are verified over the project-POUF canonical serialization of
+  the `signed` object;
+- timestamp and snapshot `length`/`hashes` descriptors are checked against the
+  exact bytes of the referenced metadata file as received.
+
+Object-only verification remains available for deterministic research fixtures, but
+must not be treated as the untrusted production ingress because re-serialization can
+erase duplicate-key evidence and change descriptor bytes.
+
+Upstream TUF v1.0.36 is current as of this amendment. This ADR deliberately remains
+pinned to v1.0.35 until a separate specification-delta review determines whether the
+project POUF should change.
 
 ## Evaluation deliverables
 
