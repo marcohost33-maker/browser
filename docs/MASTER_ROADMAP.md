@@ -56,7 +56,7 @@ No lower state may be described as a higher one.
 - **ADR-007** — signed package evaluation; Track-B manifest subset accepted.
 - **ADR-007a** — package-verifier and activation hardening requirements.
 - **ADR-008** — standalone repository and optional/internal MCP.
-- **ADR-009** — proposed TUF v1.0.35 update-metadata evaluation.
+- **ADR-009** — proposed TUF v1.0.36 update-metadata evaluation.
 
 ADR identifiers are unique and immutable. Sub-decisions use explicit suffixes.
 
@@ -131,7 +131,7 @@ Owner: #24 Track C. Binding proposal: ADR-009.
 
 Deliverables:
 
-- project POUF pinned to TUF v1.0.35;
+- project POUF pinned to TUF v1.0.36;
 - root/targets/delegation/snapshot/timestamp fixtures;
 - offline update bundle and disabled-update mode;
 - rollback/freeze/mix-and-match/threshold/key-loss/revocation corpus;

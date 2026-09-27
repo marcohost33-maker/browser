@@ -70,7 +70,7 @@ A canonical manifest is not an accepted package format.
 
 Binding proposal: ADR-009. Parent issue: #24 Track C.
 
-Evaluate TUF v1.0.35 with a project-specific POUF and explicit offline profile.
+Evaluate TUF v1.0.36 with a project-specific POUF and explicit offline profile.
 Manual offline sideload remains mandatory; automatic update is optional and fully
 disableable. The decision must cover key thresholds, delegation, rollback, freeze,
 mix-and-match, revocation, capability expansion and key-loss recovery.

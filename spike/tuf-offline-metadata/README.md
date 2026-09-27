@@ -1,4 +1,4 @@
-# Spike: TUF v1.0.35 Offline Metadata Verification
+# Spike: TUF v1.0.36 Offline Metadata Verification
 
 - Status: **executable research spike; not a production updater**
 - Parent: ADR-009 / issue #24 Track C
@@ -12,7 +12,7 @@ This spike turns the first ADR-009 invariants into executable evidence for a
 self-contained offline update bundle. It verifies a proposed next trusted state in
 memory and deliberately stops before persistence or package activation.
 
-It is based on TUF Specification v1.0.35, including:
+It is based on TUF Specification v1.0.36, including:
 
 - four top-level roles: root, targets, snapshot and timestamp;
 - unique signature key IDs and threshold counting;
@@ -25,13 +25,13 @@ It is based on TUF Specification v1.0.35, including:
 - deletion of fast-forwarded targets versions learned only from the discarded
   snapshot while retaining the version of actually accepted targets metadata.
 
-Primary specification: <https://theupdateframework.github.io/specification/v1.0.35/>
+Primary specification: <https://theupdateframework.github.io/specification/v1.0.36/>
 
 ## Implemented POUF subset
 
 The spike pins a deliberately narrow project profile:
 
-- TUF `spec_version`: `1.0.35`;
+- TUF `spec_version`: `1.0.36`;
 - metadata and key IDs: deterministic JSON with safe integers and UTF-16 key order;
 - canonical JSON depth/node limits and cycle rejection;
 - expiry timestamps in exact `YYYY-MM-DDTHH:MM:SSZ` UTC form;
@@ -140,6 +140,7 @@ review because it would conflate two different TUF byte domains:
 The candidate therefore retains the exact downloaded bytes beside the parsed
 objects and threads those bytes into descriptor length/hash verification.
 
-Upstream TUF v1.0.36 is now available, but this research POUF remains pinned to
-v1.0.35 until the specification delta is reviewed separately. A version bump is not
-part of this raw-ingress change.
+The 2026-09-27 specification-delta review found that TUF v1.0.36 consolidates the
+duplicate THRESHOLD definition and fixes specification markup without changing the
+client threshold semantics used by this spike. The project POUF is therefore pinned
+to v1.0.36 in a separate reviewable change.

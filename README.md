@@ -24,7 +24,7 @@ The repository currently contains:
 - supply-chain, evidence and repository-governance foundations;
 - a promoted canonical-manifest core for ADR-007 Track B
   (`CWAP-Strict-JSON v0.1.2`);
-- an initial dependency-free TUF v1.0.35 offline metadata verification spike;
+- an initial dependency-free TUF v1.0.36 offline metadata verification spike;
 - runtime, package, update and product-discovery spike protocols.
 
 No application installer, package verifier, updater, runtime host, browser shell or

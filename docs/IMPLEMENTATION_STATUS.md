@@ -69,7 +69,7 @@ capability approval, secure updates, safe extraction or runtime isolation.
 
 ### Initial secure-update spike
 
-- dependency-free Node.js verifier for a self-contained TUF v1.0.35 offline bundle;
+- dependency-free Node.js verifier for a self-contained TUF v1.0.36 offline bundle;
 - top-level root, timestamp, snapshot and targets threshold verification;
 - old/new root dual-threshold rotation and correct timestamp/snapshot fast-forward reset;
 - preservation of separately trusted targets rollback state across key rotation;
