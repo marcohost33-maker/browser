@@ -10,6 +10,7 @@ import {
   readFile,
   rename,
   stat,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
@@ -349,6 +350,14 @@ async function readOptional(filePath) {
   }
 }
 
+async function removeOptional(filePath) {
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+}
+
 async function atomicWrite(filePath, bytes) {
   await mkdir(path.dirname(filePath), { recursive: true });
   const temp = `${filePath}.tmp-${process.pid}`;
@@ -465,6 +474,12 @@ export async function refreshTopLevel({
 
   const metadataRollbackStateReset = roleRotation.timestampKeysRotated
     || roleRotation.snapshotKeysRotated;
+  if (metadataRollbackStateReset) {
+    // TUF 5.3.11: after timestamp and/or snapshot key rotation, stale local
+    // timestamp and snapshot state must not reappear after process restart.
+    await removeOptional(metadataPath(metadataDir, 'timestamp'));
+    await removeOptional(metadataPath(metadataDir, 'snapshot'));
+  }
   const trustedTimestamp = metadataRollbackStateReset ? null : previousTimestamp;
   const trustedSnapshot = metadataRollbackStateReset ? null : previousSnapshot;
 
@@ -552,12 +567,9 @@ export async function refreshTopLevel({
     }
   }
 
-  const oldTargetsVersion = roleRotation.snapshotKeysRotated
+  const oldTargetsVersion = metadataRollbackStateReset
     ? 0
-    : Math.max(
-      previousTargets?.metadata?.signed?.version ?? 0,
-      previousSnapshot?.metadata?.signed?.meta?.['targets.json']?.version ?? 0,
-    );
+    : previousSnapshot?.metadata?.signed?.meta?.['targets.json']?.version ?? 0;
   if (targetsDescriptor.version < oldTargetsVersion) {
     fail('TARGETS_ROLLBACK', 'snapshot points to older targets metadata');
   }
