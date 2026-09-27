@@ -32,7 +32,7 @@ Primary specification: <https://theupdateframework.github.io/specification/v1.0.
 The spike pins a deliberately narrow project profile:
 
 - TUF `spec_version`: `1.0.35`;
-- metadata and key IDs: deterministic JSON with safe integers and UTF-16 key order;
+- metadata and key IDs: deterministic OLPC canonical JSON with safe integers and Unicode code-point key order;
 - canonical JSON depth/node limits and cycle rejection;
 - expiry timestamps in exact `YYYY-MM-DDTHH:MM:SSZ` UTC form;
 - signature scheme: raw-public-key Ed25519;
