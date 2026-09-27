@@ -14,6 +14,7 @@ import {
   TufSpikeError,
   updateRootChain,
   verifyOfflineBundle,
+  verifyTopLevelMetadata,
 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 
 import { verifyOfflineBundleBytes } from '../../spike/tuf-offline-metadata/strict-json.js';
@@ -225,6 +226,47 @@ function assertCode(expectedCode, action) {
     return true;
   });
 }
+
+test('generic top-level verifier is independent of Browser app policy', () => {
+  const root = rootMetadata();
+  const bundle = updateBundle({ root });
+
+  delete bundle.targets.signed.targets[TARGET_PATH].custom;
+  resign(bundle.targets, ['targetsA']);
+  bundle.snapshot.signed.meta['targets.json'] = metadataDescriptor(bundle.targets);
+  resign(bundle.snapshot, ['snapshotA']);
+  bundle.timestamp.signed.meta['snapshot.json'] = metadataDescriptor(bundle.snapshot);
+  resign(bundle.timestamp, ['timestampA']);
+
+  const result = verifyTopLevelMetadata({
+    trustedState: trustedState(root),
+    bundle,
+    now: NOW,
+  });
+
+  assert.equal(result.status, 'metadata-verified');
+  assert.equal(result.targetsVersion, 2);
+  assert.equal(result.trustedRoot.signed.version, 1);
+});
+
+test('Browser verifier still fails closed when Browser target policy is absent', () => {
+  const root = rootMetadata();
+  const bundle = updateBundle({ root });
+
+  delete bundle.targets.signed.targets[TARGET_PATH].custom;
+  resign(bundle.targets, ['targetsA']);
+  bundle.snapshot.signed.meta['targets.json'] = metadataDescriptor(bundle.targets);
+  resign(bundle.snapshot, ['snapshotA']);
+  bundle.timestamp.signed.meta['snapshot.json'] = metadataDescriptor(bundle.snapshot);
+  resign(bundle.timestamp, ['timestampA']);
+
+  assert.throws(() => verifyOfflineBundle({
+    trustedState: trustedState(root),
+    bundle,
+    targetPath: TARGET_PATH,
+    now: NOW,
+  }));
+});
 
 test('verifies a complete offline update and returns a proposed atomic next state', () => {
   const root = rootMetadata();
