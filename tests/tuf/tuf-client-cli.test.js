@@ -130,6 +130,36 @@ test('refreshClient follows TUF top-level request order and persists exact bytes
   });
 });
 
+test('refreshClient stops after timestamp when repository timestamp is unchanged', async () => {
+  const fx = await fixture();
+  const metadataDir = join(fx.dir, 'metadata');
+  const sourceRoot = join(fx.dir, 'source-root.json');
+  await writeFile(sourceRoot, fx.root);
+  await initClient(metadataDir, sourceRoot);
+
+  const firstRequests = [];
+  await refreshClient({
+    metadataDir,
+    metadataUrl: METADATA_URL,
+    now: NOW,
+    fetchImpl: fakeFetch(metadataRoutes(fx), firstRequests),
+  });
+
+  const secondRequests = [];
+  const result = await refreshClient({
+    metadataDir,
+    metadataUrl: METADATA_URL,
+    now: NOW,
+    fetchImpl: fakeFetch(metadataRoutes(fx), secondRequests),
+  });
+
+  assert.equal(result.status, 'no-update');
+  assert.deepEqual(secondRequests, [
+    `${METADATA_URL}2.root.json`,
+    `${METADATA_URL}timestamp.json`,
+  ]);
+});
+
 test('downloadTargets verifies a consistent-snapshot target and reuses a valid cache', async () => {
   const fx = await fixture();
   const metadataDir = join(fx.dir, 'metadata');
