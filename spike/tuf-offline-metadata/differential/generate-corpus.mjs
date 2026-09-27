@@ -261,8 +261,9 @@ cases.push(makeCase({
 
 {
   const chain = buildChain();
+  const original = chain.objects.timestamp.signatures[0].sig;
   chain.objects.timestamp.signatures[0].sig =
-    `0${chain.objects.timestamp.signatures[0].sig.slice(1)}`;
+    `${original[0] === '0' ? '1' : '0'}${original.slice(1)}`;
   cases.push(makeCase({
     name: 'reject-invalid-timestamp-signature',
     expected: 'reject',
