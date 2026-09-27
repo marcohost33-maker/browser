@@ -15,9 +15,7 @@ import {
 import path from 'node:path';
 
 import {
-  canonicalBytes,
   DEFAULT_LIMITS,
-  keyIdFor,
   TufSpikeError,
 } from '../tuf-offline-metadata/tuf-offline.js';
 import { parseTufMetadataBytes } from '../tuf-offline-metadata/strict-json.js';
@@ -42,6 +40,68 @@ function fail(code, message, details = undefined) {
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function compareUnicodeCodePoints(left, right) {
+  const a = Array.from(left);
+  const b = Array.from(right);
+  const limit = Math.min(a.length, b.length);
+  for (let index = 0; index < limit; index += 1) {
+    const ac = a[index].codePointAt(0);
+    const bc = b[index].codePointAt(0);
+    if (ac !== bc) return ac - bc;
+  }
+  return a.length - b.length;
+}
+
+function tufCanonicalString(value) {
+  // securesystemslib.formats.encode_canonical implements the OLPC canonical
+  // JSON dialect: only backslash and quote are escaped. Do not use
+  // JSON.stringify here: it has different escaping semantics.
+  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+function tufCanonicalJson(value) {
+  if (value === null) return 'null';
+  if (value === true) return 'true';
+  if (value === false) return 'false';
+  if (typeof value === 'string') return tufCanonicalString(value);
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) {
+      fail('INVALID_NUMBER', 'TUF canonical JSON requires a safe integer in this client');
+    }
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => tufCanonicalJson(entry)).join(',')}]`;
+  }
+  if (!isObject(value)) {
+    fail('INVALID_CANONICAL_TYPE', 'unsupported TUF canonical JSON value');
+  }
+  const keys = Object.keys(value).sort(compareUnicodeCodePoints);
+  return `{${keys.map((key) => (
+    `${tufCanonicalString(key)}:${tufCanonicalJson(value[key])}`
+  )).join(',')}}`;
+}
+
+function tufCanonicalBytes(value) {
+  return Buffer.from(tufCanonicalJson(value), 'utf8');
+}
+
+function defaultKeyId(key) {
+  if (!isObject(key)
+      || typeof key.keytype !== 'string'
+      || typeof key.scheme !== 'string'
+      || !isObject(key.keyval)) {
+    fail('INVALID_KEY', 'invalid TUF key object');
+  }
+  // securesystemslib compute_default_keyid intentionally hashes only these
+  // three standard fields, not arbitrary unrecognized top-level key fields.
+  return hashHex(tufCanonicalBytes({
+    keytype: key.keytype,
+    scheme: key.scheme,
+    keyval: key.keyval,
+  }), 'sha256');
 }
 
 function positiveInteger(value, label) {
@@ -86,7 +146,7 @@ function assertRootShape(rootSigned) {
     if (typeof keyId !== 'string' || !isObject(key)) {
       fail('INVALID_KEYID', 'root contains an invalid key entry');
     }
-    if (keyIdFor(key, CONFORMANCE_LIMITS) !== keyId) {
+    if (defaultKeyId(key) !== keyId) {
       fail('KEYID_MISMATCH', `root key id does not match canonical key object: ${keyId}`);
     }
   }
@@ -176,7 +236,7 @@ function verifyRoleSignatures(metadata, trustedRootSigned, role) {
     fail('UNKNOWN_ROLE', `trusted root does not define role ${role}`);
   }
 
-  const message = canonicalBytes(metadata.signed, CONFORMANCE_LIMITS);
+  const message = tufCanonicalBytes(metadata.signed);
   const seen = new Set();
   let valid = 0;
 
