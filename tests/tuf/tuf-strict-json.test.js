@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { canonicalBytes, TufSpikeError } from '../../spike/tuf-offline-metadata/tuf-offline.js';
+import { TufSpikeError } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 import {
-  parseCanonicalMetadataBytes,
   parseStrictJsonBytes,
+  parseTufMetadataBytes,
 } from '../../spike/tuf-offline-metadata/strict-json.js';
 
 function assertCode(expectedCode, action) {
@@ -15,23 +15,12 @@ function assertCode(expectedCode, action) {
   });
 }
 
-function sampleMetadata() {
-  return Object.assign(Object.create(null), {
-    signatures: [],
-    signed: Object.assign(Object.create(null), {
-      _type: 'timestamp',
-      expires: '2027-01-01T00:00:00Z',
-      meta: Object.create(null),
-      spec_version: '1.0.35',
-      version: 1,
-    }),
-  });
-}
-
-test('accepts exact canonical metadata bytes', () => {
-  const metadata = sampleMetadata();
-  const raw = canonicalBytes(metadata);
-  const parsed = parseCanonicalMetadataBytes(raw);
+test('accepts noncanonical envelope whitespace and key order', () => {
+  const raw = Buffer.from(
+    '{ "signed": { "version": 1, "spec_version": "1.0.35", "meta": {}, "expires": "2027-01-01T00:00:00Z", "_type": "timestamp" }, "signatures": [] }\n',
+    'utf8',
+  );
+  const parsed = parseTufMetadataBytes(raw);
 
   assert.equal(parsed.signed._type, 'timestamp');
   assert.equal(parsed.signed.version, 1);
@@ -57,20 +46,9 @@ test('rejects malformed UTF-8', () => {
   assertCode('INVALID_UTF8', () => parseStrictJsonBytes(raw));
 });
 
-test('rejects UTF-8 BOM to keep one exact metadata representation', () => {
+test('rejects UTF-8 BOM under the project POUF', () => {
   const raw = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{}')]);
   assertCode('JSON_BOM_FORBIDDEN', () => parseStrictJsonBytes(raw));
-});
-
-test('rejects valid JSON with noncanonical whitespace at the metadata boundary', () => {
-  const canonical = canonicalBytes(sampleMetadata()).toString('utf8');
-  const raw = Buffer.from(` ${canonical}`, 'utf8');
-  assertCode('NONCANONICAL_METADATA', () => parseCanonicalMetadataBytes(raw));
-});
-
-test('rejects valid JSON with noncanonical object-key order', () => {
-  const raw = Buffer.from('{"signed":{"version":1,"spec_version":"1.0.35","meta":{},"expires":"2027-01-01T00:00:00Z","_type":"timestamp"},"signatures":[]}', 'utf8');
-  assertCode('NONCANONICAL_METADATA', () => parseCanonicalMetadataBytes(raw));
 });
 
 test('does not prototype-pollute on __proto__ keys', () => {
@@ -80,7 +58,14 @@ test('does not prototype-pollute on __proto__ keys', () => {
   assert.equal({}.polluted, undefined);
 });
 
-test('rejects unsafe numeric values through the canonical POUF gate', () => {
-  const raw = Buffer.from('{"n":9007199254740992}', 'utf8');
-  assertCode('INVALID_NUMBER', () => parseCanonicalMetadataBytes(raw));
+test('rejects unsafe numeric values under the restricted POUF', () => {
+  const raw = Buffer.from(
+    '{"signatures":[],"signed":{"_type":"timestamp","expires":"2027-01-01T00:00:00Z","meta":{},"spec_version":"1.0.35","version":9007199254740992}}',
+    'utf8',
+  );
+  assertCode('INVALID_NUMBER', () => parseTufMetadataBytes(raw));
+});
+
+test('uses project error vocabulary for a non-byte raw input', () => {
+  assertCode('INVALID_RAW_METADATA', () => parseStrictJsonBytes('{"x":1}'));
 });
