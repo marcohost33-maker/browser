@@ -163,3 +163,18 @@ Required evidence:
 Hard vetoes are any accepted malicious package, verifier crash/hang/OOM, parser
 verdict disagreement on the accepted set, unauthorized namespace/key, rollback,
 freeze bypass, capability escalation or incomplete recovery.
+
+## Evidence status — 2026-09-27 (non-normative)
+
+Section 6 is prototyped, format-neutral, in `spike/activation-store/`. The spike stores
+payloads as immutable content-addressed objects, so package paths never reach the
+filesystem; it publishes every state through one atomic commit record, binds last-good
+retention to that record, and recovers fail-closed. Its crash matrix reports
+33,706/33,706 consistent crash cases across process-crash, posix-strict and
+ordered-prefix persistence models with zero durability violations, and all three
+negative controls are detected.
+
+This does not satisfy section 6 for a product path. Still open: wiring a verified
+container into the store, Windows and macOS evidence (including the ordered-metadata
+assumption for NTFS), a real power-loss drill, activation latency and memory
+measurements, and independent review. Sections 1 to 5 and 7 remain unimplemented.

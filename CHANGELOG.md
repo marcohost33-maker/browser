@@ -10,6 +10,25 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 ### Added
 
 - Scaffold aus `code-factory` Copier-Template (14-Element-Struktur).
+- Formatneutraler Activation-Store als Spike fuer ADR-007a Abschnitt 6
+  (`spike/activation-store/`): content-adressierte, unveraenderliche Objekte statt
+  entpackter Paketpfade (Traversal-, Symlink-, Reparse- und Case-Kollisionsklassen
+  entfallen konstruktiv), genau ein atomarer Commit-Punkt `state/CURRENT`,
+  Compare-and-Swap auf der Generation, Last-Good-Retention gebunden an den
+  autoritativen Commit-Datensatz statt an Dateinamen (schliesst P1-RECOVERY-1 aus dem
+  CWAP-v0.1.1-Review; P1-RECOVERY-2 entfaellt durch Content-Adressierung),
+  deterministischer Rollback, Commit-Bindings fuer Update-Metadaten im selben
+  atomaren Schritt und eine Recovery, die Barrieren wiederherstellt und nie selbst
+  Versionen wechselt. Keine Formatwahl, kein Installer, keine Runtime-Anbindung.
+  **Evidenz:** Crash-Matrix ueber Prozess-Crash-, POSIX-strikte und
+  geordnete-Journal-Persistenzmodelle: 33'706/33'706 Crash-Faelle konsistent,
+  0 Durability-Verletzungen, 3/3 Negativkontrollen erkannt, 219/219 reale
+  Prozess-Crashes (Linux); 14/14 Kontroll-Mutationen getoetet; Report byteweise
+  reproduzierbar und an die exakten Quell-Digests gebunden. Die Matrix fand zwei
+  echte Durability-Fehler im eigenen Entwurf (Initialisierung und sichtbarer, aber
+  nicht dauerhafter Marker), beide behoben. **Offen:** Windows/macOS-Evidenz,
+  NTFS-Ordnungsannahme, realer Stromausfall-Drill, Installer-Anbindung nach dem
+  D4-Containerentscheid.
 
 ### Security
 

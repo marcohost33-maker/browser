@@ -1,6 +1,6 @@
 # `browser` — Implementation Status
 
-- Updated: 2026-07-28
+- Updated: 2026-09-27
 - Repository: `marcohost33-maker/browser`
 - Product: standalone native, offline-capable web-application runtime
 - Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
@@ -79,11 +79,28 @@ capability approval, secure updates, safe extraction or runtime isolation.
 - immutable bytes/capability identity for a reused application version;
 - 20 deterministic TUF tests plus four ADR-governance tests, all locally green.
 
+### Activation-store spike (ADR-007a section 6)
+
+- format-neutral content-addressed object store; package paths are keys only and never
+  touch the filesystem;
+- one atomic commit point (`state/CURRENT`), compare-and-swap generations, verified
+  last-good retention bound to the commit record, deterministic rollback;
+- commit-level bindings that move update metadata atomically with the active version;
+- fail-closed recovery that re-establishes durability barriers and never switches
+  versions on its own;
+- crash matrix over process-crash, posix-strict and ordered-prefix persistence models:
+  33,706/33,706 crash cases consistent, 0 durability violations, 3/3 negative
+  controls detected, 219/219 real-filesystem process crashes on Linux;
+- 14/14 control mutations killed; evidence report bound to exact source digests.
+
+Not wired to any verifier, installer or runtime. See `spike/activation-store/README.md`.
+
 ## Not implemented
 
 - native application shell or Chromium host;
 - package parser/verifier and signature validation wired to a product path;
-- content-addressed staging, atomic activation and recovery;
+- installer wiring of the activation-store spike, Windows/macOS durability evidence
+  and a real power-loss drill;
 - production TUF client/repository, raw-byte parser, delegations, durable monotonic
   state, revocation operations or atomic offline update activation;
 - publisher admission, namespace ownership and capability approval engine;

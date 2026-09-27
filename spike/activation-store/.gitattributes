@@ -1,0 +1,7 @@
+# Preserve LF so the crash-matrix report stays byte-identical to a fresh run and the
+# source digests bound into it reproduce on every checkout (repo has known CRLF traps).
+* text=auto eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf

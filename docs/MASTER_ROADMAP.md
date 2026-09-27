@@ -120,7 +120,8 @@ Deliverables:
 - independent strict verifiers;
 - resource envelope and adversarial corpus;
 - manifest↔payload bijection;
-- content-addressed staging, atomic activation and last-good rollback.
+- content-addressed staging, atomic activation and last-good rollback
+  (format-neutral spike: `spike/activation-store/`).
 
 Gate G2: zero accepted malicious cases, zero accepted parser disagreement and full
 interruption recovery.
