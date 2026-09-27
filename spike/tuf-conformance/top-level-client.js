@@ -409,6 +409,16 @@ export async function refreshTopLevel({
   assertRootShape(rootEntry.metadata.signed);
   verifyRoleSignatures(rootEntry.metadata, rootEntry.metadata.signed, 'root');
 
+  // Local metadata was accepted under the currently trusted root. Capture this
+  // state before root rotation: after role-key rotation it is still valid rollback
+  // evidence even though it may no longer verify under the new role keys.
+  const previousTimestamp = await loadTrusted(metadataDir, 'timestamp', limits);
+  const previousSnapshot = await loadTrusted(metadataDir, 'snapshot', limits);
+  const previousTargets = await loadTrusted(metadataDir, 'targets', limits);
+  validateTrustedRole(previousTimestamp, 'timestamp', rootEntry.metadata.signed, now);
+  validateTrustedRole(previousSnapshot, 'snapshot', rootEntry.metadata.signed, now);
+  validateTrustedRole(previousTargets, 'targets', rootEntry.metadata.signed, now);
+
   let roleRotation = {
     timestampKeysRotated: false,
     snapshotKeysRotated: false,
@@ -442,15 +452,8 @@ export async function refreshTopLevel({
   }
   assertNotExpired(rootEntry.metadata.signed.expires, now, 'root');
 
-  let trustedTimestamp = roleRotation.timestampKeysRotated
-    ? null
-    : await loadTrusted(metadataDir, 'timestamp', limits);
-  trustedTimestamp = validateTrustedRole(
-    trustedTimestamp,
-    'timestamp',
-    rootEntry.metadata.signed,
-    now,
-  );
+  const trustedTimestamp = roleRotation.timestampKeysRotated ? null : previousTimestamp;
+  const trustedSnapshot = roleRotation.snapshotKeysRotated ? null : previousSnapshot;
 
   const timestampBytes = await fetchBytes(
     fetchImpl,
@@ -469,29 +472,24 @@ export async function refreshTopLevel({
     return {
       root: rootEntry,
       timestamp: trustedTimestamp,
-      snapshot: await loadTrusted(metadataDir, 'snapshot', limits),
-      targets: await loadTrusted(metadataDir, 'targets', limits),
+      snapshot: previousSnapshot,
+      targets: previousTargets,
       changed: false,
     };
   }
-  await atomicWrite(metadataPath(metadataDir, 'timestamp'), timestampBytes);
-  trustedTimestamp = { bytes: timestampBytes, metadata: timestamp };
 
-  let trustedSnapshot = roleRotation.snapshotKeysRotated
-    ? null
-    : await loadTrusted(metadataDir, 'snapshot', limits);
-  trustedSnapshot = validateTrustedRole(
-    trustedSnapshot,
-    'snapshot',
-    rootEntry.metadata.signed,
-    now,
-  );
-
+  // Snapshot rollback is detected before the new timestamp is persisted. A
+  // missing/invalid newer snapshot may still leave a valid newer timestamp on
+  // disk, but a timestamp that *claims* an older snapshot is itself rejected.
   if (trustedSnapshot && snapshotDescriptor.version < trustedSnapshot.metadata.signed.version) {
     fail('SNAPSHOT_ROLLBACK', 'timestamp points to an older snapshot');
   }
 
-  let snapshotEntry = null;
+  await atomicWrite(metadataPath(metadataDir, 'timestamp'), timestampBytes);
+  const timestampEntry = { bytes: timestampBytes, metadata: timestamp };
+
+  let snapshotEntry;
+  let snapshotWasDownloaded = false;
   if (trustedSnapshot && snapshotDescriptor.version === trustedSnapshot.metadata.signed.version) {
     verifyMetaDescriptor(trustedSnapshot.bytes, snapshotDescriptor, 'snapshot');
     snapshotEntry = trustedSnapshot;
@@ -512,25 +510,56 @@ export async function refreshTopLevel({
       fail('SNAPSHOT_VERSION', 'snapshot version does not match timestamp descriptor');
     }
     snapshotEntry = { bytes: snapshotBytes, metadata: snapshot };
-    await atomicWrite(metadataPath(metadataDir, 'snapshot'), snapshotBytes);
+    snapshotWasDownloaded = true;
   }
 
   const targetsDescriptor = assertSnapshotTargetsMeta(snapshotEntry.metadata);
-  let trustedTargets = await loadTrusted(metadataDir, 'targets', limits);
-  trustedTargets = validateTrustedRole(
-    trustedTargets,
-    'targets',
-    rootEntry.metadata.signed,
-    now,
-  );
-  if (trustedTargets && targetsDescriptor.version < trustedTargets.metadata.signed.version) {
+
+  if (!roleRotation.snapshotKeysRotated && previousSnapshot) {
+    const oldMeta = previousSnapshot.metadata.signed.meta;
+    const newMeta = snapshotEntry.metadata.signed.meta;
+    if (isObject(oldMeta) && isObject(newMeta)) {
+      for (const [name, oldDescriptor] of Object.entries(oldMeta)) {
+        const current = newMeta[name];
+        if (!isObject(current)) {
+          fail('SNAPSHOT_ROLE_REMOVAL', `snapshot removed previously trusted metadata: ${name}`);
+        }
+        if (Number.isSafeInteger(oldDescriptor?.version)
+            && Number.isSafeInteger(current.version)
+            && current.version < oldDescriptor.version) {
+          fail('SNAPSHOT_META_ROLLBACK', `snapshot rolled back metadata: ${name}`);
+        }
+      }
+    }
+  }
+
+  const oldTargetsVersion = roleRotation.snapshotKeysRotated
+    ? 0
+    : Math.max(
+      previousTargets?.metadata?.signed?.version ?? 0,
+      previousSnapshot?.metadata?.signed?.meta?.['targets.json']?.version ?? 0,
+    );
+  if (targetsDescriptor.version < oldTargetsVersion) {
     fail('TARGETS_ROLLBACK', 'snapshot points to older targets metadata');
   }
 
-  let targetsEntry = null;
-  if (trustedTargets && targetsDescriptor.version === trustedTargets.metadata.signed.version) {
-    verifyMetaDescriptor(trustedTargets.bytes, targetsDescriptor, 'targets');
-    targetsEntry = trustedTargets;
+  // Once all rollback properties encoded by snapshot have passed, snapshot can
+  // be persisted even if the subsequent targets fetch fails.
+  if (snapshotWasDownloaded) {
+    await atomicWrite(metadataPath(metadataDir, 'snapshot'), snapshotEntry.bytes);
+  }
+
+  const reusableTargets = !roleRotation.targetsKeysRotated
+    && !roleRotation.snapshotKeysRotated
+    && previousTargets
+    && targetsDescriptor.version === previousTargets.metadata.signed.version
+    ? previousTargets
+    : null;
+
+  let targetsEntry;
+  if (reusableTargets) {
+    verifyMetaDescriptor(reusableTargets.bytes, targetsDescriptor, 'targets');
+    targetsEntry = reusableTargets;
   } else {
     const name = rootEntry.metadata.signed.consistent_snapshot === true
       ? `${targetsDescriptor.version}.targets.json`
@@ -553,7 +582,7 @@ export async function refreshTopLevel({
 
   return {
     root: rootEntry,
-    timestamp: trustedTimestamp,
+    timestamp: timestampEntry,
     snapshot: snapshotEntry,
     targets: targetsEntry,
     changed: true,
