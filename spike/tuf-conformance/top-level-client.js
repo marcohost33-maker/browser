@@ -617,7 +617,7 @@ function delegationPatternRegex(pattern) {
   for (const char of pattern) {
     if (char === '*') expression += '[^/]*';
     else if (char === '?') expression += '[^/]';
-    else if (regexSpecial.has(char)) expression += `\\\\${char}`;
+    else if (regexSpecial.has(char)) expression += String.fromCharCode(92) + char;
     else expression += char;
   }
   expression += '$';
