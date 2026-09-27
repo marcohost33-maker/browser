@@ -66,6 +66,16 @@ test('rejects unsafe numeric values under the restricted POUF', () => {
   assertCode('INVALID_NUMBER', () => parseTufMetadataBytes(raw));
 });
 
+test('rejects excessive nesting during parsing before later canonicalization', () => {
+  const raw = Buffer.from('[[[0]]]', 'utf8');
+  assertCode('JSON_DEPTH_LIMIT', () => parseStrictJsonBytes(raw, { maxDepth: 2 }));
+});
+
+test('rejects excessive JSON nodes during parsing', () => {
+  const raw = Buffer.from('[0,1,2]', 'utf8');
+  assertCode('JSON_NODE_LIMIT', () => parseStrictJsonBytes(raw, { maxNodes: 3 }));
+});
+
 test('uses project error vocabulary for a non-byte raw input', () => {
   assertCode('INVALID_RAW_METADATA', () => parseStrictJsonBytes('{"x":1}'));
 });
