@@ -1,0 +1,12 @@
+# Deliberate first-slice limitations of the generic conformance adapter.
+# Keep this list narrow: a new xfail requires an explicit implementation/scope reason.
+
+# ML-DSA is not available in the pinned Node 22 crypto surface used by APP-01.
+test_mldsa_keytype_and_scheme
+
+# Delegated targets traversal/revocation is the next ADR-009 slice.
+test_graph_traversal
+test_targetfile_search
+test_cached_role_is_verified_against_current_delegator
+test_delegation_not_in_snapshot
+test_unusual_role_name
