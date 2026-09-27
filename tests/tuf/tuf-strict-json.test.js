@@ -66,6 +66,15 @@ test('rejects unsafe numeric values under the restricted POUF', () => {
   assertCode('INVALID_NUMBER', () => parseTufMetadataBytes(raw));
 });
 
+test('rejects decimal and exponent spellings that would collapse to an integer', () => {
+  assertCode('FLOAT_FORBIDDEN', () => parseStrictJsonBytes(
+    Buffer.from('{"version":1.0}', 'utf8'),
+  ));
+  assertCode('FLOAT_FORBIDDEN', () => parseStrictJsonBytes(
+    Buffer.from('{"version":1e0}', 'utf8'),
+  ));
+});
+
 test('rejects excessive nesting during parsing before later canonicalization', () => {
   const raw = Buffer.from('[[[0]]]', 'utf8');
   assertCode('JSON_DEPTH_LIMIT', () => parseStrictJsonBytes(raw, { maxDepth: 2 }));
