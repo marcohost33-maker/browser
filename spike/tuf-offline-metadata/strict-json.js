@@ -33,6 +33,13 @@ function isHexDigit(char) {
   return char !== undefined && /^[0-9a-fA-F]$/.test(char);
 }
 
+function copyRawBytes(value, label) {
+  if (!(Buffer.isBuffer(value) || value instanceof Uint8Array)) {
+    fail('INVALID_RAW_METADATA', `${label} must be Buffer or Uint8Array`);
+  }
+  return Buffer.from(value);
+}
+
 class StrictJsonParser {
   constructor(text) {
     this.text = text;
@@ -298,10 +305,10 @@ export function verifyOfflineBundleBytes({
     fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
   }
 
-  const rootBytes = (bundle.roots ?? []).map((bytes) => Buffer.from(bytes));
-  const timestampBytes = Buffer.from(bundle.timestamp);
-  const snapshotBytes = Buffer.from(bundle.snapshot);
-  const targetsBytes = Buffer.from(bundle.targets);
+  const rootBytes = (bundle.roots ?? []).map((bytes, index) => copyRawBytes(bytes, `root[${index}]`));
+  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp');
+  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot');
+  const targetsBytes = copyRawBytes(bundle.targets, 'targets');
 
   const parsed = {
     roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),
