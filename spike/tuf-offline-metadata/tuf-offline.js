@@ -206,11 +206,24 @@ function assertRoleMetadata(metadata, expectedRole, fixedStartTime, { checkExpir
   if (checkExpiry) assertNotExpired(metadata.signed.expires, fixedStartTime, expectedRole);
 }
 
-function assertMetadataLimit(metadata, limits, roleName) {
+function assertMetadataLimit(metadata, limits, roleName, rawBytes = undefined) {
   if (!isPlainObject(metadata) || !Array.isArray(metadata.signatures) || !isPlainObject(metadata.signed)) {
     fail('INVALID_METADATA', `${roleName} metadata has an invalid envelope`);
   }
-  const bytes = metadataBytes(metadata, limits);
+
+  let bytes;
+  if (rawBytes === undefined) {
+    // Object-mode remains for deterministic research fixtures. A real ingress must
+    // provide the exact downloaded bytes so descriptor length/hash checks bind the
+    // file that was actually received, not a re-serialization.
+    bytes = metadataBytes(metadata, limits);
+  } else {
+    if (!(Buffer.isBuffer(rawBytes) || rawBytes instanceof Uint8Array)) {
+      fail('INVALID_RAW_METADATA', `${roleName} raw metadata must be Buffer or Uint8Array`);
+    }
+    bytes = Buffer.from(rawBytes);
+  }
+
   if (bytes.length > boundedLimit(limits, 'metadataBytes')) {
     fail('METADATA_TOO_LARGE', `${roleName} metadata exceeds the byte limit`, {
       role: roleName,
@@ -384,7 +397,7 @@ function assertDigest(actual, expected, code, label) {
   }
 }
 
-function verifyMetadataDescriptor(metadata, descriptor, label, limits) {
+function verifyMetadataDescriptor(metadata, descriptor, label, limits, rawBytes = undefined) {
   if (!isPlainObject(descriptor)
       || !Number.isSafeInteger(descriptor.length)
       || descriptor.length < 0
@@ -394,7 +407,10 @@ function verifyMetadataDescriptor(metadata, descriptor, label, limits) {
     fail('INVALID_META_DESCRIPTOR', `${label} descriptor is invalid`);
   }
 
-  const bytes = assertMetadataLimit(metadata, limits, label);
+  // TUF metadata-file descriptors bind the file bytes, not a canonicalized
+  // reconstruction of the envelope. Signature verification remains over the
+  // canonical form of metadata.signed.
+  const bytes = assertMetadataLimit(metadata, limits, label, rawBytes);
   if (bytes.length !== descriptor.length) {
     fail('METADATA_LENGTH', `${label} length mismatch`, {
       actual: bytes.length,
@@ -503,7 +519,20 @@ export function verifyOfflineBundle({
   if (!isPlainObject(trustedState) || !isPlainObject(bundle)) {
     fail('INVALID_INPUT', 'trusted state and bundle must be objects');
   }
+  if (bundle.rawMetadata !== undefined && !isPlainObject(bundle.rawMetadata)) {
+    fail('INVALID_RAW_METADATA', 'bundle.rawMetadata must be an object when provided');
+  }
   validateTargetPath(targetPath, limits);
+
+  const rawMetadata = bundle.rawMetadata;
+  if (rawMetadata?.roots !== undefined) {
+    if (!Array.isArray(rawMetadata.roots) || rawMetadata.roots.length !== (bundle.roots ?? []).length) {
+      fail('INVALID_RAW_METADATA', 'raw root metadata must align one-to-one with root candidates');
+    }
+    for (let index = 0; index < rawMetadata.roots.length; index += 1) {
+      assertMetadataLimit(bundle.roots[index], limits, 'root', rawMetadata.roots[index]);
+    }
+  }
 
   const rootUpdate = updateRootChain(trustedState.root, bundle.roots ?? [], now, limits);
   const trustedRoot = rootUpdate.root;
@@ -517,7 +546,7 @@ export function verifyOfflineBundle({
     : currentTrustedVersion(trustedState, 'snapshot');
   const trustedTargetsVersion = currentTrustedVersion(trustedState, 'targets');
 
-  assertMetadataLimit(bundle.timestamp, limits, 'timestamp');
+  assertMetadataLimit(bundle.timestamp, limits, 'timestamp', rawMetadata?.timestamp);
   assertRoleMetadata(bundle.timestamp, 'timestamp', now, { checkExpiry: false });
   verifyRoleSignatures(bundle.timestamp, trustedRoot.signed, 'timestamp', limits);
 
@@ -537,7 +566,7 @@ export function verifyOfflineBundle({
     fail('SNAPSHOT_ROLLBACK', 'timestamp points to an older snapshot version');
   }
 
-  verifyMetadataDescriptor(bundle.snapshot, snapshotDescriptor, 'snapshot', limits);
+  verifyMetadataDescriptor(bundle.snapshot, snapshotDescriptor, 'snapshot', limits, rawMetadata?.snapshot);
   assertRoleMetadata(bundle.snapshot, 'snapshot', now, { checkExpiry: false });
   verifyRoleSignatures(bundle.snapshot, trustedRoot.signed, 'snapshot', limits);
   if (bundle.snapshot.signed.version !== snapshotDescriptor.version) {
@@ -557,7 +586,7 @@ export function verifyOfflineBundle({
     fail('TARGETS_ROLLBACK', 'snapshot points to an older targets version');
   }
 
-  verifyMetadataDescriptor(bundle.targets, targetsDescriptor, 'targets', limits);
+  verifyMetadataDescriptor(bundle.targets, targetsDescriptor, 'targets', limits, rawMetadata?.targets);
   assertRoleMetadata(bundle.targets, 'targets', now, { checkExpiry: false });
   verifyRoleSignatures(bundle.targets, trustedRoot.signed, 'targets', limits);
   if (bundle.targets.signed.version !== targetsDescriptor.version) {
