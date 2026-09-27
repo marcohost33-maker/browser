@@ -17,7 +17,7 @@ function assertCode(expectedCode, action) {
 
 test('accepts noncanonical envelope whitespace and key order', () => {
   const raw = Buffer.from(
-    '{ "signed": { "version": 1, "spec_version": "1.0.35", "meta": {}, "expires": "2027-01-01T00:00:00Z", "_type": "timestamp" }, "signatures": [] }\n',
+    '{ "signed": { "version": 1, "spec_version": "1.0.36", "meta": {}, "expires": "2027-01-01T00:00:00Z", "_type": "timestamp" }, "signatures": [] }\n',
     'utf8',
   );
   const parsed = parseTufMetadataBytes(raw);
@@ -60,7 +60,7 @@ test('does not prototype-pollute on __proto__ keys', () => {
 
 test('rejects unsafe numeric values under the restricted POUF', () => {
   const raw = Buffer.from(
-    '{"signatures":[],"signed":{"_type":"timestamp","expires":"2027-01-01T00:00:00Z","meta":{},"spec_version":"1.0.35","version":9007199254740992}}',
+    '{"signatures":[],"signed":{"_type":"timestamp","expires":"2027-01-01T00:00:00Z","meta":{},"spec_version":"1.0.36","version":9007199254740992}}',
     'utf8',
   );
   assertCode('INVALID_NUMBER', () => parseTufMetadataBytes(raw));
