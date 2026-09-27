@@ -29,6 +29,7 @@ export const CONFORMANCE_LIMITS = Object.freeze({
   rootKeys: 256,
   signatures: 128,
   rootUpdates: 64,
+  delegatedRoles: 256,
 });
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
@@ -599,7 +600,23 @@ export async function refreshTopLevel({
   };
 }
 
-function safeTargetPath(targetDir, targetName) {
+function delegatedMetadataPath(metadataDir, roleName) {
+  const encoded = encodeURIComponent(roleName);
+  if (encoded === '.' || encoded === '..' || encoded.length === 0) {
+    fail('INVALID_ROLE_NAME', 'delegated role name cannot map to an unsafe local filename');
+  }
+  return path.join(metadataDir, `${encoded}.json`);
+}
+
+function delegationPatternRegex(pattern) {
+  if (typeof pattern !== 'string') fail('INVALID_DELEGATION', 'delegation path pattern must be a string');
+  let expression = '^';
+  for (const char of pattern) {
+    if (char === '*') expression += '[^/]*';
+    else if (char === '?') expression += '[^/]';
+    else expression += char.replace(/[\\^$.*+?()[\]{}|]/g, '\\function safeTargetPath(targetDir, targetName) {');
+  }
+  expression += '
   if (typeof targetName !== 'string' || targetName.length === 0 || targetName.includes('\\')) {
     fail('INVALID_TARGET_PATH', 'invalid target path');
   }
@@ -673,28 +690,41 @@ export async function downloadTopLevelTargets({
     limits,
   });
   const targets = refreshed.targets?.metadata;
-  if (!targets || !isObject(targets.signed.targets)) {
+  const snapshotEntry = refreshed.snapshot;
+  if (!targets || !snapshotEntry || !isObject(targets.signed.targets)) {
     fail('INVALID_TARGETS', 'trusted targets metadata is unavailable');
   }
 
+  const consistentSnapshot = refreshed.root.metadata.signed.consistent_snapshot === true;
+  const delegatedCache = new Map();
+  const context = {
+    metadataDir,
+    metadataUrl,
+    snapshotEntry,
+    consistentSnapshot,
+    fetchImpl,
+    now,
+    limits,
+  };
+
   for (const targetName of targetNames) {
-    const descriptor = targets.signed.targets[targetName];
-    if (!descriptor) {
-      if (isObject(targets.signed.delegations)) {
-        fail('UNSUPPORTED_DELEGATION', `target ${targetName} requires delegation traversal`);
-      }
-      fail('TARGET_NOT_FOUND', `target not found: ${targetName}`);
-    }
+    safeTargetPath(targetDir, targetName);
+    const result = await findTargetDescriptor({
+      roleName: 'targets',
+      metadata: targets,
+      targetName,
+      visited: new Set(),
+      cache: delegatedCache,
+      context,
+    });
+    const descriptor = result.descriptor;
+    if (!descriptor) fail('TARGET_NOT_FOUND', `target not found: ${targetName}`);
 
     const destination = safeTargetPath(targetDir, targetName);
     await mkdir(path.dirname(destination), { recursive: true });
     if (await cachedTargetMatches(destination, descriptor, targetName)) continue;
 
-    const remoteName = targetDownloadName(
-      targetName,
-      descriptor,
-      refreshed.root.metadata.signed.consistent_snapshot === true,
-    );
+    const remoteName = targetDownloadName(targetName, descriptor, consistentSnapshot);
     const bytes = await fetchBytes(fetchImpl, urlJoin(targetBaseUrl, remoteName), {
       maxBytes: Math.min(limits.targetBytes, Math.max(descriptor.length, 1)),
     });
@@ -702,3 +732,4 @@ export async function downloadTopLevelTargets({
     await atomicWrite(destination, bytes);
   }
 }
+
