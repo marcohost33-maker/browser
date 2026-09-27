@@ -61,7 +61,7 @@ function tufCanonicalString(value) {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 
-function tufCanonicalJson(value) {
+export function tufCanonicalJson(value) {
   if (value === null) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
@@ -84,11 +84,11 @@ function tufCanonicalJson(value) {
   )).join(',')}}`;
 }
 
-function tufCanonicalBytes(value) {
+export function tufCanonicalBytes(value) {
   return Buffer.from(tufCanonicalJson(value), 'utf8');
 }
 
-function defaultKeyId(key) {
+export function conformanceKeyIdFor(key) {
   if (!isObject(key)
       || typeof key.keytype !== 'string'
       || typeof key.scheme !== 'string'
@@ -143,7 +143,7 @@ function assertRootShape(rootSigned) {
     if (typeof keyId !== 'string' || !isObject(key)) {
       fail('INVALID_KEYID', 'root contains an invalid key entry');
     }
-    if (defaultKeyId(key) !== keyId) {
+    if (conformanceKeyIdFor(key) !== keyId) {
       fail('KEYID_MISMATCH', `root key id does not match canonical key object: ${keyId}`);
     }
   }
