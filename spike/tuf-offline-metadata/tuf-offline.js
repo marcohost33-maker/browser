@@ -523,12 +523,10 @@ function trustedSnapshotTargetVersion(trustedState) {
  * persistence is deliberately returned as a proposed next state and is not claimed
  * by this spike.
  */
-export function verifyOfflineBundle({
+export function verifyTopLevelMetadata({
   trustedState,
   bundle,
-  targetPath,
   now = new Date(),
-  approveCapabilityExpansion = () => false,
   limits = DEFAULT_LIMITS,
 }) {
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
@@ -540,7 +538,6 @@ export function verifyOfflineBundle({
   if (bundle.rawMetadata !== undefined && !isPlainObject(bundle.rawMetadata)) {
     fail('INVALID_RAW_METADATA', 'bundle.rawMetadata must be an object when provided');
   }
-  validateTargetPath(targetPath, limits);
 
   const rawMetadata = bundle.rawMetadata;
   if (rawMetadata?.roots !== undefined) {
@@ -595,7 +592,6 @@ export function verifyOfflineBundle({
 
   const snapshotMeta = assertMetaMap(bundle.snapshot, limits);
   const targetsDescriptor = snapshotMeta['targets.json'];
-  if (!targetsDescriptor) fail('MISSING_TARGETS', 'snapshot does not describe targets.json');
 
   const oldTargetsVersion = metadataRollbackStateReset
     ? trustedTargetsVersion
@@ -621,6 +617,49 @@ export function verifyOfflineBundle({
     fail('TOO_MANY_TARGETS', 'targets metadata exceeds the entry limit');
   }
   for (const entryPath of targetEntries) validateTargetPath(entryPath, limits);
+
+  return {
+    status: 'metadata-verified',
+    trustedRoot,
+    timestampVersion,
+    snapshotVersion: bundle.snapshot.signed.version,
+    targetsVersion: bundle.targets.signed.version,
+    snapshotMeta,
+    targets: bundle.targets,
+    metadataRollbackStateReset,
+  };
+}
+
+/**
+ * Verify a self-contained offline Browser update bundle.
+ *
+ * Generic top-level TUF verification is performed by verifyTopLevelMetadata().
+ * Browser-specific application identity, target and capability policy is layered
+ * on only after the generic metadata chain is accepted.
+ */
+export function verifyOfflineBundle({
+  trustedState,
+  bundle,
+  targetPath,
+  now = new Date(),
+  approveCapabilityExpansion = () => false,
+  limits = DEFAULT_LIMITS,
+}) {
+  validateTargetPath(targetPath, limits);
+
+  const metadataResult = verifyTopLevelMetadata({
+    trustedState,
+    bundle,
+    now,
+    limits,
+  });
+  if (metadataResult.status === 'no-update') return metadataResult;
+
+  const {
+    trustedRoot,
+    timestampVersion,
+    snapshotMeta,
+  } = metadataResult;
 
   const descriptor = bundle.targets.signed.targets[targetPath];
   if (!descriptor) fail('TARGET_NOT_FOUND', `target is not authorized: ${targetPath}`);
