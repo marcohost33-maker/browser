@@ -26,6 +26,14 @@ function fail(code, message, details = undefined) {
   throw new TufClientError(code, message, details);
 }
 
+function limitValue(limits, name) {
+  const value = limits?.[name] ?? DEFAULT_LIMITS[name];
+  if (!Number.isSafeInteger(value) || value < 1) {
+    fail('INVALID_LIMIT', `${name} must be a positive safe integer`);
+  }
+  return value;
+}
+
 async function readMaybe(path) {
   try {
     return await readFile(path);
@@ -242,10 +250,11 @@ async function fetchRootChain({
 }) {
   const roots = [];
   let nextVersion = startingVersion + 1;
-  for (let count = 0; count < limits.rootUpdates; count += 1, nextVersion += 1) {
+  const rootUpdateLimit = limitValue(limits, 'rootUpdates');
+  for (let count = 0; count < rootUpdateLimit; count += 1, nextVersion += 1) {
     const bytes = await fetchBytes(
       childUrl(metadataBase, `${nextVersion}.root.json`),
-      { maxBytes: limits.metadataBytes, allowNotFound: true },
+      { maxBytes: limitValue(limits, 'metadataBytes'), allowNotFound: true },
     );
     if (bytes === null) return roots;
 
@@ -258,7 +267,7 @@ async function fetchRootChain({
     }
     roots.push(bytes);
   }
-  fail('ROOT_UPDATE_LIMIT', 'root update chain exceeded configured limit');
+  return roots;
 }
 
 function consistentSnapshotFromRoots(trustedRoot, roots, limits) {
@@ -314,7 +323,7 @@ export async function refreshClient({
   });
 
   const timestamp = await fetchBytes(childUrl(metadataBase, 'timestamp.json'), {
-    maxBytes: limits.metadataBytes,
+    maxBytes: limitValue(limits, 'metadataBytes'),
   });
   const parsedTimestamp = parseTufMetadataBytes(timestamp, limits, 'remote-timestamp');
   const snapshotDescriptor = parsedTimestamp.signed.meta?.['snapshot.json'];
@@ -323,13 +332,41 @@ export async function refreshClient({
   }
 
   const consistentSnapshot = consistentSnapshotFromRoots(local.parsed.root, roots, limits);
+
+  // With no root transition, an equal timestamp is a complete no-update signal
+  // after its signature/rollback checks. Use the existing local snapshot/targets
+  // as inert bundle members so we do not make unnecessary repository requests.
+  // A lower timestamp still reaches the verifier and fails rollback closed.
+  if (roots.length === 0
+      && local.raw.snapshot !== null
+      && local.raw.targets !== null
+      && parsedTimestamp.signed.version <= local.trustedState.versions.timestamp) {
+    const bundle = {
+      roots,
+      timestamp,
+      snapshot: local.raw.snapshot,
+      targets: local.raw.targets,
+    };
+    const verified = verifyTopLevelMetadataBytes({
+      trustedState: local.trustedState,
+      bundle,
+      now,
+      limits,
+    });
+    const writes = await persistVerifiedMetadata(metadataDir, verified, bundle);
+    return {
+      ...verified,
+      writes,
+      consistentSnapshot,
+    };
+  }
   const snapshot = await fetchBytes(
     childUrl(metadataBase, metadataFilename(
       'snapshot',
       snapshotDescriptor.version,
       consistentSnapshot,
     )),
-    { maxBytes: limits.metadataBytes },
+    { maxBytes: limitValue(limits, 'metadataBytes') },
   );
 
   const parsedSnapshot = parseTufMetadataBytes(snapshot, limits, 'remote-snapshot');
@@ -344,7 +381,7 @@ export async function refreshClient({
       targetsDescriptor.version,
       consistentSnapshot,
     )),
-    { maxBytes: limits.metadataBytes },
+    { maxBytes: limitValue(limits, 'metadataBytes') },
   );
 
   const bundle = { roots, timestamp, snapshot, targets };
@@ -428,7 +465,7 @@ export async function downloadTargets({
 
     const remotePath = targetFetchPath(targetName, descriptor, refresh.consistentSnapshot);
     const bytes = await fetchBounded(childUrl(targetBase, remotePath), {
-      maxBytes: limits.targetBytes,
+      maxBytes: limitValue(limits, 'targetBytes'),
       fetchImpl,
     });
     verifyTargetBytes(bytes, descriptor, limits);
