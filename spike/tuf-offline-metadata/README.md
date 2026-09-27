@@ -37,7 +37,13 @@ The spike pins a deliberately narrow project profile:
 - expiry timestamps in exact `YYYY-MM-DDTHH:MM:SSZ` UTC form;
 - signature scheme: raw-public-key Ed25519;
 - digest: SHA-256;
-- canonical full-metadata bytes for length/hash descriptors;
+- signatures over the project-canonical serialization of each metadata `signed`
+  object;
+- timestamp/snapshot length and hash descriptors over the exact metadata-file bytes
+  received, never over a reconstructed serialization;
+- strict raw UTF-8 JSON ingress with duplicate-key rejection before ordinary object
+  semantics can overwrite an earlier value;
+- parser-time byte, nesting-depth and JSON-node limits;
 - metadata limit: 64 KiB per role by default;
 - target limit: 64 MiB by default;
 - bounded target paths, counts, keys, signatures and root-update chains;
@@ -50,7 +56,7 @@ The spike pins a deliberately narrow project profile:
 
 ## Current tests
 
-The TUF test suite contains **20 deterministic tests** covering:
+The original TUF suite contains **20 deterministic tests** covering:
 
 1. valid offline update;
 2. normal same-timestamp no-update;
@@ -73,6 +79,15 @@ The TUF test suite contains **20 deterministic tests** covering:
 19. metadata byte-envelope enforcement;
 20. canonical JSON depth and cycle rejection.
 
+The raw-ingress candidate adds dedicated tests for duplicate keys, escaped-equivalent
+keys, malformed UTF-8, BOM policy, prototype-pollution resistance, unsafe numbers,
+parser-time depth/node limits and non-byte inputs. It also adds end-to-end tests that
+distinguish canonical signature bytes from exact metadata-file descriptor bytes:
+noncanonical envelope whitespace/key order is accepted when the signed descriptor
+binds those exact bytes, while a descriptor computed from a reconstructed
+serialization is rejected.
+
+
 Run:
 
 ```text
@@ -84,7 +99,6 @@ no reusable private key material is stored.
 
 ## Explicitly not implemented
 
-- raw JSON parsing or duplicate-key detection;
 - complete schema validation and a final application-ID grammar;
 - delegated targets roles and path traversal through delegation graphs;
 - repository/mirror networking and consistent-snapshot filenames;
@@ -104,10 +118,29 @@ These omissions are acceptance blockers, not future claims.
 The spike may advance only after:
 
 - a reviewed POUF and schemas are fixed;
-- raw-byte parsing and strict duplicate-key handling exist;
+- raw-byte parsing and strict duplicate-key handling are independently reviewed and
+  integrated through the untrusted ingress;
 - delegated publisher fixtures and revocation are covered;
 - state persistence is atomic and power-loss tested with package activation;
 - an independent TUF implementation or oracle agrees on the accepted corpus;
 - fuzzing, performance, memory and endless-data evidence pass;
 - key-loss and out-of-band recovery drills are documented;
 - independent security review approves the exact candidate.
+
+## 2026-09-27 raw-ingress correction
+
+The raw-ingress work intentionally does **not** require the complete metadata
+envelope to be canonical JSON. That earlier candidate rule was rejected during
+review because it would conflate two different TUF byte domains:
+
+1. signature verification serializes the `signed` object according to the selected
+   POUF; and
+2. timestamp/snapshot metadata descriptors bind the exact bytes of the referenced
+   metadata file.
+
+The candidate therefore retains the exact downloaded bytes beside the parsed
+objects and threads those bytes into descriptor length/hash verification.
+
+Upstream TUF v1.0.36 is now available, but this research POUF remains pinned to
+v1.0.35 until the specification delta is reviewed separately. A version bump is not
+part of this raw-ingress change.
