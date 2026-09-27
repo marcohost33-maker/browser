@@ -28,7 +28,11 @@ for (const item of corpus.cases) {
     );
     const trustedState = {
       root: trustedRoot,
-      versions: { timestamp: 0, snapshot: 0, targets: 0 },
+      versions: item.trusted_versions ?? {
+        timestamp: 0,
+        snapshot: 0,
+        targets: 0,
+      },
       snapshotMeta: {},
     };
 
