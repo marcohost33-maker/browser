@@ -95,13 +95,10 @@ function defaultKeyId(key) {
       || !isObject(key.keyval)) {
     fail('INVALID_KEY', 'invalid TUF key object');
   }
-  // securesystemslib compute_default_keyid intentionally hashes only these
-  // three standard fields, not arbitrary unrecognized top-level key fields.
-  return hashHex(tufCanonicalBytes({
-    keytype: key.keytype,
-    scheme: key.scheme,
-    keyval: key.keyval,
-  }), 'sha256');
+  // TUF clients recalculate the key ID from the complete canonical key
+  // representation they received. This intentionally preserves unrecognized
+  // fields: conformance fixtures verify that they participate in the key ID.
+  return hashHex(tufCanonicalBytes(key), 'sha256');
 }
 
 function positiveInteger(value, label) {
@@ -160,9 +157,6 @@ function assertRootShape(rootSigned) {
     const unique = new Set(spec.keyids);
     if (unique.size !== spec.keyids.length) {
       fail('DUPLICATE_ROLE_KEY', `${role} contains duplicate key ids`);
-    }
-    if (spec.threshold > unique.size) {
-      fail('INVALID_THRESHOLD', `${role} threshold exceeds key count`);
     }
     for (const keyId of unique) {
       if (!Object.hasOwn(rootSigned.keys, keyId)) {
@@ -388,6 +382,7 @@ function rootUpdateResult(previous, current) {
   return {
     timestampKeysRotated: !sameRoleKeys(previous.signed, current.signed, 'timestamp'),
     snapshotKeysRotated: !sameRoleKeys(previous.signed, current.signed, 'snapshot'),
+    targetsKeysRotated: !sameRoleKeys(previous.signed, current.signed, 'targets'),
   };
 }
 
@@ -414,7 +409,11 @@ export async function refreshTopLevel({
   assertRootShape(rootEntry.metadata.signed);
   verifyRoleSignatures(rootEntry.metadata, rootEntry.metadata.signed, 'root');
 
-  let roleRotation = { timestampKeysRotated: false, snapshotKeysRotated: false };
+  let roleRotation = {
+    timestampKeysRotated: false,
+    snapshotKeysRotated: false,
+    targetsKeysRotated: false,
+  };
   for (let index = 0; index < limits.rootUpdates; index += 1) {
     const nextVersion = rootEntry.metadata.signed.version + 1;
     const candidateBytes = await fetchBytes(
@@ -436,6 +435,7 @@ export async function refreshTopLevel({
     const delta = rootUpdateResult(rootEntry.metadata, candidate);
     roleRotation.timestampKeysRotated ||= delta.timestampKeysRotated;
     roleRotation.snapshotKeysRotated ||= delta.snapshotKeysRotated;
+    roleRotation.targetsKeysRotated ||= delta.targetsKeysRotated;
 
     rootEntry = { bytes: candidateBytes, metadata: candidate };
     await atomicWrite(metadataPath(metadataDir, 'root'), candidateBytes);
