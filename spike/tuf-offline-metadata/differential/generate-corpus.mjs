@@ -164,6 +164,9 @@ function buildChain({
   timestampSigner = 'timestampA',
   snapshotSigner = 'snapshotA',
   targetsSigner = 'targetsA',
+  timestampVersion = 2,
+  snapshotVersion = 2,
+  targetsVersion = 2,
   timestampExpires = FUTURE,
   snapshotExpires = FUTURE,
   targetsExpires = FUTURE,
@@ -175,7 +178,7 @@ function buildChain({
   const targets = signedMetadata({
     _type: 'targets',
     spec_version: POUF.specVersion,
-    version: 2,
+    version: targetsVersion,
     expires: targetsExpires,
     targets: {
       [TARGET_PATH]: {
@@ -191,7 +194,7 @@ function buildChain({
   const snapshot = signedMetadata({
     _type: 'snapshot',
     spec_version: POUF.specVersion,
-    version: 2,
+    version: snapshotVersion,
     expires: snapshotExpires,
     meta: {
       'targets.json': descriptor(targetsRaw, targets.signed.version),
@@ -204,7 +207,7 @@ function buildChain({
   const timestamp = signedMetadata({
     _type: 'timestamp',
     spec_version: POUF.specVersion,
-    version: 2,
+    version: timestampVersion,
     expires: timestampExpires,
     meta: {
       'snapshot.json': descriptor(snapshotRaw, snapshot.signed.version),
@@ -235,6 +238,8 @@ function makeCase({
   chain = buildChain(),
   timestampRaw = chain.raw.timestampRaw,
   note,
+  trustedVersions = null,
+  preloadTimestampRaw = null,
 }) {
   return {
     name,
@@ -243,6 +248,10 @@ function makeCase({
     expected_browser: expected,
     expected_python_tuf: mustAgree ? expected : null,
     note: note ?? null,
+    trusted_versions: trustedVersions,
+    preload_timestamp_b64: preloadTimestampRaw === null
+      ? null
+      : encode(preloadTimestampRaw),
     trusted_root_b64: encode(trustedRootRaw),
     roots_b64: roots.map((value) => encode(value)),
     timestamp_b64: encode(timestampRaw),
@@ -304,6 +313,29 @@ cases.push(makeCase({
   chain: buildChain({
     mutateTimestamp(metadata) {
       metadata.signed._type = 'snapshot';
+    },
+  }),
+}));
+
+{
+  const preload = buildChain({ timestampVersion: 2 });
+  const rollback = buildChain({ timestampVersion: 1 });
+  cases.push(makeCase({
+    name: 'reject-timestamp-rollback-against-trusted-state',
+    expected: 'reject',
+    chain: rollback,
+    trustedVersions: { timestamp: 2, snapshot: 0, targets: 0 },
+    preloadTimestampRaw: preload.raw.timestampRaw,
+    note: 'Stateful rollback: candidate timestamp v1 follows an already trusted v2.',
+  }));
+}
+
+cases.push(makeCase({
+  name: 'reject-snapshot-version-mismatch',
+  expected: 'reject',
+  chain: buildChain({
+    mutateTimestamp(metadata) {
+      metadata.signed.meta['snapshot.json'].version = 3;
     },
   }),
 }));
