@@ -3,7 +3,7 @@
 - Status: PROPOSED
 - Date: 2026-07-28
 - Parent workstream: ADR-007 Track C / issue #24
-- Reference specification: The Update Framework v1.0.35, modified 2026-07-15
+- Reference specification: The Update Framework v1.0.36, modified 2026-08-05
 - Decision owner: Marco
 
 ## Context
@@ -19,7 +19,7 @@ continuous connectivity or a trustworthy wall clock is therefore insufficient.
 
 ## Proposal
 
-Evaluate TUF v1.0.35 as the update-metadata security model while keeping the package
+Evaluate TUF v1.0.36 as the update-metadata security model while keeping the package
 format independent. The spike must define a project-specific POUF that pins:
 
 - metadata serialization and canonicalization;
@@ -155,13 +155,21 @@ Object-only verification remains available for deterministic research fixtures, 
 must not be treated as the untrusted production ingress because re-serialization can
 erase duplicate-key evidence and change descriptor bytes.
 
-Upstream TUF v1.0.36 is current as of this amendment. This ADR deliberately remains
-pinned to v1.0.35 until a separate specification-delta review determines whether the
-project POUF should change.
+### Specification delta review — 2026-09-27
+
+The v1.0.35 → v1.0.36 upstream delta was reviewed separately. Upstream PR #322
+consolidates the duplicate THRESHOLD definition, fixes cross-reference/markup
+details and updates specification build metadata. It does not change the threshold
+counting semantics already implemented here: each verified KEYID contributes at
+most once and the configured role threshold remains a positive integer.
+
+The project POUF is therefore updated to TUF v1.0.36. No cryptographic algorithm,
+role workflow, trust decision or acceptance criterion changes as part of this
+version bump.
 
 ## Evaluation deliverables
 
-- [ ] exact v1.0.35 clauses mapped to implementation requirements;
+- [ ] exact v1.0.36 clauses mapped to implementation requirements;
 - [ ] project POUF and JSON schemas;
 - [ ] generated root/targets/snapshot/timestamp fixtures;
 - [ ] delegated publisher fixture and revocation fixture;
@@ -185,5 +193,5 @@ veto.
 
 ## Primary references
 
-- TUF Specification v1.0.35: <https://theupdateframework.github.io/specification/v1.0.35/>
+- TUF Specification v1.0.36: <https://theupdateframework.github.io/specification/v1.0.36/>
 - TUF project: <https://theupdateframework.io/>
