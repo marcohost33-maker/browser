@@ -46,7 +46,7 @@ successful recovery for every injected interruption.
 
 - [x] Implement an initial dependency-free top-level-role offline verification
   harness with adversarial rollback/freeze/mix-and-match/capability tests.
-- [ ] Ratify or reject ADR-009 after the complete measured TUF v1.0.35 spike.
+- [ ] Ratify or reject ADR-009 after the complete measured TUF v1.0.36 spike.
 - [ ] Define root, targets/delegations, snapshot and timestamp roles and thresholds.
 - [ ] Keep package identity, publisher admission, capability approval and update
   authority separate.
