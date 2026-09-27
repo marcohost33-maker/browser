@@ -301,6 +301,33 @@ test('verifies a complete offline update and returns a proposed atomic next stat
   assert.deepEqual(result.target, bundle.target.bytes);
 });
 
+test('retains a verified root rotation when timestamp has no newer version', () => {
+  const oldRoot = rootMetadata();
+  const nextRoot = rootMetadata({
+    version: 2,
+    rootNames: ['rootB', 'rootC'],
+    signerNames: ['rootA', 'rootB', 'rootC'],
+  });
+  const bundle = updateBundle({
+    root: oldRoot,
+    roots: [nextRoot],
+    timestampVersion: 1,
+    snapshotVersion: 1,
+    targetsVersion: 1,
+    appVersion: 1,
+  });
+
+  const result = verifyTopLevelMetadata({
+    trustedState: trustedState(oldRoot),
+    bundle,
+    now: NOW,
+  });
+
+  assert.equal(result.status, 'no-update');
+  assert.equal(result.rootUpdated, true);
+  assert.equal(result.trustedState.root.signed.version, 2);
+});
+
 test('treats the same trusted timestamp version as a normal no-update result', () => {
   const root = rootMetadata();
   const bundle = updateBundle({ root, timestampVersion: 1 });
