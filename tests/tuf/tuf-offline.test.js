@@ -16,6 +16,8 @@ import {
   verifyOfflineBundle,
 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 
+import { verifyOfflineBundleBytes } from '../../spike/tuf-offline-metadata/strict-json.js';
+
 const NOW = new Date('2026-07-28T12:00:00.000Z');
 const FUTURE = '2027-07-28T12:00:00Z';
 const PAST = '2026-07-27T12:00:00Z';
@@ -78,13 +80,21 @@ function signedMetadata(signed, signerNames) {
   };
 }
 
-function metadataDescriptor(metadata, version = metadata.signed.version) {
-  const bytes = canonicalBytes(metadata);
+function metadataDescriptor(
+  metadata,
+  version = metadata.signed.version,
+  rawBytes = canonicalBytes(metadata),
+) {
+  const bytes = Buffer.from(rawBytes);
   return {
     version,
     length: bytes.length,
     hashes: { sha256: sha256(bytes) },
   };
+}
+
+function rawMetadataBytes(metadata) {
+  return Buffer.from(`${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
 }
 
 function rootMetadata({
@@ -247,6 +257,62 @@ test('treats the same trusted timestamp version as a normal no-update result', (
   });
 
   assert.equal(result.status, 'no-update');
+});
+
+test('raw ingress verifies noncanonical envelope bytes using exact file hashes', () => {
+  const root = rootMetadata();
+  const bundle = updateBundle({ root });
+
+  const rawTargets = rawMetadataBytes(bundle.targets);
+  bundle.snapshot.signed.meta['targets.json'] = metadataDescriptor(
+    bundle.targets,
+    bundle.targets.signed.version,
+    rawTargets,
+  );
+  resign(bundle.snapshot, ['snapshotA']);
+
+  const rawSnapshot = rawMetadataBytes(bundle.snapshot);
+  bundle.timestamp.signed.meta['snapshot.json'] = metadataDescriptor(
+    bundle.snapshot,
+    bundle.snapshot.signed.version,
+    rawSnapshot,
+  );
+  resign(bundle.timestamp, ['timestampA']);
+
+  const result = verifyOfflineBundleBytes({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: rawMetadataBytes(bundle.timestamp),
+      snapshot: rawSnapshot,
+      targets: rawTargets,
+      target: bundle.target,
+    },
+    targetPath: TARGET_PATH,
+    now: NOW,
+  });
+
+  assert.equal(result.status, 'update-verified');
+  assert.equal(result.nextState.versions.snapshot, 2);
+  assert.equal(result.nextState.versions.targets, 2);
+});
+
+test('raw ingress rejects descriptors computed over reserialized metadata', () => {
+  const root = rootMetadata();
+  const bundle = updateBundle({ root });
+
+  assertCode('METADATA_LENGTH', () => verifyOfflineBundleBytes({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: rawMetadataBytes(bundle.timestamp),
+      snapshot: rawMetadataBytes(bundle.snapshot),
+      targets: rawMetadataBytes(bundle.targets),
+      target: bundle.target,
+    },
+    targetPath: TARGET_PATH,
+    now: NOW,
+  }));
 });
 
 test('rejects duplicate signature key ids instead of counting them twice', () => {
