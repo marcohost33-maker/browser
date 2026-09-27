@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import {
   canonicalBytes,
+  canonicalJson,
   keyIdFor,
   POUF,
   sha256,
@@ -226,6 +227,18 @@ function assertCode(expectedCode, action) {
     return true;
   });
 }
+
+test('canonical JSON orders object keys by Unicode code point, not UTF-16 units', () => {
+  const value = {
+    '\u{10000}': 'astral',
+    '\uE000': 'bmp',
+  };
+
+  assert.equal(
+    canonicalJson(value),
+    '{"":"bmp","𐀀":"astral"}',
+  );
+});
 
 test('generic top-level verifier is independent of Browser app policy', () => {
   const root = rootMetadata();
