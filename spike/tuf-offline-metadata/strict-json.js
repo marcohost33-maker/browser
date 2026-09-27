@@ -5,6 +5,7 @@ import {
   DEFAULT_LIMITS,
   TufSpikeError,
   verifyOfflineBundle,
+  verifyTopLevelMetadata,
 } from './tuf-offline.js';
 
 const UTF8_FATAL = new TextDecoder('utf-8', { fatal: true });
@@ -319,6 +320,48 @@ export function parseTufMetadataBytes(rawBytes, limits = DEFAULT_LIMITS, label =
   }
   canonicalBytes(value, limits);
   return value;
+}
+
+/**
+ * Raw-byte ingress for the generic top-level TUF metadata core.
+ */
+export function verifyTopLevelMetadataBytes({
+  trustedState,
+  bundle,
+  now = new Date(),
+  limits = DEFAULT_LIMITS,
+}) {
+  if (!isPlainObject(bundle)) {
+    fail('INVALID_INPUT', 'raw top-level bundle must be an object');
+  }
+  if (!Array.isArray(bundle.roots ?? [])) {
+    fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
+  }
+
+  const rootBytes = (bundle.roots ?? []).map((bytes, index) => copyRawBytes(bytes, `root[${index}]`));
+  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp');
+  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot');
+  const targetsBytes = copyRawBytes(bundle.targets, 'targets');
+
+  const parsed = {
+    roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),
+    timestamp: parseTufMetadataBytes(timestampBytes, limits, 'timestamp'),
+    snapshot: parseTufMetadataBytes(snapshotBytes, limits, 'snapshot'),
+    targets: parseTufMetadataBytes(targetsBytes, limits, 'targets'),
+    rawMetadata: {
+      roots: rootBytes,
+      timestamp: timestampBytes,
+      snapshot: snapshotBytes,
+      targets: targetsBytes,
+    },
+  };
+
+  return verifyTopLevelMetadata({
+    trustedState,
+    bundle: parsed,
+    now,
+    limits,
+  });
 }
 
 /**
