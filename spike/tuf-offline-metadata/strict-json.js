@@ -4,6 +4,7 @@ import {
   canonicalBytes,
   DEFAULT_LIMITS,
   TufSpikeError,
+  verifyOfflineBundle,
 } from './tuf-offline.js';
 
 const UTF8_FATAL = new TextDecoder('utf-8', { fatal: true });
@@ -22,8 +23,14 @@ function positiveSafeLimit(value, fallback, label) {
   return selected;
 }
 
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 function isHexDigit(char) {
-  return /^[0-9a-fA-F]$/.test(char);
+  return char !== undefined && /^[0-9a-fA-F]$/.test(char);
 }
 
 class StrictJsonParser {
@@ -171,8 +178,7 @@ class StrictJsonParser {
         const escape = this.text[this.index];
         if (escape === 'u') {
           for (let n = 1; n <= 4; n += 1) {
-            const digit = this.text[this.index + n];
-            if (digit === undefined || !isHexDigit(digit)) {
+            if (!isHexDigit(this.text[this.index + n])) {
               fail('INVALID_JSON_STRING', `invalid unicode escape at offset ${this.index - 1}`);
             }
           }
@@ -214,7 +220,7 @@ class StrictJsonParser {
 }
 
 /**
- * Parse untrusted JSON bytes without allowing JSON.parse's duplicate-key overwrite.
+ * Parse untrusted JSON bytes without JSON.parse's duplicate-key overwrite.
  * The byte limit is enforced before UTF-8 decoding or syntax traversal.
  */
 export function parseStrictJsonBytes(rawBytes, {
@@ -248,26 +254,75 @@ export function parseStrictJsonBytes(rawBytes, {
 }
 
 /**
- * Parse a TUF metadata envelope from raw bytes and require the exact project POUF
- * canonical representation. This prevents two distinct raw representations from
- * collapsing onto the same signed/canonical object before descriptor checks.
+ * Parse one TUF metadata file from the exact received bytes.
+ *
+ * The full envelope does NOT need to be byte-identical to canonical JSON: TUF
+ * signatures cover the canonical form of the "signed" object, while timestamp and
+ * snapshot length/hash descriptors bind the exact metadata-file bytes received.
+ * canonicalBytes() is still evaluated here to enforce this project's restricted
+ * POUF domain (safe integers, well-formed Unicode, bounded JSON).
  */
-export function parseCanonicalMetadataBytes(rawBytes, limits = DEFAULT_LIMITS, label = 'metadata') {
-  const maxBytes = positiveSafeLimit(limits?.metadataBytes, DEFAULT_LIMITS.metadataBytes, 'metadataBytes');
+export function parseTufMetadataBytes(rawBytes, limits = DEFAULT_LIMITS, label = 'metadata') {
+  const maxBytes = positiveSafeLimit(
+    limits?.metadataBytes,
+    DEFAULT_LIMITS.metadataBytes,
+    'metadataBytes',
+  );
   const value = parseStrictJsonBytes(rawBytes, { maxBytes, label });
 
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     fail('INVALID_METADATA', `${label} must be a JSON object`);
   }
+  canonicalBytes(value, limits);
+  return value;
+}
 
-  const canonical = canonicalBytes(value, limits);
-  const bytes = Buffer.from(rawBytes);
-  if (!bytes.equals(canonical)) {
-    fail('NONCANONICAL_METADATA', `${label} bytes are not the canonical POUF representation`, {
-      rawLength: bytes.length,
-      canonicalLength: canonical.length,
-    });
+/**
+ * Production-facing raw-byte ingress for the offline research verifier.
+ * Object-mode verifyOfflineBundle() remains useful for deterministic unit fixtures,
+ * but untrusted metadata should enter through this function so duplicate keys and
+ * file-byte hash/length checks cannot be lost during parsing/re-serialization.
+ */
+export function verifyOfflineBundleBytes({
+  trustedState,
+  bundle,
+  targetPath,
+  now = new Date(),
+  approveCapabilityExpansion = () => false,
+  limits = DEFAULT_LIMITS,
+}) {
+  if (!isPlainObject(bundle)) {
+    fail('INVALID_INPUT', 'raw offline bundle must be an object');
+  }
+  if (!Array.isArray(bundle.roots ?? [])) {
+    fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
   }
 
-  return value;
+  const rootBytes = (bundle.roots ?? []).map((bytes) => Buffer.from(bytes));
+  const timestampBytes = Buffer.from(bundle.timestamp);
+  const snapshotBytes = Buffer.from(bundle.snapshot);
+  const targetsBytes = Buffer.from(bundle.targets);
+
+  const parsed = {
+    roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),
+    timestamp: parseTufMetadataBytes(timestampBytes, limits, 'timestamp'),
+    snapshot: parseTufMetadataBytes(snapshotBytes, limits, 'snapshot'),
+    targets: parseTufMetadataBytes(targetsBytes, limits, 'targets'),
+    target: bundle.target,
+    rawMetadata: {
+      roots: rootBytes,
+      timestamp: timestampBytes,
+      snapshot: snapshotBytes,
+      targets: targetsBytes,
+    },
+  };
+
+  return verifyOfflineBundle({
+    trustedState,
+    bundle: parsed,
+    targetPath,
+    now,
+    approveCapabilityExpansion,
+    limits,
+  });
 }
