@@ -43,6 +43,12 @@ jobs:
           npm run toolchain:check
           npm run lockfile:check
 
+      - name: Install repository dev dependencies
+        run: npm ci --ignore-scripts --audit=false --fund=false
+
+      - name: Lint Markdown
+        run: npm run docs:lint
+
       - name: Run TUF unit suite
         run: node --test "tests/tuf/*.test.js"
 
