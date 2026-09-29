@@ -8,7 +8,10 @@ conformance work.
 
 `tuf-client-cli.mjs` exposes:
 
-- `init`: persist the externally supplied trusted `root.json` exactly as received;
+- `init`: persist the externally supplied trusted `root.json` exactly as received,
+  into a directory without trusted metadata; a directory that already holds any of
+  `root/timestamp/snapshot/targets.json` is refused (`METADATA_DIR_INITIALIZED`)
+  instead of splicing a new root under old state;
 - `refresh`: fetch and verify root/timestamp/snapshot/targets, then persist the exact
   verified metadata bytes; an unchanged timestamp version is `no-update`, but the
   retained timestamp/snapshot/targets are then re-verified as final metadata

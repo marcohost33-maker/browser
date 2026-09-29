@@ -381,3 +381,34 @@ test('refreshClient does not keep using expired retained targets on an unchanged
     (error) => error?.code === 'EXPIRED_METADATA' && error?.details?.role === 'targets',
   );
 });
+
+test('initClient refuses a metadata directory that already holds trusted state', async () => {
+  const fx = await fixture();
+  const metadataDir = join(fx.dir, 'metadata');
+  const sourceRoot = join(fx.dir, 'source-root.json');
+  await writeFile(sourceRoot, fx.root);
+  await initClient(metadataDir, sourceRoot);
+  await refreshClient({
+    metadataDir,
+    metadataUrl: METADATA_URL,
+    now: NOW,
+    fetchImpl: fakeFetch(metadataRoutes(fx), []),
+  });
+  const before = {};
+  for (const role of ['root', 'timestamp', 'snapshot', 'targets']) {
+    before[role] = await readFile(join(metadataDir, `${role}.json`));
+  }
+
+  // A root from another trust domain must not be spliced under the old
+  // timestamp/snapshot/targets and their rollback versions.
+  const otherRoot = join(fx.dir, 'other-root.json');
+  await writeFile(otherRoot, Buffer.from(fx.root.toString('utf8').replace('"version": 1', '"version": 7')));
+  await assert.rejects(
+    initClient(metadataDir, otherRoot),
+    (error) => error?.code === 'METADATA_DIR_INITIALIZED'
+      && error.details.present.length === 4,
+  );
+  for (const [role, bytes] of Object.entries(before)) {
+    assert.deepEqual(await readFile(join(metadataDir, `${role}.json`)), bytes, `${role}.json changed`);
+  }
+});

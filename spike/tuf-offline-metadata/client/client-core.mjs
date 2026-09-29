@@ -1,4 +1,11 @@
-import { open, mkdir, readFile, rename, unlink } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  unlink,
+} from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import {
@@ -335,8 +342,39 @@ function assertRetainedMetadataFinal({ verified, local, now, limits }) {
   });
 }
 
+const TRUSTED_METADATA_ROLES = Object.freeze(['root', 'timestamp', 'snapshot', 'targets']);
+
+async function existingTrustedMetadata(metadataDir) {
+  const present = [];
+  for (const role of TRUSTED_METADATA_ROLES) {
+    try {
+      await lstat(rolePath(metadataDir, role));
+      present.push(`${role}.json`);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
+  return present;
+}
+
+/**
+ * Bootstrap trust (TUF 5.2) into an EMPTY metadata directory.
+ *
+ * Replacing only root.json would keep timestamp/snapshot/targets and their
+ * rollback versions from the previous trust domain; an equal-version timestamp
+ * from the new repository would then yield no-update over those stale files.
+ * Re-initialisation is therefore refused rather than silently merged; the
+ * operator removes the old state explicitly.
+ */
 export async function initClient(metadataDir, trustedRootPath) {
   const trustedRootBytes = await readFile(trustedRootPath);
+  const present = await existingTrustedMetadata(metadataDir);
+  if (present.length > 0) {
+    fail('METADATA_DIR_INITIALIZED', 'metadata directory already holds trusted state', {
+      metadataDir,
+      present,
+    });
+  }
   return atomicWriteFile(rolePath(metadataDir, 'root'), trustedRootBytes);
 }
 
