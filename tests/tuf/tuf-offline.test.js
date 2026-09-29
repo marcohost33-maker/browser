@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import {
   canonicalBytes,
+  DEFAULT_LIMITS,
   keyIdFor,
   POUF,
   sha256,
@@ -17,7 +18,11 @@ import {
   verifyTopLevelMetadata,
 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 
-import { verifyOfflineBundleBytes } from '../../spike/tuf-offline-metadata/strict-json.js';
+import {
+  parseStrictJsonBytes,
+  verifyOfflineBundleBytes,
+  verifyTopLevelMetadataBytes,
+} from '../../spike/tuf-offline-metadata/strict-json.js';
 
 const NOW = new Date('2026-07-28T12:00:00.000Z');
 const FUTURE = '2027-07-28T12:00:00Z';
@@ -592,4 +597,43 @@ test('rejects metadata above the configured pre-allocation envelope', () => {
       capabilities: 16,
     },
   }));
+});
+
+test('rejects oversized raw metadata before making any defensive copy', (t) => {
+  const limits = { ...DEFAULT_LIMITS, metadataBytes: 16 * 1024 };
+  const oversized = new Uint8Array(limits.metadataBytes + 1);
+  const root = rootMetadata();
+  const bundle = updateBundle({ root });
+  const bufferFrom = t.mock.method(Buffer, 'from');
+  const copiedOversized = () => bufferFrom.mock.calls.some(
+    (call) => call.arguments[0] === oversized,
+  );
+
+  assertCode('METADATA_TOO_LARGE', () => parseStrictJsonBytes(oversized, {
+    maxBytes: limits.metadataBytes,
+  }));
+  assert.equal(copiedOversized(), false, 'strict parser copied before its size gate');
+
+  assertCode('METADATA_TOO_LARGE', () => verifyOfflineBundleBytes({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: oversized,
+      snapshot: oversized,
+      targets: oversized,
+      target: bundle.target,
+    },
+    targetPath: TARGET_PATH,
+    now: NOW,
+    limits,
+  }));
+  assert.equal(copiedOversized(), false, 'raw ingress copied before its size gate');
+
+  assertCode('METADATA_TOO_LARGE', () => verifyTopLevelMetadata({
+    trustedState: trustedState(root),
+    bundle: { ...bundle, rawMetadata: { timestamp: oversized } },
+    now: NOW,
+    limits,
+  }));
+  assert.equal(copiedOversized(), false, 'generic core copied before its size gate');
 });

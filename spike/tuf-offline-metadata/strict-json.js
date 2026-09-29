@@ -34,11 +34,22 @@ function isHexDigit(char) {
   return char !== undefined && /^[0-9a-fA-F]$/.test(char);
 }
 
-function copyRawBytes(value, label) {
+function copyRawBytes(value, label, maxBytes) {
   if (!(Buffer.isBuffer(value) || value instanceof Uint8Array)) {
     fail('INVALID_RAW_METADATA', `${label} must be Buffer or Uint8Array`);
   }
+  // Size-gate the caller's view before allocating the defensive copy.
+  if (value.byteLength > maxBytes) {
+    fail('METADATA_TOO_LARGE', `${label} exceeds the raw byte limit`, {
+      actual: value.byteLength,
+      limit: maxBytes,
+    });
+  }
   return Buffer.from(value);
+}
+
+function rawMetadataByteLimit(limits) {
+  return positiveSafeLimit(limits?.metadataBytes, DEFAULT_LIMITS.metadataBytes, 'metadataBytes');
 }
 
 class StrictJsonParser {
@@ -266,16 +277,19 @@ export function parseStrictJsonBytes(rawBytes, {
     fail('INVALID_RAW_METADATA', `${label} must be Buffer or Uint8Array`);
   }
 
-  const bytes = Buffer.from(rawBytes);
   const byteLimit = positiveSafeLimit(maxBytes, DEFAULT_LIMITS.metadataBytes, 'maxBytes');
   const depthLimit = positiveSafeLimit(maxDepth, DEFAULT_LIMITS.jsonDepth, 'maxDepth');
   const nodeLimit = positiveSafeLimit(maxNodes, DEFAULT_LIMITS.jsonNodes, 'maxNodes');
-  if (bytes.length > byteLimit) {
+  // Reject on the caller's view length BEFORE the defensive copy: copying first
+  // would let an oversized input force a full-size allocation the limit exists
+  // to prevent.
+  if (rawBytes.byteLength > byteLimit) {
     fail('METADATA_TOO_LARGE', `${label} exceeds the raw byte limit`, {
-      actual: bytes.length,
+      actual: rawBytes.byteLength,
       limit: byteLimit,
     });
   }
+  const bytes = Buffer.from(rawBytes);
   if (bytes.subarray(0, UTF8_BOM.length).equals(UTF8_BOM)) {
     fail('JSON_BOM_FORBIDDEN', `${label} must not contain a UTF-8 BOM`);
   }
@@ -338,10 +352,13 @@ export function verifyTopLevelMetadataBytes({
     fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
   }
 
-  const rootBytes = (bundle.roots ?? []).map((bytes, index) => copyRawBytes(bytes, `root[${index}]`));
-  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp');
-  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot');
-  const targetsBytes = copyRawBytes(bundle.targets, 'targets');
+  const maxBytes = rawMetadataByteLimit(limits);
+  const rootBytes = (bundle.roots ?? []).map(
+    (bytes, index) => copyRawBytes(bytes, `root[${index}]`, maxBytes),
+  );
+  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp', maxBytes);
+  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot', maxBytes);
+  const targetsBytes = copyRawBytes(bundle.targets, 'targets', maxBytes);
 
   const parsed = {
     roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),
@@ -385,10 +402,13 @@ export function verifyOfflineBundleBytes({
     fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
   }
 
-  const rootBytes = (bundle.roots ?? []).map((bytes, index) => copyRawBytes(bytes, `root[${index}]`));
-  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp');
-  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot');
-  const targetsBytes = copyRawBytes(bundle.targets, 'targets');
+  const maxBytes = rawMetadataByteLimit(limits);
+  const rootBytes = (bundle.roots ?? []).map(
+    (bytes, index) => copyRawBytes(bytes, `root[${index}]`, maxBytes),
+  );
+  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp', maxBytes);
+  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot', maxBytes);
+  const targetsBytes = copyRawBytes(bundle.targets, 'targets', maxBytes);
 
   const parsed = {
     roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),

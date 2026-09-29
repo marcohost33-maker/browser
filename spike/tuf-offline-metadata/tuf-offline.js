@@ -221,6 +221,15 @@ function assertMetadataLimit(metadata, limits, roleName, rawBytes = undefined) {
     if (!(Buffer.isBuffer(rawBytes) || rawBytes instanceof Uint8Array)) {
       fail('INVALID_RAW_METADATA', `${roleName} raw metadata must be Buffer or Uint8Array`);
     }
+    // Check the view length before copying so an oversized input cannot force
+    // a full-size allocation that the limit exists to prevent.
+    if (rawBytes.byteLength > boundedLimit(limits, 'metadataBytes')) {
+      fail('METADATA_TOO_LARGE', `${roleName} metadata exceeds the byte limit`, {
+        role: roleName,
+        actual: rawBytes.byteLength,
+        limit: boundedLimit(limits, 'metadataBytes'),
+      });
+    }
     bytes = Buffer.from(rawBytes);
   }
 
