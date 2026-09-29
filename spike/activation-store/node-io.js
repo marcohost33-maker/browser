@@ -142,6 +142,53 @@ export function createNodeIo({ platform = process.platform } = {}) {
       }
     },
 
+    // One open descriptor over a regular file, for verify-then-serve: digest() and
+    // chunks() both read through the same descriptor, so the bytes served are the
+    // bytes verified even if the name is unlinked or replaced meanwhile. Same
+    // contract as readFile for missing files, links and the byte bound.
+    async openReadable(target, maxBytes) {
+      const opened = await openBounded(target, maxBytes, READ_NO_FOLLOW);
+      if (opened === null) return null;
+      const { handle, size } = opened;
+      let closed = false;
+      const assertOpen = () => {
+        if (closed) throw ioError('EBADF', `${target} is closed`);
+      };
+      const read = async function* read() {
+        const chunk = Buffer.alloc(DIGEST_CHUNK_BYTES);
+        let position = 0;
+        for (;;) {
+          assertOpen();
+          const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+          if (bytesRead === 0) break;
+          position += bytesRead;
+          if (position > maxBytes) throw ioError('EFBIG', `${target} grew beyond ${maxBytes} bytes`);
+          yield chunk.subarray(0, bytesRead);
+        }
+      };
+      return {
+        size,
+        async digest() {
+          const hash = createHash('sha256');
+          let total = 0;
+          for await (const part of read()) {
+            total += part.length;
+            hash.update(part);
+          }
+          return { digest: hash.digest('hex'), size: total };
+        },
+        // Each yielded chunk is the consumer's own copy.
+        async *chunks() {
+          for await (const part of read()) yield Buffer.from(part);
+        },
+        async close() {
+          if (closed) return;
+          closed = true;
+          await handle.close();
+        },
+      };
+    },
+
     // Exclusive create: fails with EEXIST if any entry, including a symlink, exists.
     async createExclusive(target, mode) {
       const handle = await fsp.open(target, CREATE_EXCLUSIVE, mode);

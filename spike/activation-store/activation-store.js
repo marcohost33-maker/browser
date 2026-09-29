@@ -54,6 +54,7 @@ const PRIVATE_FILE_MODE = 0o600;
 const DIRECTORY_MODE = 0o700;
 const LOCK_MAX_BYTES = 4 * 1024;
 const MARKER_MAX_BYTES = 4 * 1024;
+const SERVING_RECORD_CACHE = 8;
 const STORE_ID_MAX_LENGTH = 256;
 const APP_VERSION_MAX_LENGTH = 128;
 const BINDING_NAME_MAX_LENGTH = 128;
@@ -541,6 +542,10 @@ export class ActivationStore {
     this.randomHexSource = randomHex;
     // Set when this instance found its own lock replaced by another actor on release.
     this.lockLost = false;
+    // Validated version records for the serving path only. A record is content-
+    // addressed and immutable, so a validated copy cannot go stale; it can only
+    // become unreachable, which the serving path detects and evicts.
+    this.servingRecords = new Map();
   }
 
   path(...parts) {
@@ -985,36 +990,120 @@ export class ActivationStore {
     }
   }
 
-  async _readActiveResource(path, target) {
-    const record = await this.readVersion(target);
+  // Version record for serving: validated once per process and reused, so a read
+  // costs one object read instead of re-parsing a record with thousands of entries.
+  // Commits, verification, recovery and collection never use this cache.
+  async _servingRecord(versionId) {
+    const cached = this.servingRecords.get(versionId);
+    if (cached !== undefined) return cached;
+    const record = await this.readVersion(versionId);
+    if (this.servingRecords.size >= SERVING_RECORD_CACHE) {
+      this.servingRecords.delete(this.servingRecords.keys().next().value);
+    }
+    this.servingRecords.set(versionId, record);
+    return record;
+  }
+
+  async _resolveResource(path, target) {
+    const record = await this._servingRecord(target);
     const entry = findResource(record.resources, path);
     if (entry === null) fail('RESOURCE_NOT_FOUND', 'resource is not part of the version', { path });
+    return entry;
+  }
+
+  // A missing object means the version was collected or damaged: the cached record
+  // must not keep answering for it. Re-reading the record tells which: a collected
+  // version is reported as missing, exactly as without the cache; a version whose
+  // record still exists has lost an object, which is damage.
+  async _integrityFailure(path, target, error) {
+    if (!(error instanceof ActivationError)) throw error;
+    if (error.code === 'OBJECT_MISSING') {
+      this.servingRecords.delete(target);
+      await this.readVersion(target);
+    }
+    fail('RESOURCE_INTEGRITY', `resource failed its integrity check (${error.code})`, { path, cause: error.code });
+  }
+
+  async _readActiveResource(path, target) {
+    const entry = await this._resolveResource(path, target);
     let bytes;
     try {
       bytes = await this._readObject(entry.digest, Math.max(entry.size, 1));
     } catch (error) {
-      if (error instanceof ActivationError) {
-        fail('RESOURCE_INTEGRITY', `resource failed its integrity check (${error.code})`, { path, cause: error.code });
-      }
-      throw error;
+      await this._integrityFailure(path, target, error);
     }
     if (bytes.length !== entry.size) fail('RESOURCE_INTEGRITY', 'resource size mismatch', { path });
     return { versionId: target, path, mediaType: entry.mediaType, size: entry.size, digest: entry.digest, bytes };
   }
 
-  // Serving primitive for a runtime: resolves a key in the active (or given) version
-  // and re-verifies the object bytes on every read. Reads take no lock, so a commit
-  // plus collection may race a read of the active version: when the object or record
-  // vanished and the generation moved meanwhile, the read is repeated once against
-  // the new commit. A miss on an unchanged generation is real damage.
-  async readResource(path, { versionId } = {}) {
-    validateResourcePath(path, this.limits);
-    if (versionId !== undefined) return this._readActiveResource(path, versionId);
+  // Verifies the whole object through one open handle before a single byte is
+  // handed out, then serves from that same handle: what is served is exactly what
+  // was verified, whatever happens to the name in between.
+  async _openActiveResource(path, target) {
+    const entry = await this._resolveResource(path, target);
+    const objectPath = this.objectPath(entry.digest);
+    let file;
+    try {
+      const stat = await this.io.lstat(objectPath);
+      if (stat === null) fail('OBJECT_MISSING', 'object is missing', { digest: entry.digest });
+      if (stat.type !== 'file') fail('OBJECT_CORRUPT', 'object is not a regular file', { digest: entry.digest });
+      file = await this._openObject(objectPath, entry);
+    } catch (error) {
+      await this._integrityFailure(path, target, error);
+    }
+    let consumed = false;
+    const close = () => file.close();
+    const stream = async function* stream() {
+      if (consumed) fail('INVALID_ARGUMENT', 'resource stream was already consumed');
+      consumed = true;
+      let total = 0;
+      try {
+        for await (const chunk of file.chunks()) {
+          total += chunk.length;
+          if (total > entry.size) fail('RESOURCE_INTEGRITY', 'resource grew while being served', { path });
+          yield chunk;
+        }
+        if (total !== entry.size) fail('RESOURCE_INTEGRITY', 'resource shrank while being served', { path });
+      } finally {
+        await file.close();
+      }
+    };
+    return { versionId: target, path, mediaType: entry.mediaType, size: entry.size, digest: entry.digest, stream, close };
+  }
+
+  async _openObject(objectPath, entry) {
+    let file;
+    try {
+      file = await this.io.openReadable(objectPath, Math.max(entry.size, 1));
+    } catch (error) {
+      if (UNREADABLE_ENTRY.has(ioErrorCode(error))) fail('OBJECT_CORRUPT', 'object is not a readable regular file', { digest: entry.digest });
+      throw error;
+    }
+    if (file === null) fail('OBJECT_MISSING', 'object is missing', { digest: entry.digest });
+    try {
+      if (file.size !== entry.size) fail('OBJECT_CORRUPT', 'object size differs from the record', { digest: entry.digest });
+      const observed = await file.digest();
+      if (observed.digest !== entry.digest || observed.size !== entry.size) {
+        fail('OBJECT_CORRUPT', 'object bytes do not match their address', { digest: entry.digest });
+      }
+    } catch (error) {
+      await file.close();
+      throw error;
+    }
+    return file;
+  }
+
+  // Reads take no lock, so a commit plus collection may race a read of the active
+  // version: when the object or record vanished and the generation moved meanwhile,
+  // the resolution is repeated once against the new commit. A miss on an unchanged
+  // generation is real damage.
+  async _withActiveVersion(versionId, operation) {
+    if (versionId !== undefined) return operation(versionId);
     let commit = await this.readCommit();
     for (let attempt = 0; ; attempt += 1) {
       if (commit === null || commit.active === null) fail('NO_ACTIVE_VERSION', 'no version is active');
       try {
-        return await this._readActiveResource(path, commit.active);
+        return await operation(commit.active);
       } catch (error) {
         const vanished = error instanceof ActivationError
           && (error.code === 'VERSION_MISSING' || error.details?.cause === 'OBJECT_MISSING');
@@ -1024,6 +1113,21 @@ export class ActivationStore {
         commit = latest;
       }
     }
+  }
+
+  // Serving primitive for small resources: resolves a key in the active (or given)
+  // version and returns the object bytes after re-verifying them.
+  async readResource(path, { versionId } = {}) {
+    validateResourcePath(path, this.limits);
+    return this._withActiveVersion(versionId, (target) => this._readActiveResource(path, target));
+  }
+
+  // Serving primitive for large resources: verification before the first byte, then
+  // a chunked stream that never holds the object whole. The stream closes the handle
+  // when drained, abandoned or failed; `close()` releases an unstreamed resource.
+  async openResource(path, { versionId } = {}) {
+    validateResourcePath(path, this.limits);
+    return this._withActiveVersion(versionId, (target) => this._openActiveResource(path, target));
   }
 
   // --------------------------------------------------------------------- staging

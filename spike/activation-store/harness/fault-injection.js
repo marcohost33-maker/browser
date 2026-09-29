@@ -69,6 +69,7 @@ export function createCrashingIo(io, { crashAt = Number.POSITIVE_INFINITY, crash
     readdir: read(io.readdir),
     readFile: read(io.readFile),
     digestFile: read(io.digestFile),
+    openReadable: read(io.openReadable),
     mkdir: (path, mode) => mutate('mkdir', path, () => io.mkdir(path, mode)),
     rename: (from, to) => mutate('rename', `${from} -> ${to}`, () => io.rename(from, to)),
     link: (from, to) => mutate('link', `${from} -> ${to}`, () => io.link(from, to)),

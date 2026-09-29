@@ -140,6 +140,28 @@ test('syncFile follows the adapter contract: missing is false, links and directo
   assert.deepEqual(await io.digestFile('/a', 10), { digest: (await import('node:crypto')).createHash('sha256').update('alpha').digest('hex'), size: 5 });
 });
 
+test('openReadable pins the bytes at open time and follows the adapter contract', async () => {
+  const { machine, io } = fresh();
+  await write(io, '/a', 'alpha');
+  const handle = await io.openReadable('/a', 100);
+  await io.unlink('/a');
+  const { createHash } = await import('node:crypto');
+  assert.deepEqual(await handle.digest(), { digest: createHash('sha256').update('alpha').digest('hex'), size: 5 });
+  const chunks = [];
+  for await (const chunk of handle.chunks()) chunks.push(chunk);
+  assert.equal(Buffer.concat(chunks).toString('utf8'), 'alpha', 'the unlinked name no longer matters');
+  await handle.close();
+  await assert.rejects(handle.digest(), (error) => error.code === 'EBADF');
+
+  assert.equal(await io.openReadable('/missing', 10), null);
+  await write(io, '/b', 'beta');
+  machine.symlinkNow('/b', '/link');
+  await io.mkdir('/d');
+  await assert.rejects(io.openReadable('/link', 10), (error) => error.code === 'ELOOP');
+  await assert.rejects(io.openReadable('/d', 10), (error) => error.code === 'EISDIR');
+  await assert.rejects(io.openReadable('/b', 2), (error) => error.code === 'EFBIG');
+});
+
 test('an unsynced unlink can be undone by a power loss', async () => {
   const { machine, io } = fresh();
   await write(io, '/a', 'alpha');

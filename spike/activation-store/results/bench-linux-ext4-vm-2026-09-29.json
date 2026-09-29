@@ -1,0 +1,741 @@
+{
+  "schema": "browser-activation/bench-report/v1",
+  "environment": {
+    "platform": "linux",
+    "release": "6.18.44-fc-v37",
+    "arch": "x64",
+    "node": "v22.22.2",
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "cpuCount": 4,
+    "totalMemoryBytes": 16877547520,
+    "filesystem": "ext4"
+  },
+  "profiles": [
+    {
+      "profile": "small",
+      "resources": 50,
+      "bytesPerResource": 4096,
+      "totalBytes": 204800,
+      "iterations": 5,
+      "readsPerIteration": 50,
+      "streamReadsPerIteration": 50,
+      "commitBarrier": "directory-fsync",
+      "latencyMs": {
+        "stage": {
+          "n": 5,
+          "min": 102.99,
+          "p50": 124.69,
+          "p95": 138.92,
+          "max": 138.92,
+          "mean": 123.85
+        },
+        "activate": {
+          "n": 5,
+          "min": 65.76,
+          "p50": 79.68,
+          "p95": 92.9,
+          "max": 92.9,
+          "mean": 78.33
+        },
+        "verify": {
+          "n": 5,
+          "min": 28.81,
+          "p50": 37.26,
+          "p95": 43.2,
+          "max": 43.2,
+          "mean": 36.66
+        },
+        "read": {
+          "n": 250,
+          "min": 0.63,
+          "p50": 0.86,
+          "p95": 1.84,
+          "max": 9.72,
+          "mean": 1.06
+        },
+        "open": {
+          "n": 250,
+          "min": 0.61,
+          "p50": 0.91,
+          "p95": 1.4,
+          "max": 2.21,
+          "mean": 0.97
+        },
+        "stream": {
+          "n": 250,
+          "min": 0.19,
+          "p50": 0.32,
+          "p95": 0.53,
+          "max": 1.71,
+          "mean": 0.34
+        },
+        "recover": {
+          "n": 5,
+          "min": 45.74,
+          "p50": 49.41,
+          "p95": 54.65,
+          "max": 54.65,
+          "mean": 50.21
+        },
+        "restage": {
+          "n": 5,
+          "min": 127.7,
+          "p50": 134.14,
+          "p95": 147.79,
+          "max": 147.79,
+          "mean": 136.34
+        }
+      },
+      "throughputMiBps": {
+        "stage": 1.6,
+        "verify": 5.2,
+        "stream": 12.2
+      },
+      "perObjectMs": {
+        "stage": 2.494
+      },
+      "memoryBytes": {
+        "baselineRss": 60256256,
+        "peakRss": 79273984,
+        "peakHeapUsed": 7412448,
+        "peakArrayBuffers": 13845991,
+        "maxRss": 79450112,
+        "byPhase": {
+          "stage": {
+            "rss": 77717504,
+            "arrayBuffers": 621952
+          },
+          "activate": {
+            "rss": 77950976,
+            "arrayBuffers": 12658471
+          },
+          "verify": {
+            "rss": 78151680,
+            "arrayBuffers": 13462671
+          },
+          "read": {
+            "rss": 77832192,
+            "arrayBuffers": 5805791
+          },
+          "stream": {
+            "rss": 79273984,
+            "arrayBuffers": 13845991
+          },
+          "recover": {
+            "rss": 77692928,
+            "arrayBuffers": 10309663
+          },
+          "restage": {
+            "rss": 77729792,
+            "arrayBuffers": 6220014
+          }
+        }
+      }
+    },
+    {
+      "profile": "medium",
+      "resources": 500,
+      "bytesPerResource": 32768,
+      "totalBytes": 16384000,
+      "iterations": 3,
+      "readsPerIteration": 100,
+      "streamReadsPerIteration": 100,
+      "commitBarrier": "directory-fsync",
+      "latencyMs": {
+        "stage": {
+          "n": 3,
+          "min": 1368.86,
+          "p50": 1381.64,
+          "p95": 1450.19,
+          "max": 1450.19,
+          "mean": 1400.23
+        },
+        "activate": {
+          "n": 3,
+          "min": 447.57,
+          "p50": 516.4,
+          "p95": 583.25,
+          "max": 583.25,
+          "mean": 515.74
+        },
+        "verify": {
+          "n": 3,
+          "min": 296.93,
+          "p50": 333.94,
+          "p95": 335.89,
+          "max": 335.89,
+          "mean": 322.25
+        },
+        "read": {
+          "n": 300,
+          "min": 0.72,
+          "p50": 1.02,
+          "p95": 2.15,
+          "max": 14.24,
+          "mean": 1.24
+        },
+        "open": {
+          "n": 300,
+          "min": 0.71,
+          "p50": 0.98,
+          "p95": 1.52,
+          "max": 3.51,
+          "mean": 1.06
+        },
+        "stream": {
+          "n": 300,
+          "min": 0.19,
+          "p50": 0.32,
+          "p95": 0.57,
+          "max": 1.84,
+          "mean": 0.36
+        },
+        "recover": {
+          "n": 3,
+          "min": 352.89,
+          "p50": 382.87,
+          "p95": 386.83,
+          "max": 386.83,
+          "mean": 374.2
+        },
+        "restage": {
+          "n": 3,
+          "min": 1279.23,
+          "p50": 1746.75,
+          "p95": 2063.07,
+          "max": 2063.07,
+          "mean": 1696.35
+        }
+      },
+      "throughputMiBps": {
+        "stage": 11.3,
+        "verify": 46.8,
+        "stream": 97.7
+      },
+      "perObjectMs": {
+        "stage": 2.763
+      },
+      "memoryBytes": {
+        "baselineRss": 63279104,
+        "peakRss": 111587328,
+        "peakHeapUsed": 13082504,
+        "peakArrayBuffers": 33451895,
+        "maxRss": 112586752,
+        "byPhase": {
+          "stage": {
+            "rss": 106549248,
+            "arrayBuffers": 2428339
+          },
+          "activate": {
+            "rss": 111366144,
+            "arrayBuffers": 31729108
+          },
+          "verify": {
+            "rss": 111296512,
+            "arrayBuffers": 32400119
+          },
+          "read": {
+            "rss": 106770432,
+            "arrayBuffers": 2348705
+          },
+          "stream": {
+            "rss": 110039040,
+            "arrayBuffers": 33327679
+          },
+          "recover": {
+            "rss": 111587328,
+            "arrayBuffers": 33451895
+          },
+          "restage": {
+            "rss": 107843584,
+            "arrayBuffers": 17060123
+          }
+        }
+      }
+    },
+    {
+      "profile": "large",
+      "resources": 2000,
+      "bytesPerResource": 65536,
+      "totalBytes": 131072000,
+      "iterations": 2,
+      "readsPerIteration": 100,
+      "streamReadsPerIteration": 100,
+      "commitBarrier": "directory-fsync",
+      "latencyMs": {
+        "stage": {
+          "n": 2,
+          "min": 6530.22,
+          "p50": 6530.22,
+          "p95": 6791.74,
+          "max": 6791.74,
+          "mean": 6660.98
+        },
+        "activate": {
+          "n": 2,
+          "min": 1751.66,
+          "p50": 1751.66,
+          "p95": 1802.03,
+          "max": 1802.03,
+          "mean": 1776.84
+        },
+        "verify": {
+          "n": 2,
+          "min": 1439.76,
+          "p50": 1439.76,
+          "p95": 1493.17,
+          "max": 1493.17,
+          "mean": 1466.46
+        },
+        "read": {
+          "n": 200,
+          "min": 0.79,
+          "p50": 0.98,
+          "p95": 1.84,
+          "max": 27.84,
+          "mean": 1.36
+        },
+        "open": {
+          "n": 200,
+          "min": 0.85,
+          "p50": 1.1,
+          "p95": 1.98,
+          "max": 2.99,
+          "mean": 1.22
+        },
+        "stream": {
+          "n": 200,
+          "min": 0.22,
+          "p50": 0.34,
+          "p95": 0.65,
+          "max": 2.17,
+          "mean": 0.4
+        },
+        "recover": {
+          "n": 2,
+          "min": 1523.01,
+          "p50": 1523.01,
+          "p95": 1763.91,
+          "max": 1763.91,
+          "mean": 1643.46
+        },
+        "restage": {
+          "n": 2,
+          "min": 6423.14,
+          "p50": 6423.14,
+          "p95": 8001.64,
+          "max": 8001.64,
+          "mean": 7212.39
+        }
+      },
+      "throughputMiBps": {
+        "stage": 19.1,
+        "verify": 86.8,
+        "stream": 183.8
+      },
+      "perObjectMs": {
+        "stage": 3.265
+      },
+      "memoryBytes": {
+        "baselineRss": 64073728,
+        "peakRss": 129650688,
+        "peakHeapUsed": 21856128,
+        "peakArrayBuffers": 33452095,
+        "maxRss": 130215936,
+        "byPhase": {
+          "stage": {
+            "rss": 125804544,
+            "arrayBuffers": 5772122
+          },
+          "activate": {
+            "rss": 128237568,
+            "arrayBuffers": 33226643
+          },
+          "verify": {
+            "rss": 128991232,
+            "arrayBuffers": 33452095
+          },
+          "read": {
+            "rss": 126640128,
+            "arrayBuffers": 5286716
+          },
+          "stream": {
+            "rss": 126042112,
+            "arrayBuffers": 31435887
+          },
+          "recover": {
+            "rss": 129650688,
+            "arrayBuffers": 33443903
+          },
+          "restage": {
+            "rss": 129208320,
+            "arrayBuffers": 24843466
+          }
+        }
+      }
+    },
+    {
+      "profile": "big-object",
+      "resources": 1,
+      "bytesPerResource": 67108864,
+      "totalBytes": 67108864,
+      "iterations": 3,
+      "readsPerIteration": 1,
+      "streamReadsPerIteration": 1,
+      "commitBarrier": "directory-fsync",
+      "latencyMs": {
+        "stage": {
+          "n": 3,
+          "min": 758.24,
+          "p50": 777.04,
+          "p95": 851.87,
+          "max": 851.87,
+          "mean": 795.72
+        },
+        "activate": {
+          "n": 3,
+          "min": 234.3,
+          "p50": 234.49,
+          "p95": 252.39,
+          "max": 252.39,
+          "mean": 240.39
+        },
+        "verify": {
+          "n": 3,
+          "min": 226.37,
+          "p50": 243.93,
+          "p95": 270.98,
+          "max": 270.98,
+          "mean": 247.09
+        },
+        "read": {
+          "n": 3,
+          "min": 221.87,
+          "p50": 223,
+          "p95": 229.11,
+          "max": 229.11,
+          "mean": 224.66
+        },
+        "open": {
+          "n": 3,
+          "min": 202.76,
+          "p50": 219.53,
+          "p95": 236.45,
+          "max": 236.45,
+          "mean": 219.58
+        },
+        "stream": {
+          "n": 3,
+          "min": 82.57,
+          "p50": 86.49,
+          "p95": 101.6,
+          "max": 101.6,
+          "mean": 90.22
+        },
+        "recover": {
+          "n": 3,
+          "min": 252.24,
+          "p50": 252.25,
+          "p95": 295.17,
+          "max": 295.17,
+          "mean": 266.55
+        },
+        "restage": {
+          "n": 3,
+          "min": 1175.69,
+          "p50": 1195.23,
+          "p95": 1242.73,
+          "max": 1242.73,
+          "mean": 1204.55
+        }
+      },
+      "throughputMiBps": {
+        "stage": 82.4,
+        "verify": 262.4,
+        "stream": 740
+      },
+      "perObjectMs": {
+        "stage": 777.04
+      },
+      "memoryBytes": {
+        "baselineRss": 63467520,
+        "peakRss": 133509120,
+        "peakHeapUsed": 7299472,
+        "peakArrayBuffers": 67134280,
+        "maxRss": 133509120,
+        "byPhase": {
+          "stage": {
+            "rss": 66793472,
+            "arrayBuffers": 1336535
+          },
+          "activate": {
+            "rss": 66400256,
+            "arrayBuffers": 614327
+          },
+          "verify": {
+            "rss": 66400256,
+            "arrayBuffers": 603797
+          },
+          "read": {
+            "rss": 133509120,
+            "arrayBuffers": 67134280
+          },
+          "stream": {
+            "rss": 131411968,
+            "arrayBuffers": 30973215
+          },
+          "recover": {
+            "rss": 65908736,
+            "arrayBuffers": 613121
+          },
+          "restage": {
+            "rss": 66695168,
+            "arrayBuffers": 1650429
+          }
+        }
+      }
+    },
+    {
+      "profile": "many-tiny",
+      "resources": 10000,
+      "bytesPerResource": 256,
+      "totalBytes": 2560000,
+      "iterations": 1,
+      "readsPerIteration": 100,
+      "streamReadsPerIteration": 100,
+      "commitBarrier": "directory-fsync",
+      "latencyMs": {
+        "stage": {
+          "n": 1,
+          "min": 17917.87,
+          "p50": 17917.87,
+          "p95": 17917.87,
+          "max": 17917.87,
+          "mean": 17917.87
+        },
+        "activate": {
+          "n": 1,
+          "min": 6689.42,
+          "p50": 6689.42,
+          "p95": 6689.42,
+          "max": 6689.42,
+          "mean": 6689.42
+        },
+        "verify": {
+          "n": 1,
+          "min": 6140.71,
+          "p50": 6140.71,
+          "p95": 6140.71,
+          "max": 6140.71,
+          "mean": 6140.71
+        },
+        "read": {
+          "n": 100,
+          "min": 0.73,
+          "p50": 0.98,
+          "p95": 1.4,
+          "max": 113.23,
+          "mean": 2.16
+        },
+        "open": {
+          "n": 100,
+          "min": 0.74,
+          "p50": 1.08,
+          "p95": 5.48,
+          "max": 18.05,
+          "mean": 1.74
+        },
+        "stream": {
+          "n": 100,
+          "min": 0.22,
+          "p50": 0.35,
+          "p95": 1.23,
+          "max": 6.69,
+          "mean": 0.5
+        },
+        "recover": {
+          "n": 1,
+          "min": 6896.79,
+          "p50": 6896.79,
+          "p95": 6896.79,
+          "max": 6896.79,
+          "mean": 6896.79
+        },
+        "restage": {
+          "n": 1,
+          "min": 18270.97,
+          "p50": 18270.97,
+          "p95": 18270.97,
+          "max": 18270.97,
+          "mean": 18270.97
+        }
+      },
+      "throughputMiBps": {
+        "stage": 0.1,
+        "verify": 0.4,
+        "stream": 0.7
+      },
+      "perObjectMs": {
+        "stage": 1.792
+      },
+      "memoryBytes": {
+        "baselineRss": 70418432,
+        "peakRss": 149549056,
+        "peakHeapUsed": 33643928,
+        "peakArrayBuffers": 35240694,
+        "maxRss": 151240704,
+        "byPhase": {
+          "stage": {
+            "rss": 103247872,
+            "arrayBuffers": 2255502
+          },
+          "activate": {
+            "rss": 144756736,
+            "arrayBuffers": 33715439
+          },
+          "verify": {
+            "rss": 148058112,
+            "arrayBuffers": 33977783
+          },
+          "read": {
+            "rss": 116793344,
+            "arrayBuffers": 1861803
+          },
+          "stream": {
+            "rss": 126550016,
+            "arrayBuffers": 14799167
+          },
+          "recover": {
+            "rss": 147722240,
+            "arrayBuffers": 33715639
+          },
+          "restage": {
+            "rss": 148369408,
+            "arrayBuffers": 35240694
+          }
+        }
+      }
+    },
+    {
+      "profile": "envelope",
+      "resources": 8,
+      "bytesPerResource": 67108864,
+      "totalBytes": 536870912,
+      "iterations": 1,
+      "readsPerIteration": 8,
+      "streamReadsPerIteration": 1,
+      "commitBarrier": "directory-fsync",
+      "latencyMs": {
+        "stage": {
+          "n": 1,
+          "min": 9445.75,
+          "p50": 9445.75,
+          "p95": 9445.75,
+          "max": 9445.75,
+          "mean": 9445.75
+        },
+        "activate": {
+          "n": 1,
+          "min": 1820.48,
+          "p50": 1820.48,
+          "p95": 1820.48,
+          "max": 1820.48,
+          "mean": 1820.48
+        },
+        "verify": {
+          "n": 1,
+          "min": 1803.85,
+          "p50": 1803.85,
+          "p95": 1803.85,
+          "max": 1803.85,
+          "mean": 1803.85
+        },
+        "read": {
+          "n": 8,
+          "min": 221.04,
+          "p50": 275.5,
+          "p95": 498.2,
+          "max": 498.2,
+          "mean": 315.86
+        },
+        "open": {
+          "n": 1,
+          "min": 243.53,
+          "p50": 243.53,
+          "p95": 243.53,
+          "max": 243.53,
+          "mean": 243.53
+        },
+        "stream": {
+          "n": 1,
+          "min": 93.61,
+          "p50": 93.61,
+          "p95": 93.61,
+          "max": 93.61,
+          "mean": 93.61
+        },
+        "recover": {
+          "n": 1,
+          "min": 1853.85,
+          "p50": 1853.85,
+          "p95": 1853.85,
+          "max": 1853.85,
+          "mean": 1853.85
+        },
+        "restage": {
+          "n": 1,
+          "min": 8894.78,
+          "p50": 8894.78,
+          "p95": 8894.78,
+          "max": 8894.78,
+          "mean": 8894.78
+        }
+      },
+      "throughputMiBps": {
+        "stage": 54.2,
+        "verify": 283.8,
+        "stream": 683.7
+      },
+      "perObjectMs": {
+        "stage": 1180.719
+      },
+      "memoryBytes": {
+        "baselineRss": 64950272,
+        "peakRss": 200675328,
+        "peakHeapUsed": 7083880,
+        "peakArrayBuffers": 134235153,
+        "maxRss": 208777216,
+        "byPhase": {
+          "stage": {
+            "rss": 66158592,
+            "arrayBuffers": 1328343
+          },
+          "activate": {
+            "rss": 66289664,
+            "arrayBuffers": 923055
+          },
+          "verify": {
+            "rss": 66277376,
+            "arrayBuffers": 920460
+          },
+          "read": {
+            "rss": 200675328,
+            "arrayBuffers": 134235153
+          },
+          "stream": {
+            "rss": 194379776,
+            "arrayBuffers": 67125888
+          },
+          "recover": {
+            "rss": 66576384,
+            "arrayBuffers": 599511
+          },
+          "restage": {
+            "rss": 67997696,
+            "arrayBuffers": 1361943
+          }
+        }
+      }
+    }
+  ]
+}

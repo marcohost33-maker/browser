@@ -252,6 +252,34 @@ export class ModelFs {
         return bytes === null ? null : { digest: sha256(bytes), size: bytes.length };
       },
 
+      // One open handle over a regular file: the bytes are pinned at open time (an
+      // unlinked or replaced name no longer affects them), digest() and chunks() read
+      // the same pinned bytes, so what is verified is what is served.
+      async openReadable(path, maxBytes) {
+        const bytes = await readFile(path, maxBytes);
+        if (bytes === null) return null;
+        let closed = false;
+        const assertOpen = () => {
+          if (closed) throw fsError('EBADF', path);
+        };
+        return {
+          size: bytes.length,
+          async digest() {
+            assertOpen();
+            return { digest: sha256(bytes), size: bytes.length };
+          },
+          async *chunks() {
+            for (let offset = 0; offset < bytes.length; offset += 1024) {
+              assertOpen();
+              yield Buffer.from(bytes.subarray(offset, Math.min(bytes.length, offset + 1024)));
+            }
+          },
+          async close() {
+            closed = true;
+          },
+        };
+      },
+
       // Flushes an existing file under its current name; false when it is missing.
       async syncFile(path) {
         let found;

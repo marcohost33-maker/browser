@@ -38,10 +38,23 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   laden; Store-Root eines fremden Kontos wird abgelehnt; Leser wiederholen eine
   Aufloesung genau einmal gegen einen zwischenzeitlich bewegten Commit.
   **Neu:** Workflow `activation-store-ci` (advisory, pfadgefiltert) mit Tests,
-  Plattform-Sonde und realer Prozess-Crash-Matrix auf Windows und macOS.
+  Plattform-Sonde, realer Prozess-Crash-Matrix und ADR-007a-§9-Benchmark auf
+  Linux, Windows und macOS; Benchmark-Reports als Artefakte.
+  **Messung (ADR-007a §9, `bench.mjs`):** p50/p95-Latenz von Stage, Activate,
+  Verify, Read, Open/Stream und Recover sowie Spitzenspeicher ueber sechs
+  Paketformen entlang des Ressourcen-Envelopes (200 KiB bis 512 MiB, 1 bis 10'000
+  Objekte). Befunde und Behebung: `readResource` allozierte pro Lesen das ganze
+  Objekt (129 MiB Puffer bei 64 MiB) -> neue Primitive `openResource` verifiziert
+  ueber ein einziges Handle vor dem ersten Byte und streamt danach aus demselben
+  Handle; jedes Lesen validierte den kompletten Versionsdatensatz neu (99 ms bei
+  10'000 Ressourcen) -> Cache validierter, content-adressierter Datensaetze nur
+  fuer den Servierpfad, Commits/Verifikation/Recovery/GC lesen weiterhin von der
+  Platte. Staging ist fsync-gebunden (rund 1.6-3 ms pro Objekt auf ext4 in der
+  Mess-VM; 10'000 Objekte kosten dort 16 s) -- ein Messwert fuer den
+  D4-Containerentscheid.
   **Offen:** Stromausfall-Evidenz auf Windows/macOS (NTFS-Journal-Hypothese ist
-  modelliert, nicht gemessen), realer Stromausfall-Drill, Installer-Anbindung nach
-  dem D4-Containerentscheid.
+  modelliert, nicht gemessen), realer Stromausfall-Drill, Messung auf Zielhardware
+  statt Hosted-Runnern, Installer-Anbindung nach dem D4-Containerentscheid.
 
 ### Security
 

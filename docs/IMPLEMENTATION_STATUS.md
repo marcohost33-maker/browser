@@ -91,11 +91,19 @@ capability approval, secure updates, safe extraction or runtime isolation.
   a platform without directory flush still gets a barrier and reports which one held;
 - fail-closed recovery that re-establishes durability barriers and never switches
   versions on its own; streamed verification; root-ownership check;
+- two serving primitives: `readResource` (small resources, bytes re-hashed) and
+  `openResource` (large resources: whole-object verification through one handle,
+  then a chunked stream from that same handle); validated version records are cached
+  for serving only;
+- ADR-007a section 9 benchmark (`bench.mjs`): p50/p95 latency of stage, activate,
+  verify, read, open/stream and recover plus peak memory across six package shapes
+  along the resource envelope, run per platform in CI with the report kept as an
+  artifact;
 - crash matrix over process-crash, posix-strict and ordered-prefix persistence models
   in three platform variants (POSIX, NTFS journal hypothesis, no barrier):
   58,078/58,078 crash cases consistent, 0 durability violations, 4/4 negative
   controls detected, 312/312 real-filesystem process crashes on Linux;
-- 18/18 control mutations killed; evidence report bound to exact source digests;
+- 19/19 control mutations killed; evidence report bound to exact source digests;
 - `activation-store-ci` workflow: tests, platform probe and the real-filesystem
   process-crash matrix on Windows and macOS (advisory, path-filtered).
 

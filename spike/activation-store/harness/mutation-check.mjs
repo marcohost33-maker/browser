@@ -122,6 +122,13 @@ export const MUTATIONS = Object.freeze([
     pattern: 'never switches or deletes',
   },
   {
+    name: 'streamed reads skip the digest check',
+    from: '    if (observed.digest !== entry.digest || observed.size !== entry.size) {',
+    to: '    if (false) {',
+    test: storeTests,
+    pattern: 'streams a resource',
+  },
+  {
     name: 'root ownership is not checked',
     from: '        && rootStat.uid !== this.io.currentUserId) {',
     to: '        && false) {',

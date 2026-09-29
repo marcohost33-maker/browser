@@ -852,6 +852,79 @@ test('a read racing a commit and collection is retried once against the new comm
   await assert.rejects(stuck.readResource('index.html'), rejectsWith('VERSION_MISSING'), 'an unchanged generation is real damage');
 });
 
+test('streams a resource only after verifying the whole object through the same handle', async (t) => {
+  const { store } = await freshStore(t);
+  const big = Buffer.alloc(3 * 1024 * 1024 + 17);
+  for (let index = 0; index < big.length; index += 1) big[index] = (index * 7 + (index >>> 10)) & 0xff;
+  const item = { path: 'media/clip.bin', mediaType: 'application/octet-stream', digest: sha256(big), size: big.length, bytes: big };
+  const { versionId } = await store.stageVersion(single(item));
+  await store.activate(versionId, { expectedGeneration: 0 });
+
+  const opened = await store.openResource('media/clip.bin');
+  assert.deepEqual([opened.versionId, opened.mediaType, opened.size, opened.digest], [versionId, item.mediaType, big.length, item.digest]);
+  const parts = [];
+  for await (const chunk of opened.stream()) parts.push(chunk);
+  assert.ok(parts.length > 1, 'served in chunks, never as one allocation');
+  assert.ok(Buffer.concat(parts).equals(big));
+  await assert.rejects(async () => {
+    for await (const chunk of opened.stream()) void chunk;
+  }, rejectsWith('INVALID_ARGUMENT'), 'a stream is consumed once');
+
+  const early = await store.openResource('media/clip.bin', { versionId });
+  for await (const chunk of early.stream()) {
+    void chunk;
+    break;
+  }
+  await assert.rejects(async () => {
+    for await (const chunk of early.stream()) void chunk;
+  }, rejectsWith('INVALID_ARGUMENT'), 'breaking out of the stream closes it');
+  await (await store.openResource('media/clip.bin')).close();
+
+  await assert.rejects(store.openResource('missing.bin'), rejectsWith('RESOURCE_NOT_FOUND'));
+  await corruptObject(store, item.digest);
+  await assert.rejects(store.openResource('media/clip.bin'), rejectsWith('RESOURCE_INTEGRITY'), 'no byte is served from a corrupt object');
+});
+
+test('a streamed resource survives collection of its version because the handle pins the bytes', { skip: !POSIX }, async (t) => {
+  const { store } = await freshStore(t);
+  const v1 = await install(store, 1);
+  const opened = await store.openResource('index.html');
+  assert.equal(opened.versionId, v1);
+  await install(store, 2);
+  const v3 = await install(store, 3);
+  await assert.rejects(store.readVersion(v1), rejectsWith('VERSION_MISSING'), 'v1 was collected meanwhile');
+  const parts = [];
+  for await (const chunk of opened.stream()) parts.push(chunk);
+  assert.equal(Buffer.concat(parts).toString('utf8'), '<!doctype html><title>v1</title>\n');
+  assert.equal((await store.readResource('index.html')).versionId, v3);
+});
+
+test('serving reads the version record once per process and forgets it once the version is gone', async (t) => {
+  const { store, root } = await freshStore(t);
+  const v1 = await install(store, 1);
+  const io = createNodeIo();
+  let recordReads = 0;
+  const counting = {
+    ...io,
+    async readFile(path, maxBytes) {
+      if (path === store.objectPath(v1)) recordReads += 1;
+      return io.readFile(path, maxBytes);
+    },
+  };
+  const server = await reopen(root, { io: counting, processProbe: probe(540) });
+  for (const path of ['index.html', 'app.js', 'shared/lib.js', 'index.html']) await server.readResource(path);
+  await (await server.openResource('app.js')).close();
+  assert.equal(recordReads, 1, 'the validated record is reused for serving');
+  assert.equal((await server.verifyVersion(v1)).ok, true);
+  assert.equal(recordReads, 2, 'verification never trusts the serving cache');
+
+  await install(store, 2);
+  const v3 = await install(store, 3);
+  await assert.rejects(server.readResource('index.html', { versionId: v1 }), rejectsWith('VERSION_MISSING'), 'a collected version is reported as missing, cache or not');
+  await assert.rejects(server.openResource('index.html', { versionId: v1 }), rejectsWith('VERSION_MISSING'));
+  assert.equal((await server.readResource('index.html')).versionId, v3);
+});
+
 test('a store root owned by another account is refused', { skip: !POSIX }, async (t) => {
   const { root } = await freshStore(t);
   const io = createNodeIo();

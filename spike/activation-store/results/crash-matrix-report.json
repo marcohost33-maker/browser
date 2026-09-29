@@ -1,11 +1,11 @@
 {
   "schema": "browser-activation/crash-matrix-report/v1",
   "sources": {
-    "activation-store.js": "ac40761dc18424efb56462329dcb39cd42a0bac8ada0c88570c1abf195550199",
-    "node-io.js": "060ef47b66440fa3c16270bf7543d33bf859c6d0ec0b847552e20ccc93309dbc",
+    "activation-store.js": "5ddc618532040bf4d09bf2e4fc4a755ab28d1cf8f48983f53d6fe7b35c066ae6",
+    "node-io.js": "e42803159cfc91e4286a315ebeb1411f187e30369077d758e3d245776a8c9cba",
     "harness/crash-matrix.js": "8bb9230acf609b846589ca347bb00a0aa827dca0b4978fc71e4f37f0e432a02a",
-    "harness/fault-injection.js": "8594bc1e0b0583fb77827d8d03f749b220f740705b1f006a532f7f1210d94a48",
-    "harness/model-fs.js": "60aa81634779cb801926470cc004db07e396e231061130645bacbcb91201073d"
+    "harness/fault-injection.js": "a1707221d531786b7f078d755081031df086442a2510307a2da6681f80e9cc8d",
+    "harness/model-fs.js": "44728b5dbfd077f42d7de5e3da7cbf2f4aa5f70e6c0f623fe8222a3ac498b278"
   },
   "config": {
     "samples": 12,

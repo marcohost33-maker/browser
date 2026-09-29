@@ -79,11 +79,27 @@ and the store reports which one held (`commitBarrier`: `directory-fsync`,
 
 ### Reads and concurrency
 
-`readResource` takes no lock. A concurrent commit plus collection can therefore
-remove the version or object a reader resolved a moment earlier. The reader repeats
-the resolution exactly once when the object or record vanished **and** the commit
+Two serving primitives exist. `readResource` returns the bytes of a small resource
+after re-hashing them. `openResource` is for large resources: it opens the object
+once, hashes the whole file through that handle, and only then hands out a chunked
+stream from the **same** handle — what is served is exactly what was verified, and
+no byte leaves the store before the check passed. The stream closes the handle when
+drained, abandoned or failed; nothing holds the object whole.
+
+Neither takes a lock. A concurrent commit plus collection can therefore remove the
+version or object a reader resolved a moment earlier. The reader repeats the
+resolution exactly once when the object or record vanished **and** the commit
 generation moved meanwhile; a miss on an unchanged generation is real damage and is
-reported as such. Readers never block writers and never delay collection.
+reported as such. Readers never block writers and never delay collection. A stream
+already open when its version is collected keeps serving: the open handle pins the
+bytes (POSIX unlink semantics; on Windows the adapter opens with `FILE_SHARE_DELETE`
+through libuv).
+
+The serving path keeps a small cache of validated version records (content-addressed,
+therefore immutable). Without it every read re-parsed and re-validated the record —
+about 100 ms per read for a 10,000-resource version. Commits, verification, recovery
+and collection never consult the cache; a missing object evicts the entry and the
+record is re-read, so a collected version is reported as missing exactly as before.
 
 ### Retention is bound to the commit record
 
@@ -202,16 +218,67 @@ object-directory barriers was measured the same way: with that control removed, 
 
 ### Mutation testing
 
-[`harness/mutation-check.mjs`](harness/mutation-check.mjs) reverts eighteen controls
-one at a time; every mutation makes at least one focused test fail (18/18 killed):
+[`harness/mutation-check.mjs`](harness/mutation-check.mjs) reverts nineteen controls
+one at a time; every mutation makes at least one focused test fail (19/19 killed):
 last-good root removed from collection, object-directory fsync, file fsync,
 compare-and-swap, idempotent no-op, forbidden-key check, directory-name collisions,
 live-lock protection, "no collection with an invalid root", commit-directory fsync,
 post-rename file fsync, commit-side object-directory barriers, recovery barriers,
-the streamed verification hash, root-ownership check, layout-damage refusal, the
-per-read content hash and the refusal to initialise over foreign content. The tool
-restores the source byte for byte and fails when a mutation no longer applies, so
-the list has to follow the code.
+the streamed verification hash, the streamed-read digest check, root-ownership
+check, layout-damage refusal, the per-read content hash and the refusal to
+initialise over foreign content. The tool restores the source byte for byte and
+fails when a mutation no longer applies, so the list has to follow the code.
+
+### Latency and memory (ADR-007a section 9)
+
+[`bench.mjs`](bench.mjs) measures p50/p95 latency per operation and peak memory for
+six package shapes along the resource envelope (200 KiB to 512 MiB, 1 to 10,000
+objects). Every profile runs in its own child process with `--expose-gc` and a
+forced collection at each phase boundary, so a phase's peak is its own; contents
+are generated deterministically and streamed, so the package never resides in
+memory. The numbers below are from one ext4 VM (Linux 6.18, virtio disk, 4 vCPU
+Xeon 2.8 GHz, Node 22.22.2) and are committed as
+[`results/bench-linux-ext4-vm-2026-09-29.json`](results/bench-linux-ext4-vm-2026-09-29.json);
+the `activation-store-ci` workflow repeats the bounded set on hosted Linux, Windows
+and macOS runners and keeps each report as an artifact. `n` is the number of
+iterations, so p95 for `n ≤ 3` is indicative only. Times in ms.
+
+| Profile (n) | Package | stage p50 / p95 | activate p50 / p95 | verify p50 / p95 (MiB/s) | read p50 / p95 | open → first byte p50 / p95 | stream p50 (MiB/s) | recover p50 | peak buffers read / stream | peak RSS |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| small (5) | 50 × 4 KiB = 200 KiB | 125 / 139 | 80 / 93 | 37 / 43 (5) | 0.9 / 1.8 | 0.9 / 1.4 | 0.3 (12) | 49 | 6 / 13 MiB | 76 MiB |
+| medium (3) | 500 × 32 KiB = 16 MiB | 1,382 / 1,450 | 516 / 583 | 334 / 336 (47) | 1.0 / 2.2 | 1.0 / 1.5 | 0.3 (98) | 383 | 2 / 32 MiB | 107 MiB |
+| large (2) | 2,000 × 64 KiB = 125 MiB | 6,530 / 6,792 | 1,752 / 1,802 | 1,440 / 1,493 (87) | 1.0 / 1.8 | 1.1 / 2.0 | 0.3 (184) | 1,523 | 5 / 30 MiB | 124 MiB |
+| big-object (3) | 1 × 64 MiB | 777 / 852 | 234 / 252 | 244 / 271 (262) | 223 / 229 | 220 / 236 | 86 (740) | 252 | 64 / 30 MiB | 127 MiB |
+| many-tiny (1) | 10,000 × 256 B = 2 MiB | 17,918 | 6,689 | 6,141 (0.4) | 1.0 / 1.4 | 1.1 / 5.5 | 0.4 | 6,897 | 2 / 14 MiB | 144 MiB |
+| envelope (1) | 8 × 64 MiB = 512 MiB | 9,446 | 1,820 | 1,804 (284) | 276 / 498 | 244 | 94 (684) | 1,854 | 128 / 64 MiB | 199 MiB |
+
+What the numbers say:
+
+1. **Staging is fsync-bound.** 1.8 to 3.3 ms per object on this disk whatever the
+   object size, because every object is created, written, `fsync`ed and renamed and
+   every touched fan-out directory is `fsync`ed once: 10,000 objects cost 18 s, while
+   large objects stage at 54 to 85 MiB/s. This is a measured input for decision D4: a
+   container that maps to few store objects stages in seconds, one that maps every
+   file to an object pays per file.
+2. **Activation and recovery cost one verification pass.** Hashing runs at 260 to
+   285 MiB/s for large objects (512 MiB activate in 1.8 s) and about 0.6 ms per
+   object for small ones (`lstat`, open, read, close), so 10,000 tiny objects verify
+   in 6 s. Recovery is a verification plus barriers and costs the same.
+3. **Serving is constant-time per resource.** Reads and opens cost about 1 ms
+   whatever the version size, because the validated record is cached for serving;
+   before that cache a read of a 10,000-resource version cost 99 ms. Opening a
+   64 MiB resource pays the full hash (220 to 244 ms) before the first byte, then
+   streams at about 700 MiB/s.
+4. **Only the whole-object read scales with size.** Stage, activate, verify and
+   recover hold about 1 MiB of buffers even for 512 MiB and keep the process at the
+   Node.js baseline of about 63 MiB resident. `readResource` holds the object (64 MiB
+   per read, 128 MiB with two in flight before collection). `openResource` keeps the
+   live working set at one 256 KiB chunk; the 30 to 64 MiB its phase shows is copied
+   chunks awaiting garbage collection, not live data, and a native runtime would not
+   have it.
+
+The first run of this benchmark, before the two serving-path fixes, is kept as
+negative results 8 and 9 below.
 
 ### Findings kept as negative results
 
@@ -243,6 +310,16 @@ the list has to follow the code.
    the trace alone, so a protocol that never called the barrier would never be held
    to durability. The matrix now additionally requires the state of every operation
    that returned to be durable; the missing post-rename file sync is caught that way.
+8. **A read that loaded the object whole.** The section 9 benchmark showed peak
+   buffer memory of 129 MiB for a 64 MiB resource: `readResource` allocated the
+   object plus the read buffer. A runtime serving assets cannot do that. The
+   `openResource` primitive verifies through one open handle and then streams from
+   that handle, so peak buffers no longer follow the object size.
+9. **A read that re-validated the version record.** Every read re-parsed and
+   re-validated the record — 99 ms per read for a 10,000-resource version against
+   2 ms for a small one. Validated records are content-addressed and immutable, so
+   the serving path now caches them; the commit, verification, recovery and
+   collection paths deliberately do not.
 
 ## Model limits and open assumptions
 
@@ -331,6 +408,7 @@ and to ADR-007a/ADR-009; the store binds `packageDigest` and bindings for audit 
 | `rollback({ expectedGeneration })` | yes | commit of the verified last-good version |
 | `commitBindings(bindings, { expectedGeneration })` | yes | metadata-only commit |
 | `readResource(path, { versionId })` | no | resolves a key and re-hashes the object; one retry against a moved commit |
+| `openResource(path, { versionId })` | no | verifies the object through one handle, then streams it in chunks from that handle |
 | `verifyVersion(versionId)`, `status()`, `readVersion()` | no | read-only checks; verification streams every object |
 | `recover({ breakStaleLock })`, `collectGarbage()` | yes | startup recovery and collection |
 
@@ -349,6 +427,7 @@ node spike/activation-store/crash-matrix.mjs --real-fs      # add real-filesyste
 node spike/activation-store/crash-matrix.mjs --real-fs-only # what the Windows/macOS CI job runs
 node spike/activation-store/harness/mutation-check.mjs      # every control must be tested
 node spike/activation-store/harness/platform-probe.mjs      # what this platform's adapter offers
+node spike/activation-store/bench.mjs [--ci|--full] [--dir <real disk>] [--json out.json]
 ACTIVATION_MATRIX_FULL=1 node --test tests/activation/crash-matrix.test.js
 ```
 
@@ -357,8 +436,9 @@ the nested recovery checks for the small scenarios, the negative controls and a
 real-filesystem subset. It also fails when the store or harness sources change
 without a refreshed report. The opt-in full run rebuilds the report and requires
 byte equality. The `activation-store-ci` workflow repeats the tests, the platform
-probe and the full real-filesystem process-crash matrix on Windows and macOS
-whenever the spike or its tests change.
+probe, the full real-filesystem process-crash matrix and the bounded benchmark set
+on Linux, Windows and macOS whenever the spike or its tests change, and keeps each
+benchmark report as a workflow artifact (`activation-bench-<os>`, 90 days).
 
 ## Acceptance blockers
 
@@ -367,7 +447,9 @@ whenever the spike or its tests change.
   the NTFS journal-barrier hypothesis behind `file-fsync-only` is untested against a
   real power loss;
 - a real power-loss drill on Linux;
-- serving `readResource` through the runtime's protocol handler (#23);
+- serving `openResource` / `readResource` through the runtime's protocol handler
+  (#23);
 - coupling update metadata through commit bindings (ADR-009);
-- p50/p95 activation latency and peak memory by package size (ADR-007a section 9);
+- section 9 numbers on target hardware: the benchmark exists and runs on hosted
+  runners and one ext4 VM, which bound but do not represent end-user disks;
 - independent security review of the exact candidate.
