@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Runs the activation-store crash matrix and prints or writes the evidence report.
 //
-//   node spike/activation-store/crash-matrix.mjs            # print summary
-//   node spike/activation-store/crash-matrix.mjs --write    # refresh results/crash-matrix-report.json
-//   node spike/activation-store/crash-matrix.mjs --real-fs  # add process crashes on the real filesystem
+//   node spike/activation-store/crash-matrix.mjs                # print summary
+//   node spike/activation-store/crash-matrix.mjs --write        # refresh results/crash-matrix-report.json
+//   node spike/activation-store/crash-matrix.mjs --real-fs      # add process crashes on the real filesystem
+//   node spike/activation-store/crash-matrix.mjs --real-fs-only # real filesystem only (cross-platform CI)
 //
 // The committed report contains only model results: they are deterministic and
 // platform-independent, so any reviewer can reproduce them byte for byte. Real
@@ -61,7 +62,21 @@ export function serializeReport(report) {
   return `${JSON.stringify(report, null, 2)}\n`;
 }
 
+async function runRealFs() {
+  let failed = false;
+  for (const result of await runRealFsProcessCrashMatrix()) {
+    const counter = result.processCrash;
+    process.stdout.write(`real-fs ${result.scenario}: ${counter.consistent}/${counter.crashCases} consistent\n`);
+    if (counter.consistent !== counter.crashCases || counter.crashCases === 0) {
+      failed = true;
+      process.stdout.write(`  ${JSON.stringify(counter.examples)}\n`);
+    }
+  }
+  return failed;
+}
+
 async function main(argv) {
+  if (argv.includes('--real-fs-only')) return (await runRealFs()) ? 1 : 0;
   const report = await buildReport();
   if (argv.includes('--write')) {
     await writeFile(REPORT_PATH, serializeReport(report));
@@ -71,16 +86,10 @@ async function main(argv) {
   for (const control of report.negativeControls) {
     process.stdout.write(`negative control ${control.name}: ${control.discriminating ? 'detected' : 'NOT DETECTED'}\n`);
   }
-  if (argv.includes('--real-fs')) {
-    const real = await runRealFsProcessCrashMatrix();
-    for (const result of real) {
-      const counter = result.processCrash;
-      process.stdout.write(`real-fs ${result.scenario}: ${counter.consistent}/${counter.crashCases} consistent\n`);
-    }
-  }
-  const failed = report.summary.modelConsistent !== report.summary.modelCrashCases
+  let failed = report.summary.modelConsistent !== report.summary.modelCrashCases
     || report.summary.durabilityViolations !== 0
     || report.negativeControls.some((control) => !control.discriminating);
+  if (argv.includes('--real-fs')) failed = (await runRealFs()) || failed;
   return failed ? 1 : 0;
 }
 

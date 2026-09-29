@@ -1,6 +1,6 @@
 # `browser` — Implementation Status
 
-- Updated: 2026-09-27
+- Updated: 2026-09-29
 - Repository: `marcohost33-maker/browser`
 - Product: standalone native, offline-capable web-application runtime
 - Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
@@ -86,12 +86,18 @@ capability approval, secure updates, safe extraction or runtime isolation.
 - one atomic commit point (`state/CURRENT`), compare-and-swap generations, verified
   last-good retention bound to the commit record, deterministic rollback;
 - commit-level bindings that move update metadata atomically with the active version;
+- commits that re-establish their own object-directory barriers and complete the
+  `durable_rename` sequence (file sync under the new name, then directory sync), so
+  a platform without directory flush still gets a barrier and reports which one held;
 - fail-closed recovery that re-establishes durability barriers and never switches
-  versions on its own;
-- crash matrix over process-crash, posix-strict and ordered-prefix persistence models:
-  33,706/33,706 crash cases consistent, 0 durability violations, 3/3 negative
-  controls detected, 219/219 real-filesystem process crashes on Linux;
-- 14/14 control mutations killed; evidence report bound to exact source digests.
+  versions on its own; streamed verification; root-ownership check;
+- crash matrix over process-crash, posix-strict and ordered-prefix persistence models
+  in three platform variants (POSIX, NTFS journal hypothesis, no barrier):
+  58,078/58,078 crash cases consistent, 0 durability violations, 4/4 negative
+  controls detected, 312/312 real-filesystem process crashes on Linux;
+- 18/18 control mutations killed; evidence report bound to exact source digests;
+- `activation-store-ci` workflow: tests, platform probe and the real-filesystem
+  process-crash matrix on Windows and macOS (advisory, path-filtered).
 
 Not wired to any verifier, installer or runtime. See `spike/activation-store/README.md`.
 
@@ -99,8 +105,9 @@ Not wired to any verifier, installer or runtime. See `spike/activation-store/REA
 
 - native application shell or Chromium host;
 - package parser/verifier and signature validation wired to a product path;
-- installer wiring of the activation-store spike, Windows/macOS durability evidence
-  and a real power-loss drill;
+- installer wiring of the activation-store spike, power-loss evidence on Windows and
+  macOS (the NTFS journal-barrier hypothesis is modelled, not measured) and a real
+  power-loss drill;
 - production TUF client/repository, raw-byte parser, delegations, durable monotonic
   state, revocation operations or atomic offline update activation;
 - publisher admission, namespace ownership and capability approval engine;

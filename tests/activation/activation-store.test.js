@@ -23,7 +23,7 @@ import {
   sha256Hex,
 } from '../../spike/activation-store/activation-store.js';
 import { createNodeIo } from '../../spike/activation-store/node-io.js';
-import { createCrashingIo, SimulatedCrash } from '../../spike/activation-store/harness/fault-injection.js';
+import { createCrashingIo, createLyingIo, SimulatedCrash } from '../../spike/activation-store/harness/fault-injection.js';
 import { versionInput } from '../../spike/activation-store/harness/crash-matrix.js';
 import { ModelFs } from '../../spike/activation-store/harness/model-fs.js';
 
@@ -137,7 +137,9 @@ test('stages, activates and serves a version, re-verifying bytes on every read',
   assert.equal(activated.generation, 1);
   assert.equal(activated.active, staged.versionId);
   assert.equal(activated.previous, null);
-  assert.equal(activated.commitBarrier, POSIX ? 'directory-fsync' : 'unavailable');
+  // Windows cannot flush directory handles; the post-rename file flush is then the
+  // only barrier the platform offers (see node-io.js).
+  assert.equal(activated.commitBarrier, POSIX ? 'directory-fsync' : 'file-fsync-only');
 
   const read = await store.readResource('index.html');
   assert.equal(read.mediaType, 'text/html;charset=utf-8');
@@ -758,19 +760,104 @@ test('garbage collection leaves unknown entries alone and skips when a root is u
 
 // ------------------------------------------------------------- barriers and reads
 
-test('reports an unavailable commit barrier where directories cannot be synced', async () => {
+test('reports which barrier held where directories cannot be synced', async () => {
   const machine = new ModelFs({ directorySync: false });
   await machine.io().mkdir('/apps');
-  const store = await openActivationStore({
-    root: '/apps/store',
-    storeId: STORE_ID,
-    io: machine.io(),
-    create: true,
-    processProbe: probe(500),
-  });
+  const io = machine.io();
+  const store = await openActivationStore({ root: '/apps/store', storeId: STORE_ID, io, create: true, processProbe: probe(500) });
   const { versionId } = await store.stageVersion(versionInput(1));
-  assert.equal((await store.activate(versionId, { expectedGeneration: 0 })).commitBarrier, 'unavailable');
-  assert.equal((await store.recover()).commitBarrier, 'unavailable');
+  assert.equal((await store.activate(versionId, { expectedGeneration: 0 })).commitBarrier, 'file-fsync-only');
+  assert.equal((await store.recover()).commitBarrier, 'file-fsync-only');
+
+  const nothing = { ...io, syncFile: async () => false };
+  const bare = await openActivationStore({ root: '/apps/store', storeId: STORE_ID, io: nothing, processProbe: probe(501) });
+  assert.equal((await bare.commitBindings({ 'update/x': blob('x') }, { expectedGeneration: 1 })).commitBarrier, 'unavailable');
+  assert.equal((await bare.recover()).commitBarrier, 'unavailable');
+});
+
+test('a commit re-establishes the directory barriers of every object it references', async () => {
+  // Staging by a process whose object-directory syncs were acknowledged but never
+  // performed: everything is visible, nothing under objects/ is durable.
+  const machine = new ModelFs({ directorySync: true });
+  await machine.io().mkdir('/apps');
+  await openActivationStore({ root: '/apps/store', storeId: STORE_ID, io: machine.io(), create: true, processProbe: probe(509) });
+  machine.checkpoint();
+  const lying = createLyingIo(machine.io(), { skipDirectorySync: (path) => path.includes('/objects') });
+  const stager = await openActivationStore({ root: '/apps/store', storeId: STORE_ID, io: lying, processProbe: probe(510) });
+  const { versionId } = await stager.stageVersion(versionInput(1));
+
+  const activator = await openActivationStore({ root: '/apps/store', storeId: STORE_ID, io: machine.io(), processProbe: probe(511) });
+  await activator.activate(versionId, { expectedGeneration: 0 });
+
+  // Power loss that keeps nothing beyond the mandatory (synced) entries.
+  const survivor = machine.posixStrictState(() => 0);
+  const store = await openActivationStore({ root: '/apps/store', storeId: STORE_ID, io: survivor.io(), processProbe: probe(512) });
+  assert.equal((await store.status()).active, versionId);
+  assert.equal((await store.verifyVersion(versionId)).ok, true, 'the commit must not depend on how its objects arrived');
+});
+
+test('verification streams objects through the hash instead of loading them', async (t) => {
+  const { store, root } = await freshStore(t);
+  const { versionId } = await store.stageVersion(versionInput(1));
+  const io = createNodeIo();
+  const calls = { readFile: 0, digestFile: 0 };
+  const counting = {
+    ...io,
+    async readFile(path, maxBytes) {
+      if (path.startsWith(join(root, 'objects'))) calls.readFile += 1;
+      return io.readFile(path, maxBytes);
+    },
+    async digestFile(path, maxBytes) {
+      calls.digestFile += 1;
+      return io.digestFile(path, maxBytes);
+    },
+  };
+  const observer = await reopen(root, { io: counting, processProbe: probe(520) });
+  assert.equal((await observer.verifyVersion(versionId)).ok, true);
+  assert.deepEqual(calls, { readFile: 1, digestFile: 5 }, 'only the version record is loaded; four resources and one binding are streamed');
+
+  await corruptObject(store, digestOf(1, 'app.js'));
+  assert.deepEqual((await observer.verifyVersion(versionId)).problems, [{ code: 'OBJECT_CORRUPT', ref: 'app.js' }]);
+  await assert.rejects(io.digestFile(join(root, 'STORE'), 3), (error) => error.code === 'EFBIG');
+  assert.equal(await io.digestFile(join(root, 'absent'), 3), null);
+});
+
+test('a read racing a commit and collection is retried once against the new commit', async (t) => {
+  const { store, root } = await freshStore(t);
+  const v1 = await install(store, 1);
+  const stale = await readFile(join(root, 'state', 'CURRENT'));
+  await install(store, 2);
+  const v3 = await install(store, 3);
+  await assert.rejects(store.readVersion(v1), rejectsWith('VERSION_MISSING'), 'v1 was collected');
+
+  const io = createNodeIo();
+  let staleReads = 0;
+  const racing = (limit) => ({
+    ...io,
+    async readFile(path, maxBytes) {
+      if (path === join(root, 'state', 'CURRENT') && staleReads < limit) {
+        staleReads += 1;
+        return Buffer.from(stale);
+      }
+      return io.readFile(path, maxBytes);
+    },
+  });
+  const reader = await reopen(root, { io: racing(1), processProbe: probe(530) });
+  const read = await reader.readResource('index.html');
+  assert.equal(read.versionId, v3);
+  assert.equal(read.bytes.toString('utf8'), '<!doctype html><title>v3</title>\n');
+
+  staleReads = 0;
+  const stuck = await reopen(root, { io: racing(Number.POSITIVE_INFINITY), processProbe: probe(531) });
+  await assert.rejects(stuck.readResource('index.html'), rejectsWith('VERSION_MISSING'), 'an unchanged generation is real damage');
+});
+
+test('a store root owned by another account is refused', { skip: !POSIX }, async (t) => {
+  const { root } = await freshStore(t);
+  const io = createNodeIo();
+  const foreign = { ...io, currentUserId: io.currentUserId + 1 };
+  await assert.rejects(reopen(root, { io: foreign }), rejectsWith('STORE_ROOT_INVALID'));
+  await reopen(root, { io: { ...io, currentUserId: null } }, 'an unknown account is not a mismatch');
 });
 
 test('resource reads fail closed for unknown keys, no activation and invalid keys', async (t) => {

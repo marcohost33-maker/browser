@@ -21,14 +21,27 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   atomaren Schritt und eine Recovery, die Barrieren wiederherstellt und nie selbst
   Versionen wechselt. Keine Formatwahl, kein Installer, keine Runtime-Anbindung.
   **Evidenz:** Crash-Matrix ueber Prozess-Crash-, POSIX-strikte und
-  geordnete-Journal-Persistenzmodelle: 33'706/33'706 Crash-Faelle konsistent,
-  0 Durability-Verletzungen, 3/3 Negativkontrollen erkannt, 219/219 reale
-  Prozess-Crashes (Linux); 14/14 Kontroll-Mutationen getoetet; Report byteweise
-  reproduzierbar und an die exakten Quell-Digests gebunden. Die Matrix fand zwei
-  echte Durability-Fehler im eigenen Entwurf (Initialisierung und sichtbarer, aber
-  nicht dauerhafter Marker), beide behoben. **Offen:** Windows/macOS-Evidenz,
-  NTFS-Ordnungsannahme, realer Stromausfall-Drill, Installer-Anbindung nach dem
-  D4-Containerentscheid.
+  geordnete-Journal-Persistenzmodelle in drei Plattformvarianten (POSIX-
+  Verzeichnisbarriere, NTFS-Journal-Hypothese, keine Barriere): 58'078/58'078
+  Crash-Faelle konsistent, 0 Durability-Verletzungen, 4/4 Negativkontrollen
+  erkannt, 312/312 reale Prozess-Crashes (Linux); 18/18 Kontroll-Mutationen
+  getoetet; Report byteweise reproduzierbar und an die exakten Quell-Digests
+  gebunden. Die Matrix fand echte Durability-Fehler im eigenen Entwurf
+  (Initialisierung, sichtbarer aber nicht dauerhafter Marker, Barrierenreihenfolge,
+  Commit-Abhaengigkeit von der Staging-Historie), alle behoben.
+  **Haertung nach Review (2026-09-29):** jeder Commit stellt die Verzeichnis-
+  barrieren aller referenzierten Objekte selbst her (haengt nicht mehr davon ab,
+  wie die Objekte entstanden sind); `durable_rename` vollstaendig (Datei-fsync unter
+  dem neuen Namen, dann Verzeichnis), womit auch Windows ohne Verzeichnis-fsync eine
+  Barriere hat und der Store meldet, welche gehalten hat (`directory-fsync`,
+  `file-fsync-only`, `unavailable`); Verifikation streamt Objekte statt sie zu
+  laden; Store-Root eines fremden Kontos wird abgelehnt; Leser wiederholen eine
+  Aufloesung genau einmal gegen einen zwischenzeitlich bewegten Commit.
+  **Neu:** Workflow `activation-store-ci` (advisory, pfadgefiltert) mit Tests,
+  Plattform-Sonde und realer Prozess-Crash-Matrix auf Windows und macOS.
+  **Offen:** Stromausfall-Evidenz auf Windows/macOS (NTFS-Journal-Hypothese ist
+  modelliert, nicht gemessen), realer Stromausfall-Drill, Installer-Anbindung nach
+  dem D4-Containerentscheid.
 
 ### Security
 

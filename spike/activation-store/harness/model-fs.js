@@ -13,6 +13,10 @@
 //   (an ordered metadata journal); fsync(directory), when available, is a barrier.
 //   Contents follow the same fsync rule. With `directorySync: false` the model stands
 //   for a platform that cannot flush directory handles and relies on journal order.
+//   With `fileSyncBarrier: true` every file fsync is also a journal barrier: the
+//   write-ahead-log hypothesis for NTFS, where flushing a file forces the log up to
+//   that file's last change and the log is sequential. It is a hypothesis until a
+//   Windows power-loss run exists; the matrix names it as such.
 //
 // A process crash keeps every completed operation visible but not yet durable.
 
@@ -54,8 +58,9 @@ export function mulberry32(seed) {
 const METADATA_KINDS = new Set(['create', 'mkdir', 'link', 'unlink', 'rename', 'symlink']);
 
 export class ModelFs {
-  constructor({ directorySync = true } = {}) {
+  constructor({ directorySync = true, fileSyncBarrier = false } = {}) {
     this.directorySync = directorySync;
+    this.fileSyncBarrier = fileSyncBarrier;
     this.nextInode = 1;
     this.types = new Map();
     this.entries = new Map();
@@ -87,6 +92,7 @@ export class ModelFs {
   clone() {
     const copy = Object.create(ModelFs.prototype);
     copy.directorySync = this.directorySync;
+    copy.fileSyncBarrier = this.fileSyncBarrier;
     copy.nextInode = this.nextInode;
     copy.rootId = this.rootId;
     copy.types = new Map(this.types);
@@ -180,8 +186,25 @@ export class ModelFs {
 
   io() {
     const model = this;
+    const readFile = async (path, maxBytes) => {
+      let found;
+      try {
+        found = model._lookup(path);
+      } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      }
+      if (found.id === undefined) return null;
+      const type = model.types.get(found.id);
+      if (type === 'symlink') throw fsError('ELOOP', path);
+      if (type !== 'file') throw fsError('EISDIR', path);
+      const bytes = model.data.get(found.id);
+      if (bytes.length > maxBytes) throw fsError('EFBIG', path);
+      return Buffer.from(bytes);
+    };
     return {
       platform: 'model',
+      currentUserId: null,
       join: (...parts) => `/${parts.flatMap((part) => part.split('/')).filter((part) => part.length > 0).join('/')}`,
       resolve: (path) => {
         components(path);
@@ -202,7 +225,7 @@ export class ModelFs {
         }
         if (found.id === undefined) return null;
         const type = model.types.get(found.id);
-        return { type, size: type === 'file' ? model.data.get(found.id).length : 0, mode: undefined };
+        return { type, size: type === 'file' ? model.data.get(found.id).length : 0, mode: undefined, uid: undefined };
       },
 
       async mkdir(path) {
@@ -222,21 +245,28 @@ export class ModelFs {
         return [...model.entries.get(found.id).keys()].sort();
       },
 
-      async readFile(path, maxBytes) {
+      readFile,
+
+      async digestFile(path, maxBytes) {
+        const bytes = await readFile(path, maxBytes);
+        return bytes === null ? null : { digest: sha256(bytes), size: bytes.length };
+      },
+
+      // Flushes an existing file under its current name; false when it is missing.
+      async syncFile(path) {
         let found;
         try {
           found = model._lookup(path);
         } catch (error) {
-          if (error.code === 'ENOENT') return null;
+          if (error.code === 'ENOENT') return false;
           throw error;
         }
-        if (found.id === undefined) return null;
+        if (found.id === undefined) return false;
         const type = model.types.get(found.id);
         if (type === 'symlink') throw fsError('ELOOP', path);
         if (type !== 'file') throw fsError('EISDIR', path);
-        const bytes = model.data.get(found.id);
-        if (bytes.length > maxBytes) throw fsError('EFBIG', path);
-        return Buffer.from(bytes);
+        model.log.push({ kind: 'fsync', inode: found.id, data: Buffer.from(model.data.get(found.id)) });
+        return true;
       },
 
       async createExclusive(path) {
@@ -365,6 +395,7 @@ export class ModelFs {
   _materialize(entries, data) {
     const next = Object.create(ModelFs.prototype);
     next.directorySync = this.directorySync;
+    next.fileSyncBarrier = this.fileSyncBarrier;
     next.nextInode = this.nextInode;
     next.rootId = this.rootId;
     next.types = new Map(this.types);
@@ -436,13 +467,14 @@ export class ModelFs {
     }
   }
 
-  // ordered-prefix: the first `count` metadata operations after the last barrier.
+  // ordered-prefix: the first `count` metadata operations after the last barrier. A
+  // directory sync is always a barrier; a file sync only under `fileSyncBarrier`.
   *orderedPrefixStates() {
     const metadata = [];
     let barrier = 0;
     for (const entry of this.log) {
       if (METADATA_KINDS.has(entry.kind)) metadata.push(entry);
-      else if (entry.kind === 'dirsync') barrier = metadata.length;
+      else if (entry.kind === 'dirsync' || (entry.kind === 'fsync' && this.fileSyncBarrier)) barrier = metadata.length;
     }
     const durableData = this._durableData();
     for (let count = barrier; count <= metadata.length; count += 1) {

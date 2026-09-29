@@ -11,8 +11,9 @@
 // - recovery succeeds and the committed state is exactly the old or the new one;
 // - active, last-good and commit bindings fully verify (every object re-hashed);
 // - no temporary file, commit temporary or lock remains;
-// - with a working directory barrier, a state that was durably committed before the
-//   crash is never lost, and recovery's own barriers make the visible state durable;
+// - under a variant whose barrier the model honours, a state that was durably
+//   committed before the crash is never lost (including the state of an operation
+//   that returned), and recovery's own barriers make the visible state durable;
 // - a reconciling retry reaches the new state, after which the object store holds
 //   exactly the objects reachable from active, last-good and bindings.
 
@@ -21,7 +22,7 @@ import { cp, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { openActivationStore } from '../activation-store.js';
+import { ACTIVATION_SCHEMA, canonicalBytes, openActivationStore } from '../activation-store.js';
 import { createNodeIo } from '../node-io.js';
 import { createCrashingIo, createLyingIo, SimulatedCrash } from './fault-injection.js';
 import { ModelFs } from './model-fs.js';
@@ -120,6 +121,28 @@ async function ensureActive(store, n) {
   if (status.active !== versionId) await store.activate(versionId, { expectedGeneration: status.generation });
 }
 
+// Activates a version that is already staged, by a process that never staged it.
+async function activateStaged(env, n) {
+  const store = await env.open();
+  const { generation } = await store.status();
+  const versionId = sha256(canonicalVersionBytes(n));
+  await store.activate(versionId, { expectedGeneration: generation });
+}
+
+function canonicalVersionBytes(n) {
+  const input = versionInput(n);
+  return canonicalBytes({
+    schema: ACTIVATION_SCHEMA.version,
+    storeId: STORE_ID,
+    appVersion: input.appVersion,
+    packageDigest: input.packageDigest,
+    resources: input.resources
+      .map(({ path, mediaType, digest, size }) => ({ path, mediaType, digest, size }))
+      .sort((left, right) => (left.path < right.path ? -1 : 1)),
+    bindings: Object.fromEntries(Object.entries(input.bindings).map(([name, { digest, size }]) => [name, { digest, size }])),
+  });
+}
+
 function bindingKey(bindings) {
   return Object.entries(bindings).sort(([left], [right]) => (left < right ? -1 : 1))
     .map(([name, entry]) => `${name}=${entry.digest}`).join(',');
@@ -197,6 +220,41 @@ export const SCENARIOS = Object.freeze([
     },
   },
   {
+    name: 'activate-staged',
+    description: 'activate a version staged earlier by another process (no staging in the operation)',
+    async setup(env) {
+      await stagedId(await env.open({ create: true }), 1);
+    },
+    async operation(env) {
+      await activateStaged(env, 1);
+    },
+    async reconcile(store) {
+      await ensureActive(store, 1);
+    },
+  },
+  {
+    name: 'activate-after-unsynced-staging',
+    description: 'activate a version whose objects are visible but whose staging never synced their directories',
+    async setup(env) {
+      await env.open({ create: true });
+    },
+    // After the durable checkpoint, a staging process acknowledged every
+    // object-directory sync without doing it: the objects and the version record are
+    // visible, nothing under objects/ is durable.
+    unsyncedSetup: {
+      io: (io) => createLyingIo(io, { skipDirectorySync: (path) => path.includes('/objects') }),
+      async run(env) {
+        await stagedId(await env.open(), 1);
+      },
+    },
+    async operation(env) {
+      await activateStaged(env, 1);
+    },
+    async reconcile(store) {
+      await ensureActive(store, 1);
+    },
+  },
+  {
     name: 'bind-metadata',
     description: 'replace commit-level update metadata atomically with the active pointer',
     async setup(env) {
@@ -237,18 +295,41 @@ export const NEGATIVE_CONTROLS = Object.freeze([
     scenario: 'update-with-gc',
     lie: { skipDirectorySync: (path) => path.endsWith('/state') },
   },
+  {
+    name: 'unsynced-published-file',
+    description: 'post-rename file fsync of CURRENT acknowledged but not performed (the only barrier without directory sync)',
+    scenario: 'update',
+    variant: 'no-directory-sync',
+    lie: { skipPublishedSync: (path) => path.endsWith('/state/CURRENT') },
+  },
 ]);
 
+// `barrier` names the call after the publishing rename that makes it durable in the
+// variant's durable models: the directory sync on POSIX, the file sync where
+// directories cannot be flushed and file flushes are journal barriers (the NTFS
+// hypothesis). The last variant claims nothing and only checks consistency.
 export const VARIANTS = Object.freeze([
   {
     name: 'directory-sync',
     directorySync: true,
+    fileSyncBarrier: false,
+    barrier: 'directory',
     models: ['process-crash', 'posix-strict', 'ordered-prefix'],
     durable: new Set(['posix-strict', 'ordered-prefix']),
   },
   {
     name: 'no-directory-sync',
     directorySync: false,
+    fileSyncBarrier: true,
+    barrier: 'file',
+    models: ['process-crash', 'ordered-prefix'],
+    durable: new Set(['ordered-prefix']),
+  },
+  {
+    name: 'no-barrier',
+    directorySync: false,
+    fileSyncBarrier: false,
+    barrier: null,
     models: ['process-crash', 'ordered-prefix'],
     durable: new Set(),
   },
@@ -361,15 +442,28 @@ async function reconcileAndCheck(io, root, scenario, expected) {
 }
 
 // Index of the trace entry after which the operation's effect must survive a power
-// loss: the directory sync that follows the publishing rename.
-function durablePoint(trace, root) {
+// loss: the variant's barrier call that follows the publishing rename. Independently
+// of the trace, an operation that returned has committed durably (see `committedAt`).
+function durablePoint(trace, root, barrier) {
+  if (barrier === null) return null;
   const commitIndex = trace.findLastIndex((entry) => entry.kind === 'rename'
     && (entry.path.endsWith(`${root}/state/CURRENT`) || entry.path.endsWith(`${root}/STORE`)));
   if (commitIndex < 0) return null;
-  const published = trace[commitIndex].path.endsWith('/STORE') ? root : `${root}/state`;
+  const marker = trace[commitIndex].path.endsWith('/STORE');
+  const expected = barrier === 'directory'
+    ? { kind: 'syncDir', path: marker ? root : `${root}/state` }
+    : { kind: 'syncFile', path: marker ? `${root}/STORE` : `${root}/state/CURRENT` };
   const syncIndex = trace.findIndex((entry, index) => index > commitIndex
-    && entry.kind === 'syncDir' && entry.path === published);
+    && entry.kind === expected.kind && entry.path === expected.path);
   return syncIndex < 0 ? null : syncIndex;
+}
+
+// Whether the new state must be durable when the operation was interrupted before
+// its `crashAt`-th mutating call. `crashAt === mutations + 1` is the uninterrupted
+// run: whatever the trace shows, a returned operation has committed durably.
+function committedAt(base, crashAt) {
+  if (crashAt === base.mutations + 1) return base.expected.new !== base.expected.old;
+  return base.durableAt !== null && base.durableAt <= crashAt - 2;
 }
 
 function counter() {
@@ -388,11 +482,20 @@ function record(target, violations, context) {
 
 // --------------------------------------------------------------------- model runs
 
+// Setup that must stay visible but not durable (a predecessor whose barriers never
+// ran); it runs after the durable checkpoint, through the scenario's own io wrapper.
+async function runUnsyncedSetup(scenario, io, root) {
+  const unsynced = scenario.unsyncedSetup;
+  if (unsynced === undefined) return;
+  await unsynced.run(environment(unsynced.io(io), root, 'setup'));
+}
+
 async function prepareModel(variant, scenario, wrap) {
-  const machine = new ModelFs({ directorySync: variant.directorySync });
+  const machine = new ModelFs({ directorySync: variant.directorySync, fileSyncBarrier: variant.fileSyncBarrier });
   await machine.io().mkdir(MODEL_PARENT);
   await scenario.setup(environment(machine.io(), MODEL_ROOT, 'setup'));
   machine.checkpoint();
+  await runUnsyncedSetup(scenario, machine.io(), MODEL_ROOT);
   const old = await observe(machine.io(), MODEL_ROOT);
   const run = machine.clone();
   const crashing = createCrashingIo(wrap(run.io()));
@@ -401,7 +504,7 @@ async function prepareModel(variant, scenario, wrap) {
     machine,
     expected: { old, new: await observe(run.io(), MODEL_ROOT) },
     mutations: crashing.trace.length,
-    durableAt: durablePoint(crashing.trace, MODEL_ROOT),
+    durableAt: durablePoint(crashing.trace, MODEL_ROOT, variant.barrier),
   };
 }
 
@@ -493,7 +596,7 @@ export async function runModelMatrix({
           record(targets['process-crash'].counter, [`operation-threw:${describe(error)}`], { crashAt });
           continue;
         }
-        const committed = base.durableAt !== null && base.durableAt <= crashAt - 2;
+        const committed = committedAt(base, crashAt);
 
         for (const model of variant.models) {
           const target = targets[model];
@@ -554,20 +657,20 @@ export async function runModelMatrix({
 }
 
 export async function runNegativeControls({ controls = NEGATIVE_CONTROLS, samples = 12, seed = 20260927 } = {}) {
-  const variant = VARIANTS[0];
   const results = [];
   for (const control of controls) {
+    const variant = VARIANTS.find((candidate) => candidate.name === (control.variant ?? 'directory-sync'));
     const scenario = SCENARIOS.find((candidate) => candidate.name === control.scenario);
     const wrap = (io) => createLyingIo(io, control.lie);
     const base = await prepareModel(variant, scenario, wrap);
     const models = {};
-    for (const model of ['posix-strict', 'ordered-prefix']) {
+    for (const model of variant.models.filter((name) => name !== 'process-crash')) {
       const target = counter();
       const cache = new Map();
       for (let crashAt = 1; crashAt <= base.mutations + 1; crashAt += 1) {
         const { machine, error } = await crashOperation(base, scenario, crashAt, wrap);
         if (error) throw error;
-        const committed = base.durableAt !== null && base.durableAt <= crashAt - 2;
+        const committed = committedAt(base, crashAt);
         for (const state of statesFor(model, machine, { samples, seed: seed + crashAt })) {
           const fingerprint = state.fingerprint();
           let cached = cache.get(fingerprint);
@@ -589,6 +692,7 @@ export async function runNegativeControls({ controls = NEGATIVE_CONTROLS, sample
       name: control.name,
       description: control.description,
       scenario: control.scenario,
+      variant: variant.name,
       models,
       discriminating: Object.values(models).some((target) => target.violationCount > 0),
     });
@@ -611,6 +715,7 @@ export async function runRealFsProcessCrashMatrix({ scenarios = SCENARIOS, baseD
       await io.mkdir(join(template, 'apps'), 0o700);
       const templateRoot = join(template, 'apps', 'store');
       await scenario.setup(environment(io, templateRoot, 'setup'));
+      await runUnsyncedSetup(scenario, io, templateRoot);
       const old = await observe(io, templateRoot);
 
       const baselineDirectory = join(workspace, `${scenario.name}-baseline`);

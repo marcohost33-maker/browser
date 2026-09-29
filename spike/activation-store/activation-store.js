@@ -605,6 +605,11 @@ export class ActivationStore {
       fail('STORE_ROOT_INVALID', 'store root must be a real directory, not a link or file', { type: rootStat.type });
     } else if (this.io.platform !== 'win32' && typeof rootStat.mode === 'number' && (rootStat.mode & 0o002) !== 0) {
       fail('STORE_ROOT_INVALID', 'store root must not be world-writable');
+    } else if (typeof rootStat.uid === 'number' && typeof this.io.currentUserId === 'number'
+        && rootStat.uid !== this.io.currentUserId) {
+      // The account boundary is the trust boundary: a root owned by another account
+      // is that account's directory, whatever its mode bits say today.
+      fail('STORE_ROOT_INVALID', 'store root is owned by another user', { uid: rootStat.uid });
     }
 
     const markerPath = this.path('STORE');
@@ -629,7 +634,7 @@ export class ActivationStore {
       // root may have been created by an earlier attempt that crashed before syncing
       // its parent (found by the crash matrix, post-recovery power-loss model).
       await this._syncParentOfRoot();
-      await this.io.syncDir(this.root);
+      await this._publishBarrier(markerPath, this.root);
       return;
     }
 
@@ -787,20 +792,12 @@ export class ActivationStore {
   }
 
   async _existingObjectState(digest, size) {
-    const path = this.objectPath(digest);
-    const stat = await this.io.lstat(path);
+    const stat = await this.io.lstat(this.objectPath(digest));
     if (stat === null) return 'absent';
     if (stat.type !== 'file') return 'occupied';
-    if (stat.size !== size) return 'corrupt';
-    let bytes;
-    try {
-      bytes = await this.io.readFile(path, Math.max(size, 1));
-    } catch (error) {
-      if (UNREADABLE_ENTRY.has(ioErrorCode(error))) return 'corrupt';
-      throw error;
-    }
-    if (bytes === null) return 'absent';
-    return sha256Hex(bytes) === digest ? 'valid' : 'corrupt';
+    const problem = await this._checkObject(digest, size);
+    if (problem === null) return 'valid';
+    return problem === 'OBJECT_MISSING' ? 'absent' : 'corrupt';
   }
 
   // Writes one object after verifying the streamed bytes against the declared digest
@@ -852,7 +849,65 @@ export class ActivationStore {
     for (const directory of [...directories].sort()) await this.io.syncDir(directory);
   }
 
+  // Durability barrier for a name published by rename, in the order of PostgreSQL's
+  // durable_rename: the file under its new name first, then its directory. On POSIX
+  // the directory sync is the barrier. Where directories cannot be flushed (Windows)
+  // the file sync is the only barrier the platform offers; it reports which one held.
+  async _publishBarrier(file, directory) {
+    const fileSynced = await this.io.syncFile(file);
+    const directorySynced = await this.io.syncDir(directory);
+    if (directorySynced) return 'directory-fsync';
+    return fileSynced ? 'file-fsync-only' : 'unavailable';
+  }
+
+  // Every directory whose entries a commit relies on: the fan-out of each object the
+  // commit references and `objects/` itself. A commit must not depend on the history
+  // of how those objects arrived (a staging whose directory syncs never ran, an
+  // object adopted after a skipped collection), so it re-establishes the barriers.
+  async _barrierDirectoriesFor(next) {
+    const digests = new Set(Object.values(next.bindings).map((entry) => entry.digest));
+    for (const versionId of [next.active, next.previous]) {
+      if (versionId === null) continue;
+      digests.add(versionId);
+      let record;
+      try {
+        record = await this.readVersion(versionId);
+      } catch (error) {
+        // A version carried forward unread (a metadata-only commit over a damaged
+        // active version) cannot be enumerated; the commit neither creates nor cures
+        // that damage, and recovery reports it.
+        if (!(error instanceof ActivationError)) throw error;
+        continue;
+      }
+      for (const entry of record.resources) digests.add(entry.digest);
+      for (const entry of Object.values(record.bindings)) digests.add(entry.digest);
+    }
+    const directories = new Set([this.path('objects')]);
+    for (const digest of digests) directories.add(this.path('objects', digest.slice(0, 2)));
+    return directories;
+  }
+
   // ------------------------------------------------------------------- read helpers
+
+  // Streams an object through the hash without loading it: verification of a large
+  // version must not allocate its objects. Returns null when the object is exactly
+  // the declared bytes, otherwise a problem code.
+  async _checkObject(digest, size) {
+    const path = this.objectPath(digest);
+    const stat = await this.io.lstat(path);
+    if (stat === null) return 'OBJECT_MISSING';
+    if (stat.type !== 'file' || stat.size !== size) return 'OBJECT_CORRUPT';
+    let observed;
+    try {
+      observed = await this.io.digestFile(path, Math.max(size, 1));
+    } catch (error) {
+      if (UNREADABLE_ENTRY.has(ioErrorCode(error))) return 'OBJECT_CORRUPT';
+      throw error;
+    }
+    if (observed === null) return 'OBJECT_MISSING';
+    if (observed.size !== size || observed.digest !== digest) return 'OBJECT_CORRUPT';
+    return null;
+  }
 
   async _readObject(digest, maxBytes) {
     assertDigest(digest, 'digest');
@@ -917,39 +972,20 @@ export class ActivationStore {
       ...Object.entries(record.bindings).map(([name, entry]) => ({ ...entry, ref: `binding:${name}` })),
     ];
     for (const entry of entries) {
-      try {
-        const bytes = await this._readObject(entry.digest, Math.max(entry.size, 1));
-        if (bytes.length !== entry.size) problems.push({ code: 'OBJECT_CORRUPT', ref: entry.ref });
-      } catch (error) {
-        if (!(error instanceof ActivationError)) throw error;
-        problems.push({ code: error.code, ref: entry.ref });
-      }
+      const problem = await this._checkObject(entry.digest, entry.size);
+      if (problem !== null) problems.push({ code: problem, ref: entry.ref });
     }
     return { ok: problems.length === 0, versionId, problems };
   }
 
   async _verifyBindingObjects(bindings) {
     for (const [name, entry] of Object.entries(bindings)) {
-      try {
-        const bytes = await this._readObject(entry.digest, Math.max(entry.size, 1));
-        if (bytes.length !== entry.size) fail('OBJECT_CORRUPT', 'binding size mismatch');
-      } catch (error) {
-        if (!(error instanceof ActivationError)) throw error;
-        fail('BINDING_INVALID', `binding ${name} does not reference a valid object (${error.code})`, { name });
-      }
+      const problem = await this._checkObject(entry.digest, entry.size);
+      if (problem !== null) fail('BINDING_INVALID', `binding ${name} does not reference a valid object (${problem})`, { name });
     }
   }
 
-  // Serving primitive for a runtime: resolves a key in the active (or given) version
-  // and re-verifies the object bytes on every read.
-  async readResource(path, { versionId } = {}) {
-    validateResourcePath(path, this.limits);
-    let target = versionId;
-    if (target === undefined) {
-      const commit = await this.readCommit();
-      if (commit === null || commit.active === null) fail('NO_ACTIVE_VERSION', 'no version is active');
-      target = commit.active;
-    }
+  async _readActiveResource(path, target) {
     const record = await this.readVersion(target);
     const entry = findResource(record.resources, path);
     if (entry === null) fail('RESOURCE_NOT_FOUND', 'resource is not part of the version', { path });
@@ -957,11 +993,37 @@ export class ActivationStore {
     try {
       bytes = await this._readObject(entry.digest, Math.max(entry.size, 1));
     } catch (error) {
-      if (error instanceof ActivationError) fail('RESOURCE_INTEGRITY', `resource failed its integrity check (${error.code})`, { path });
+      if (error instanceof ActivationError) {
+        fail('RESOURCE_INTEGRITY', `resource failed its integrity check (${error.code})`, { path, cause: error.code });
+      }
       throw error;
     }
     if (bytes.length !== entry.size) fail('RESOURCE_INTEGRITY', 'resource size mismatch', { path });
     return { versionId: target, path, mediaType: entry.mediaType, size: entry.size, digest: entry.digest, bytes };
+  }
+
+  // Serving primitive for a runtime: resolves a key in the active (or given) version
+  // and re-verifies the object bytes on every read. Reads take no lock, so a commit
+  // plus collection may race a read of the active version: when the object or record
+  // vanished and the generation moved meanwhile, the read is repeated once against
+  // the new commit. A miss on an unchanged generation is real damage.
+  async readResource(path, { versionId } = {}) {
+    validateResourcePath(path, this.limits);
+    if (versionId !== undefined) return this._readActiveResource(path, versionId);
+    let commit = await this.readCommit();
+    for (let attempt = 0; ; attempt += 1) {
+      if (commit === null || commit.active === null) fail('NO_ACTIVE_VERSION', 'no version is active');
+      try {
+        return await this._readActiveResource(path, commit.active);
+      } catch (error) {
+        const vanished = error instanceof ActivationError
+          && (error.code === 'VERSION_MISSING' || error.details?.cause === 'OBJECT_MISSING');
+        if (!vanished || attempt > 0) throw error;
+        const latest = await this.readCommit();
+        if (latest?.generation === commit.generation) throw error;
+        commit = latest;
+      }
+    }
   }
 
   // --------------------------------------------------------------------- staging
@@ -1027,7 +1089,7 @@ export class ActivationStore {
       await this._unlinkIfExists(temp);
       throw error;
     }
-    return (await this.io.syncDir(this.path('state'))) ? 'directory-fsync' : 'unavailable';
+    return this._publishBarrier(this.path('state', 'CURRENT'), this.path('state'));
   }
 
   async _collectGarbageAfterCommit(commit) {
@@ -1051,6 +1113,7 @@ export class ActivationStore {
       const stats = { written: 0, reused: 0, repaired: 0, bytes: 0, dirtyDirectories: new Set() };
       const next = await decide(current, stats);
       await this._verifyBindingObjects(next.bindings);
+      for (const directory of await this._barrierDirectoriesFor(next)) stats.dirtyDirectories.add(directory);
       await this._syncDirectories(stats.dirtyDirectories);
       const commit = { ...next, generation: generation + 1 };
       const commitBarrier = await this._writeCommit(commit);
@@ -1185,7 +1248,7 @@ export class ActivationStore {
     return this._withLock(async () => {
       const commit = await this.readCommit();
       // Make the visible commit durable before deleting anything it displaced.
-      await this.io.syncDir(this.path('state'));
+      await this._publishBarrier(this.path('state', 'CURRENT'), this.path('state'));
       return this._collectGarbage(commit);
     }, breakStaleLock);
   }
@@ -1212,11 +1275,11 @@ export class ActivationStore {
       const commit = await this.readCommit();
       // Re-establish every barrier of the visible state before deleting anything: an
       // interrupted initialisation or commit may have published entries (root, marker,
-      // CURRENT) whose directory sync never ran. Objects referenced by a visible commit
-      // were synced before that commit's rename, so they need no second barrier.
+      // CURRENT) whose syncs never ran. Objects referenced by a visible commit were
+      // synced before that commit's rename, so they need no second barrier.
       await this._syncParentOfRoot();
-      await this.io.syncDir(this.root);
-      report.commitBarrier = (await this.io.syncDir(this.path('state'))) ? 'directory-fsync' : 'unavailable';
+      await this._publishBarrier(this.path('STORE'), this.root);
+      report.commitBarrier = await this._publishBarrier(this.path('state', 'CURRENT'), this.path('state'));
       if (commit === null) {
         report.gc = await this._collectGarbageAfterCommit(null);
         return report;

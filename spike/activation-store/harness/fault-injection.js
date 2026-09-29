@@ -61,16 +61,19 @@ export function createCrashingIo(io, { crashAt = Number.POSITIVE_INFINITY, crash
 
   const wrapped = {
     platform: io.platform,
+    currentUserId: io.currentUserId,
     join: io.join,
     resolve: io.resolve,
     dirname: io.dirname,
     lstat: read(io.lstat),
     readdir: read(io.readdir),
     readFile: read(io.readFile),
+    digestFile: read(io.digestFile),
     mkdir: (path, mode) => mutate('mkdir', path, () => io.mkdir(path, mode)),
     rename: (from, to) => mutate('rename', `${from} -> ${to}`, () => io.rename(from, to)),
     link: (from, to) => mutate('link', `${from} -> ${to}`, () => io.link(from, to)),
     unlink: (path) => mutate('unlink', path, () => io.unlink(path)),
+    syncFile: (path) => mutate('syncFile', path, () => io.syncFile(path)),
     syncDir: (path) => mutate('syncDir', path, () => io.syncDir(path)),
     async createExclusive(path, mode) {
       const handle = await mutate('create', path, () => io.createExclusive(path, mode));
@@ -98,12 +101,20 @@ export function createCrashingIo(io, { crashAt = Number.POSITIVE_INFINITY, crash
   };
 }
 
-export function createLyingIo(io, { skipFileSync = false, skipDirectorySync = () => false } = {}) {
+export function createLyingIo(io, {
+  skipFileSync = false,
+  skipDirectorySync = () => false,
+  skipPublishedSync = () => false,
+} = {}) {
   return {
     ...io,
     async syncDir(path) {
       if (skipDirectorySync(path)) return true;
       return io.syncDir(path);
+    },
+    async syncFile(path) {
+      if (skipPublishedSync(path)) return true;
+      return io.syncFile(path);
     },
     async createExclusive(path, mode) {
       const handle = await io.createExclusive(path, mode);

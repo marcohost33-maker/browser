@@ -1,11 +1,11 @@
 {
   "schema": "browser-activation/crash-matrix-report/v1",
   "sources": {
-    "activation-store.js": "86449d24c4a1f89ae1bbef921b4a97d4ae0704f0ad93bb7c91a24beb6e53e315",
-    "node-io.js": "17d097aed9e18179769228eec0b6b5f43dbb61809d625c0bce5c46c4f860bd09",
-    "harness/crash-matrix.js": "800dbbd1c60de5628b56482f3203c47bc679e6b440bdb35e7c2fa1c6f27d0b27",
-    "harness/fault-injection.js": "3753b1f015dcc1a2474dd26cf6dd9feea0ea6a11d298f725d5344eb98e3dc7fe",
-    "harness/model-fs.js": "7d63f6c75c3a4cd409d608356bfac2330dfd9a64a71dccb2ed58c6f24526b21a"
+    "activation-store.js": "ac40761dc18424efb56462329dcb39cd42a0bac8ada0c88570c1abf195550199",
+    "node-io.js": "060ef47b66440fa3c16270bf7543d33bf859c6d0ec0b847552e20ccc93309dbc",
+    "harness/crash-matrix.js": "8bb9230acf609b846589ca347bb00a0aa827dca0b4978fc71e4f37f0e432a02a",
+    "harness/fault-injection.js": "8594bc1e0b0583fb77827d8d03f749b220f740705b1f006a532f7f1210d94a48",
+    "harness/model-fs.js": "60aa81634779cb801926470cc004db07e396e231061130645bacbcb91201073d"
   },
   "config": {
     "samples": 12,
@@ -13,11 +13,11 @@
     "seed": 20260927
   },
   "summary": {
-    "modelCrashCases": 33706,
-    "modelConsistent": 33706,
+    "modelCrashCases": 58078,
+    "modelConsistent": 58078,
     "modelRecoverySuccess": 1,
     "durabilityViolations": 0,
-    "negativeControlsDiscriminating": "3/3",
+    "negativeControlsDiscriminating": "4/4",
     "realFsCrashCases": null,
     "realFsConsistent": null
   },
@@ -26,221 +26,9 @@
       "variant": "directory-sync",
       "scenario": "create-store",
       "description": "initialise an empty store (directories, then marker)",
-      "mutatingOperations": 10,
-      "crashPoints": 11,
-      "durablePoint": 9,
-      "durabilityViolations": 0,
-      "models": {
-        "process-crash": {
-          "crashCases": 11,
-          "distinctStates": 11,
-          "consistent": 11,
-          "violationCount": 0,
-          "examples": []
-        },
-        "posix-strict": {
-          "crashCases": 226,
-          "distinctStates": 8,
-          "consistent": 226,
-          "violationCount": 0,
-          "examples": []
-        },
-        "ordered-prefix": {
-          "crashCases": 42,
-          "distinctStates": 8,
-          "consistent": 42,
-          "violationCount": 0,
-          "examples": []
-        },
-        "recovery-crash": {
-          "crashCases": 175,
-          "distinctStates": 175,
-          "consistent": 175,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/posix-strict": {
-          "crashCases": 132,
-          "distinctStates": 7,
-          "consistent": 132,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 22,
-          "distinctStates": 3,
-          "consistent": 22,
-          "violationCount": 0,
-          "examples": []
-        }
-      }
-    },
-    {
-      "variant": "directory-sync",
-      "scenario": "first-install",
-      "description": "stage and activate v1 in an empty store",
-      "mutatingOperations": 54,
-      "crashPoints": 55,
-      "durablePoint": 52,
-      "durabilityViolations": 0,
-      "models": {
-        "process-crash": {
-          "crashCases": 55,
-          "distinctStates": 55,
-          "consistent": 55,
-          "violationCount": 0,
-          "examples": []
-        },
-        "posix-strict": {
-          "crashCases": 2362,
-          "distinctStates": 457,
-          "consistent": 2362,
-          "violationCount": 0,
-          "examples": []
-        },
-        "ordered-prefix": {
-          "crashCases": 462,
-          "distinctStates": 38,
-          "consistent": 462,
-          "violationCount": 0,
-          "examples": []
-        },
-        "recovery-crash": {
-          "crashCases": 799,
-          "distinctStates": 799,
-          "consistent": 799,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/posix-strict": {
-          "crashCases": 2528,
-          "distinctStates": 350,
-          "consistent": 2528,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 287,
-          "distinctStates": 44,
-          "consistent": 287,
-          "violationCount": 0,
-          "examples": []
-        }
-      }
-    },
-    {
-      "variant": "directory-sync",
-      "scenario": "update",
-      "description": "stage and activate v2 over v1 (v1 becomes last-good)",
-      "mutatingOperations": 54,
-      "crashPoints": 55,
-      "durablePoint": 52,
-      "durabilityViolations": 0,
-      "models": {
-        "process-crash": {
-          "crashCases": 55,
-          "distinctStates": 55,
-          "consistent": 55,
-          "violationCount": 0,
-          "examples": []
-        },
-        "posix-strict": {
-          "crashCases": 2298,
-          "distinctStates": 381,
-          "consistent": 2298,
-          "violationCount": 0,
-          "examples": []
-        },
-        "ordered-prefix": {
-          "crashCases": 443,
-          "distinctStates": 35,
-          "consistent": 443,
-          "violationCount": 0,
-          "examples": []
-        },
-        "recovery-crash": {
-          "crashCases": 772,
-          "distinctStates": 772,
-          "consistent": 772,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/posix-strict": {
-          "crashCases": 2410,
-          "distinctStates": 298,
-          "consistent": 2410,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 260,
-          "distinctStates": 26,
-          "consistent": 260,
-          "violationCount": 0,
-          "examples": []
-        }
-      }
-    },
-    {
-      "variant": "directory-sync",
-      "scenario": "update-with-gc",
-      "description": "activate v3 over v2 and v1; v1-only objects are collected after the commit",
-      "mutatingOperations": 59,
-      "crashPoints": 60,
-      "durablePoint": 52,
-      "durabilityViolations": 0,
-      "models": {
-        "process-crash": {
-          "crashCases": 60,
-          "distinctStates": 60,
-          "consistent": 60,
-          "violationCount": 0,
-          "examples": []
-        },
-        "posix-strict": {
-          "crashCases": 2582,
-          "distinctStates": 472,
-          "consistent": 2582,
-          "violationCount": 0,
-          "examples": []
-        },
-        "ordered-prefix": {
-          "crashCases": 475,
-          "distinctStates": 41,
-          "consistent": 475,
-          "violationCount": 0,
-          "examples": []
-        },
-        "recovery-crash": {
-          "crashCases": 847,
-          "distinctStates": 847,
-          "consistent": 847,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/posix-strict": {
-          "crashCases": 2724,
-          "distinctStates": 365,
-          "consistent": 2724,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 290,
-          "distinctStates": 38,
-          "consistent": 290,
-          "violationCount": 0,
-          "examples": []
-        }
-      }
-    },
-    {
-      "variant": "directory-sync",
-      "scenario": "rollback",
-      "description": "roll back from v2 to last-good v1 (v2 becomes last-good)",
       "mutatingOperations": 11,
       "crashPoints": 12,
-      "durablePoint": 9,
+      "durablePoint": 10,
       "durabilityViolations": 0,
       "models": {
         "process-crash": {
@@ -251,37 +39,355 @@
           "examples": []
         },
         "posix-strict": {
-          "crashCases": 228,
-          "distinctStates": 13,
-          "consistent": 228,
+          "crashCases": 250,
+          "distinctStates": 8,
+          "consistent": 250,
           "violationCount": 0,
           "examples": []
         },
         "ordered-prefix": {
-          "crashCases": 38,
-          "distinctStates": 9,
-          "consistent": 38,
+          "crashCases": 43,
+          "distinctStates": 8,
+          "consistent": 43,
           "violationCount": 0,
           "examples": []
         },
         "recovery-crash": {
-          "crashCases": 129,
-          "distinctStates": 129,
-          "consistent": 129,
+          "crashCases": 216,
+          "distinctStates": 216,
+          "consistent": 216,
           "violationCount": 0,
           "examples": []
         },
         "post-recovery-power-loss/posix-strict": {
-          "crashCases": 188,
-          "distinctStates": 18,
-          "consistent": 188,
+          "crashCases": 144,
+          "distinctStates": 7,
+          "consistent": 144,
           "violationCount": 0,
           "examples": []
         },
         "post-recovery-power-loss/ordered-prefix": {
           "crashCases": 24,
-          "distinctStates": 4,
+          "distinctStates": 3,
           "consistent": 24,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "first-install",
+      "description": "stage and activate v1 in an empty store",
+      "mutatingOperations": 62,
+      "crashPoints": 63,
+      "durablePoint": 60,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 63,
+          "distinctStates": 63,
+          "consistent": 63,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 2782,
+          "distinctStates": 457,
+          "consistent": 2782,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 456,
+          "distinctStates": 38,
+          "consistent": 456,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1055,
+          "distinctStates": 1055,
+          "consistent": 1055,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 2964,
+          "distinctStates": 374,
+          "consistent": 2964,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 345,
+          "distinctStates": 44,
+          "consistent": 345,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "update",
+      "description": "stage and activate v2 over v1 (v1 becomes last-good)",
+      "mutatingOperations": 66,
+      "crashPoints": 67,
+      "durablePoint": 64,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 67,
+          "distinctStates": 67,
+          "consistent": 67,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 2926,
+          "distinctStates": 381,
+          "consistent": 2926,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 441,
+          "distinctStates": 35,
+          "consistent": 441,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1093,
+          "distinctStates": 1093,
+          "consistent": 1093,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 3048,
+          "distinctStates": 326,
+          "consistent": 3048,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 339,
+          "distinctStates": 26,
+          "consistent": 339,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "update-with-gc",
+      "description": "activate v3 over v2 and v1; v1-only objects are collected after the commit",
+      "mutatingOperations": 72,
+      "crashPoints": 73,
+      "durablePoint": 65,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 73,
+          "distinctStates": 73,
+          "consistent": 73,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 3262,
+          "distinctStates": 465,
+          "consistent": 3262,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 474,
+          "distinctStates": 41,
+          "consistent": 474,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1201,
+          "distinctStates": 1201,
+          "consistent": 1201,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 3426,
+          "distinctStates": 389,
+          "consistent": 3426,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 381,
+          "distinctStates": 38,
+          "consistent": 381,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "rollback",
+      "description": "roll back from v2 to last-good v1 (v2 becomes last-good)",
+      "mutatingOperations": 23,
+      "crashPoints": 24,
+      "durablePoint": 21,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 24,
+          "distinctStates": 24,
+          "consistent": 24,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 472,
+          "distinctStates": 13,
+          "consistent": 472,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 40,
+          "distinctStates": 9,
+          "consistent": 40,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 309,
+          "distinctStates": 309,
+          "consistent": 309,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 380,
+          "distinctStates": 18,
+          "consistent": 380,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 48,
+          "distinctStates": 4,
+          "consistent": 48,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "activate-staged",
+      "description": "activate a version staged earlier by another process (no staging in the operation)",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": 17,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 392,
+          "distinctStates": 13,
+          "consistent": 392,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 36,
+          "distinctStates": 9,
+          "consistent": 36,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 353,
+          "distinctStates": 353,
+          "consistent": 353,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 508,
+          "distinctStates": 88,
+          "consistent": 508,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 136,
+          "distinctStates": 10,
+          "consistent": 136,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "activate-after-unsynced-staging",
+      "description": "activate a version whose objects are visible but whose staging never synced their directories",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": 17,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 1210,
+          "distinctStates": 288,
+          "consistent": 1210,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 168,
+          "distinctStates": 31,
+          "consistent": 168,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 353,
+          "distinctStates": 353,
+          "consistent": 353,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 1254,
+          "distinctStates": 214,
+          "consistent": 1254,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 136,
+          "distinctStates": 10,
+          "consistent": 136,
           "violationCount": 0,
           "examples": []
         }
@@ -291,50 +397,50 @@
       "variant": "directory-sync",
       "scenario": "bind-metadata",
       "description": "replace commit-level update metadata atomically with the active pointer",
-      "mutatingOperations": 25,
-      "crashPoints": 26,
-      "durablePoint": 22,
+      "mutatingOperations": 32,
+      "crashPoints": 33,
+      "durablePoint": 29,
       "durabilityViolations": 0,
       "models": {
         "process-crash": {
-          "crashCases": 26,
-          "distinctStates": 26,
-          "consistent": 26,
+          "crashCases": 33,
+          "distinctStates": 33,
+          "consistent": 33,
           "violationCount": 0,
           "examples": []
         },
         "posix-strict": {
-          "crashCases": 672,
-          "distinctStates": 79,
-          "consistent": 672,
+          "crashCases": 874,
+          "distinctStates": 78,
+          "consistent": 874,
           "violationCount": 0,
           "examples": []
         },
         "ordered-prefix": {
-          "crashCases": 103,
+          "crashCases": 112,
           "distinctStates": 18,
-          "consistent": 103,
+          "consistent": 112,
           "violationCount": 0,
           "examples": []
         },
         "recovery-crash": {
-          "crashCases": 312,
-          "distinctStates": 312,
-          "consistent": 312,
+          "crashCases": 468,
+          "distinctStates": 468,
+          "consistent": 468,
           "violationCount": 0,
           "examples": []
         },
         "post-recovery-power-loss/posix-strict": {
-          "crashCases": 636,
-          "distinctStates": 90,
-          "consistent": 636,
+          "crashCases": 832,
+          "distinctStates": 95,
+          "consistent": 832,
           "violationCount": 0,
           "examples": []
         },
         "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 73,
+          "crashCases": 100,
           "distinctStates": 13,
-          "consistent": 73,
+          "consistent": 100,
           "violationCount": 0,
           "examples": []
         }
@@ -344,162 +450,6 @@
       "variant": "no-directory-sync",
       "scenario": "create-store",
       "description": "initialise an empty store (directories, then marker)",
-      "mutatingOperations": 10,
-      "crashPoints": 11,
-      "durablePoint": 9,
-      "durabilityViolations": 0,
-      "models": {
-        "process-crash": {
-          "crashCases": 11,
-          "distinctStates": 11,
-          "consistent": 11,
-          "violationCount": 0,
-          "examples": []
-        },
-        "ordered-prefix": {
-          "crashCases": 54,
-          "distinctStates": 8,
-          "consistent": 54,
-          "violationCount": 0,
-          "examples": []
-        },
-        "recovery-crash": {
-          "crashCases": 175,
-          "distinctStates": 175,
-          "consistent": 175,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 127,
-          "distinctStates": 25,
-          "consistent": 127,
-          "violationCount": 0,
-          "examples": []
-        }
-      }
-    },
-    {
-      "variant": "no-directory-sync",
-      "scenario": "first-install",
-      "description": "stage and activate v1 in an empty store",
-      "mutatingOperations": 54,
-      "crashPoints": 55,
-      "durablePoint": 52,
-      "durabilityViolations": 0,
-      "models": {
-        "process-crash": {
-          "crashCases": 55,
-          "distinctStates": 55,
-          "consistent": 55,
-          "violationCount": 0,
-          "examples": []
-        },
-        "ordered-prefix": {
-          "crashCases": 873,
-          "distinctStates": 38,
-          "consistent": 873,
-          "violationCount": 0,
-          "examples": []
-        },
-        "recovery-crash": {
-          "crashCases": 799,
-          "distinctStates": 799,
-          "consistent": 799,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 1351,
-          "distinctStates": 199,
-          "consistent": 1351,
-          "violationCount": 0,
-          "examples": []
-        }
-      }
-    },
-    {
-      "variant": "no-directory-sync",
-      "scenario": "update",
-      "description": "stage and activate v2 over v1 (v1 becomes last-good)",
-      "mutatingOperations": 54,
-      "crashPoints": 55,
-      "durablePoint": 52,
-      "durabilityViolations": 0,
-      "models": {
-        "process-crash": {
-          "crashCases": 55,
-          "distinctStates": 55,
-          "consistent": 55,
-          "violationCount": 0,
-          "examples": []
-        },
-        "ordered-prefix": {
-          "crashCases": 816,
-          "distinctStates": 35,
-          "consistent": 816,
-          "violationCount": 0,
-          "examples": []
-        },
-        "recovery-crash": {
-          "crashCases": 772,
-          "distinctStates": 772,
-          "consistent": 772,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 1267,
-          "distinctStates": 167,
-          "consistent": 1267,
-          "violationCount": 0,
-          "examples": []
-        }
-      }
-    },
-    {
-      "variant": "no-directory-sync",
-      "scenario": "update-with-gc",
-      "description": "activate v3 over v2 and v1; v1-only objects are collected after the commit",
-      "mutatingOperations": 59,
-      "crashPoints": 60,
-      "durablePoint": 52,
-      "durabilityViolations": 0,
-      "models": {
-        "process-crash": {
-          "crashCases": 60,
-          "distinctStates": 60,
-          "consistent": 60,
-          "violationCount": 0,
-          "examples": []
-        },
-        "ordered-prefix": {
-          "crashCases": 997,
-          "distinctStates": 41,
-          "consistent": 997,
-          "violationCount": 0,
-          "examples": []
-        },
-        "recovery-crash": {
-          "crashCases": 847,
-          "distinctStates": 847,
-          "consistent": 847,
-          "violationCount": 0,
-          "examples": []
-        },
-        "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 1493,
-          "distinctStates": 204,
-          "consistent": 1493,
-          "violationCount": 0,
-          "examples": []
-        }
-      }
-    },
-    {
-      "variant": "no-directory-sync",
-      "scenario": "rollback",
-      "description": "roll back from v2 to last-good v1 (v2 becomes last-good)",
       "mutatingOperations": 11,
       "crashPoints": 12,
       "durablePoint": 9,
@@ -513,23 +463,257 @@
           "examples": []
         },
         "ordered-prefix": {
-          "crashCases": 48,
-          "distinctStates": 9,
-          "consistent": 48,
+          "crashCases": 34,
+          "distinctStates": 8,
+          "consistent": 34,
           "violationCount": 0,
           "examples": []
         },
         "recovery-crash": {
-          "crashCases": 129,
-          "distinctStates": 129,
-          "consistent": 129,
+          "crashCases": 216,
+          "distinctStates": 216,
+          "consistent": 216,
           "violationCount": 0,
           "examples": []
         },
         "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 110,
-          "distinctStates": 32,
-          "consistent": 110,
+          "crashCases": 24,
+          "distinctStates": 3,
+          "consistent": 24,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "first-install",
+      "description": "stage and activate v1 in an empty store",
+      "mutatingOperations": 62,
+      "crashPoints": 63,
+      "durablePoint": 59,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 63,
+          "distinctStates": 63,
+          "consistent": 63,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 172,
+          "distinctStates": 38,
+          "consistent": 172,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1055,
+          "distinctStates": 1055,
+          "consistent": 1055,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 345,
+          "distinctStates": 44,
+          "consistent": 345,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "update",
+      "description": "stage and activate v2 over v1 (v1 becomes last-good)",
+      "mutatingOperations": 66,
+      "crashPoints": 67,
+      "durablePoint": 63,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 67,
+          "distinctStates": 67,
+          "consistent": 67,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 176,
+          "distinctStates": 35,
+          "consistent": 176,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1093,
+          "distinctStates": 1093,
+          "consistent": 1093,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 339,
+          "distinctStates": 26,
+          "consistent": 339,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "update-with-gc",
+      "description": "activate v3 over v2 and v1; v1-only objects are collected after the commit",
+      "mutatingOperations": 72,
+      "crashPoints": 73,
+      "durablePoint": 64,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 73,
+          "distinctStates": 73,
+          "consistent": 73,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 208,
+          "distinctStates": 41,
+          "consistent": 208,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1201,
+          "distinctStates": 1201,
+          "consistent": 1201,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 381,
+          "distinctStates": 38,
+          "consistent": 381,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "rollback",
+      "description": "roll back from v2 to last-good v1 (v2 becomes last-good)",
+      "mutatingOperations": 23,
+      "crashPoints": 24,
+      "durablePoint": 20,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 24,
+          "distinctStates": 24,
+          "consistent": 24,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 59,
+          "distinctStates": 9,
+          "consistent": 59,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 309,
+          "distinctStates": 309,
+          "consistent": 309,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 48,
+          "distinctStates": 4,
+          "consistent": 48,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "activate-staged",
+      "description": "activate a version staged earlier by another process (no staging in the operation)",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": 16,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 47,
+          "distinctStates": 9,
+          "consistent": 47,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 353,
+          "distinctStates": 353,
+          "consistent": 353,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 136,
+          "distinctStates": 10,
+          "consistent": 136,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "activate-after-unsynced-staging",
+      "description": "activate a version whose objects are visible but whose staging never synced their directories",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": 16,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 56,
+          "distinctStates": 12,
+          "consistent": 56,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 353,
+          "distinctStates": 353,
+          "consistent": 353,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 136,
+          "distinctStates": 10,
+          "consistent": 136,
           "violationCount": 0,
           "examples": []
         }
@@ -539,36 +723,348 @@
       "variant": "no-directory-sync",
       "scenario": "bind-metadata",
       "description": "replace commit-level update metadata atomically with the active pointer",
-      "mutatingOperations": 25,
-      "crashPoints": 26,
-      "durablePoint": 22,
+      "mutatingOperations": 32,
+      "crashPoints": 33,
+      "durablePoint": 28,
       "durabilityViolations": 0,
       "models": {
         "process-crash": {
-          "crashCases": 26,
-          "distinctStates": 26,
-          "consistent": 26,
+          "crashCases": 33,
+          "distinctStates": 33,
+          "consistent": 33,
           "violationCount": 0,
           "examples": []
         },
         "ordered-prefix": {
-          "crashCases": 199,
+          "crashCases": 84,
           "distinctStates": 18,
-          "consistent": 199,
+          "consistent": 84,
           "violationCount": 0,
           "examples": []
         },
         "recovery-crash": {
-          "crashCases": 312,
-          "distinctStates": 312,
-          "consistent": 312,
+          "crashCases": 468,
+          "distinctStates": 468,
+          "consistent": 468,
           "violationCount": 0,
           "examples": []
         },
         "post-recovery-power-loss/ordered-prefix": {
-          "crashCases": 360,
+          "crashCases": 100,
+          "distinctStates": 13,
+          "consistent": 100,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "create-store",
+      "description": "initialise an empty store (directories, then marker)",
+      "mutatingOperations": 11,
+      "crashPoints": 12,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 12,
+          "distinctStates": 12,
+          "consistent": 12,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 61,
+          "distinctStates": 8,
+          "consistent": 61,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 216,
+          "distinctStates": 216,
+          "consistent": 216,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 138,
+          "distinctStates": 25,
+          "consistent": 138,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "first-install",
+      "description": "stage and activate v1 in an empty store",
+      "mutatingOperations": 62,
+      "crashPoints": 63,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 63,
+          "distinctStates": 63,
+          "consistent": 63,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 1083,
+          "distinctStates": 38,
+          "consistent": 1083,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1055,
+          "distinctStates": 1055,
+          "consistent": 1055,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 1643,
+          "distinctStates": 199,
+          "consistent": 1643,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "update",
+      "description": "stage and activate v2 over v1 (v1 becomes last-good)",
+      "mutatingOperations": 66,
+      "crashPoints": 67,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 67,
+          "distinctStates": 67,
+          "consistent": 67,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 1106,
+          "distinctStates": 35,
+          "consistent": 1106,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1093,
+          "distinctStates": 1093,
+          "consistent": 1093,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 1672,
+          "distinctStates": 167,
+          "consistent": 1672,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "update-with-gc",
+      "description": "activate v3 over v2 and v1; v1-only objects are collected after the commit",
+      "mutatingOperations": 72,
+      "crashPoints": 73,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 73,
+          "distinctStates": 73,
+          "consistent": 73,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 1324,
+          "distinctStates": 41,
+          "consistent": 1324,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1201,
+          "distinctStates": 1201,
+          "consistent": 1201,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 1950,
+          "distinctStates": 204,
+          "consistent": 1950,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "rollback",
+      "description": "roll back from v2 to last-good v1 (v2 becomes last-good)",
+      "mutatingOperations": 23,
+      "crashPoints": 24,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 24,
+          "distinctStates": 24,
+          "consistent": 24,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 98,
+          "distinctStates": 9,
+          "consistent": 98,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 309,
+          "distinctStates": 309,
+          "consistent": 309,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 220,
+          "distinctStates": 32,
+          "consistent": 220,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "activate-staged",
+      "description": "activate a version staged earlier by another process (no staging in the operation)",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 82,
+          "distinctStates": 9,
+          "consistent": 82,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 353,
+          "distinctStates": 353,
+          "consistent": 353,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 280,
+          "distinctStates": 39,
+          "consistent": 280,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "activate-after-unsynced-staging",
+      "description": "activate a version whose objects are visible but whose staging never synced their directories",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 522,
+          "distinctStates": 31,
+          "consistent": 522,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 353,
+          "distinctStates": 353,
+          "consistent": 353,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 720,
+          "distinctStates": 61,
+          "consistent": 720,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "bind-metadata",
+      "description": "replace commit-level update metadata atomically with the active pointer",
+      "mutatingOperations": 32,
+      "crashPoints": 33,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 33,
+          "distinctStates": 33,
+          "consistent": 33,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 271,
+          "distinctStates": 18,
+          "consistent": 271,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 468,
+          "distinctStates": 468,
+          "consistent": 468,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 480,
           "distinctStates": 83,
-          "consistent": 360,
+          "consistent": 480,
           "violationCount": 0,
           "examples": []
         }
@@ -580,15 +1076,16 @@
       "name": "unsynced-object-directories",
       "description": "object directory fsync acknowledged but not performed",
       "scenario": "update",
+      "variant": "directory-sync",
       "models": {
         "posix-strict": {
-          "crashCases": 2602,
-          "distinctStates": 512,
-          "consistent": 2496,
-          "violationCount": 106,
+          "crashCases": 3446,
+          "distinctStates": 575,
+          "consistent": 3326,
+          "violationCount": 120,
           "examples": [
             {
-              "crashAt": 53,
+              "crashAt": 64,
               "model": "posix-strict",
               "violations": [
                 "active-invalid",
@@ -596,7 +1093,7 @@
               ]
             },
             {
-              "crashAt": 53,
+              "crashAt": 64,
               "model": "posix-strict",
               "violations": [
                 "active-invalid",
@@ -604,7 +1101,7 @@
               ]
             },
             {
-              "crashAt": 53,
+              "crashAt": 64,
               "model": "posix-strict",
               "violations": [
                 "active-invalid",
@@ -612,7 +1109,7 @@
               ]
             },
             {
-              "crashAt": 53,
+              "crashAt": 64,
               "model": "posix-strict",
               "violations": [
                 "active-invalid",
@@ -620,7 +1117,7 @@
               ]
             },
             {
-              "crashAt": 53,
+              "crashAt": 64,
               "model": "posix-strict",
               "violations": [
                 "active-invalid",
@@ -630,9 +1127,9 @@
           ]
         },
         "ordered-prefix": {
-          "crashCases": 766,
+          "crashCases": 1056,
           "distinctStates": 35,
-          "consistent": 766,
+          "consistent": 1056,
           "violationCount": 0,
           "examples": []
         }
@@ -643,12 +1140,13 @@
       "name": "unsynced-file-contents",
       "description": "file fsync acknowledged but not performed",
       "scenario": "update",
+      "variant": "directory-sync",
       "models": {
         "posix-strict": {
-          "crashCases": 2298,
-          "distinctStates": 316,
-          "consistent": 1188,
-          "violationCount": 1110,
+          "crashCases": 2926,
+          "distinctStates": 328,
+          "consistent": 1487,
+          "violationCount": 1439,
           "examples": [
             {
               "crashAt": 5,
@@ -688,10 +1186,10 @@
           ]
         },
         "ordered-prefix": {
-          "crashCases": 443,
-          "distinctStates": 25,
-          "consistent": 90,
-          "violationCount": 353,
+          "crashCases": 441,
+          "distinctStates": 27,
+          "consistent": 82,
+          "violationCount": 359,
           "examples": [
             {
               "crashAt": 5,
@@ -737,43 +1235,44 @@
       "name": "unsynced-commit-directory",
       "description": "commit directory fsync acknowledged but not performed before collection",
       "scenario": "update-with-gc",
+      "variant": "directory-sync",
       "models": {
         "posix-strict": {
-          "crashCases": 2652,
-          "distinctStates": 510,
-          "consistent": 2388,
-          "violationCount": 264,
+          "crashCases": 3332,
+          "distinctStates": 512,
+          "consistent": 3064,
+          "violationCount": 268,
           "examples": [
             {
-              "crashAt": 54,
+              "crashAt": 67,
               "model": "posix-strict",
               "violations": [
                 "committed-state-lost"
               ]
             },
             {
-              "crashAt": 54,
+              "crashAt": 67,
               "model": "posix-strict",
               "violations": [
                 "committed-state-lost"
               ]
             },
             {
-              "crashAt": 54,
+              "crashAt": 67,
               "model": "posix-strict",
               "violations": [
                 "committed-state-lost"
               ]
             },
             {
-              "crashAt": 54,
+              "crashAt": 67,
               "model": "posix-strict",
               "violations": [
                 "committed-state-lost"
               ]
             },
             {
-              "crashAt": 54,
+              "crashAt": 67,
               "model": "posix-strict",
               "violations": [
                 "committed-state-lost"
@@ -782,41 +1281,79 @@
           ]
         },
         "ordered-prefix": {
-          "crashCases": 517,
+          "crashCases": 488,
           "distinctStates": 41,
-          "consistent": 475,
-          "violationCount": 42,
+          "consistent": 474,
+          "violationCount": 14,
           "examples": [
             {
-              "crashAt": 54,
+              "crashAt": 67,
               "model": "ordered-prefix",
               "violations": [
                 "committed-state-lost"
               ]
             },
             {
-              "crashAt": 54,
+              "crashAt": 67,
               "model": "ordered-prefix",
               "violations": [
                 "committed-state-lost"
               ]
             },
             {
-              "crashAt": 54,
+              "crashAt": 68,
               "model": "ordered-prefix",
               "violations": [
                 "committed-state-lost"
               ]
             },
             {
-              "crashAt": 54,
+              "crashAt": 68,
               "model": "ordered-prefix",
               "violations": [
                 "committed-state-lost"
               ]
             },
             {
-              "crashAt": 54,
+              "crashAt": 69,
+              "model": "ordered-prefix",
+              "violations": [
+                "committed-state-lost"
+              ]
+            }
+          ]
+        }
+      },
+      "discriminating": true
+    },
+    {
+      "name": "unsynced-published-file",
+      "description": "post-rename file fsync of CURRENT acknowledged but not performed (the only barrier without directory sync)",
+      "scenario": "update",
+      "variant": "no-directory-sync",
+      "models": {
+        "ordered-prefix": {
+          "crashCases": 179,
+          "distinctStates": 35,
+          "consistent": 176,
+          "violationCount": 3,
+          "examples": [
+            {
+              "crashAt": 65,
+              "model": "ordered-prefix",
+              "violations": [
+                "committed-state-lost"
+              ]
+            },
+            {
+              "crashAt": 66,
+              "model": "ordered-prefix",
+              "violations": [
+                "committed-state-lost"
+              ]
+            },
+            {
+              "crashAt": 67,
               "model": "ordered-prefix",
               "violations": [
                 "committed-state-lost"

@@ -11,10 +11,12 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
+  NEGATIVE_CONTROLS,
   runModelMatrix,
   runNegativeControls,
   runRealFsProcessCrashMatrix,
   SCENARIOS,
+  VARIANTS,
 } from '../../spike/activation-store/harness/crash-matrix.js';
 import {
   buildReport,
@@ -37,8 +39,10 @@ function assertNoViolations(results) {
 
 test('every crash point of every scenario recovers to exactly the old or the new state', async () => {
   const results = await runModelMatrix({ nested: false, samples: 4 });
-  assert.equal(results.length, SCENARIOS.length * 2);
+  assert.equal(results.length, SCENARIOS.length * VARIANTS.length);
   assertNoViolations(results);
+  const unsynced = results.filter((result) => result.scenario === 'activate-after-unsynced-staging');
+  assert.equal(unsynced.length, VARIANTS.length, 'the commit-side barrier scenario runs under every variant');
 });
 
 test('recovery survives its own crashes and makes the recovered state durable', async () => {
@@ -55,10 +59,14 @@ test('recovery survives its own crashes and makes the recovered state durable', 
 
 test('negative controls: dropping any fsync is detected by the matrix', async () => {
   const controls = await runNegativeControls({ samples: 2 });
-  assert.equal(controls.length, 3);
+  assert.equal(controls.length, NEGATIVE_CONTROLS.length);
+  assert.equal(controls.length, 4);
   for (const control of controls) {
     assert.equal(control.discriminating, true, `${control.name} was not detected`);
   }
+  const publishedFile = controls.find((control) => control.name === 'unsynced-published-file');
+  assert.equal(publishedFile.variant, 'no-directory-sync');
+  assert.ok(publishedFile.models['ordered-prefix'].violationCount > 0, 'the file barrier is load-bearing without directory sync');
   const objectDirectories = controls.find((control) => control.name === 'unsynced-object-directories');
   assert.ok(objectDirectories.models['posix-strict'].violationCount > 0);
   assert.equal(
@@ -70,7 +78,7 @@ test('negative controls: dropping any fsync is detected by the matrix', async ()
 
 test('process crashes on the real filesystem recover consistently', async () => {
   const results = await runRealFsProcessCrashMatrix({
-    scenarios: SCENARIOS.filter((scenario) => ['rollback', 'bind-metadata'].includes(scenario.name)),
+    scenarios: SCENARIOS.filter((scenario) => ['rollback', 'bind-metadata', 'activate-after-unsynced-staging'].includes(scenario.name)),
   });
   for (const result of results) {
     const counter = result.processCrash;
@@ -91,7 +99,7 @@ test('the committed crash-matrix report is bound to the current sources', async 
   assert.equal(report.summary.modelRecoverySuccess, 1);
   assert.equal(report.summary.modelConsistent, report.summary.modelCrashCases);
   assert.equal(report.summary.durabilityViolations, 0);
-  assert.equal(report.summary.negativeControlsDiscriminating, '3/3');
+  assert.equal(report.summary.negativeControlsDiscriminating, '4/4');
 });
 
 test('full matrix reproduces the committed report byte for byte', {

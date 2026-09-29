@@ -115,6 +115,31 @@ test('without directory sync the call reports false and no barrier exists', asyn
   assert.deepEqual(survivors, [null, 'alpha']);
 });
 
+test('with fileSyncBarrier a file sync is a global barrier, otherwise it is not', async () => {
+  for (const fileSyncBarrier of [true, false]) {
+    const machine = new ModelFs({ directorySync: false, fileSyncBarrier });
+    const io = machine.io();
+    await write(io, '/tmp-a', 'alpha');
+    await io.rename('/tmp-a', '/a');
+    assert.equal(await io.syncFile('/a'), true);
+    await write(io, '/b', 'beta', { sync: false });
+    const survivors = new Set();
+    for (const state of machine.orderedPrefixStates()) survivors.add(await read(state, '/a'));
+    assert.deepEqual([...survivors].sort(), fileSyncBarrier ? ['alpha'] : ['alpha', null].sort());
+  }
+});
+
+test('syncFile follows the adapter contract: missing is false, links and directories fail', async () => {
+  const { machine, io } = fresh();
+  await io.mkdir('/d');
+  await write(io, '/a', 'alpha');
+  machine.symlinkNow('/a', '/link');
+  assert.equal(await io.syncFile('/missing'), false);
+  await assert.rejects(io.syncFile('/link'), (error) => error.code === 'ELOOP');
+  await assert.rejects(io.syncFile('/d'), (error) => error.code === 'EISDIR');
+  assert.deepEqual(await io.digestFile('/a', 10), { digest: (await import('node:crypto')).createHash('sha256').update('alpha').digest('hex'), size: 5 });
+});
+
 test('an unsynced unlink can be undone by a power loss', async () => {
   const { machine, io } = fresh();
   await write(io, '/a', 'alpha');
