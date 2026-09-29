@@ -679,3 +679,49 @@ test('rejects an over-limit raw root chain before reading any candidate', () => 
   }));
   assert.equal(candidateReads, 0, 'root candidates were read before the count gate');
 });
+
+test('generic core decides on the exact raw bytes its descriptors hashed', () => {
+  const root = rootMetadata();
+  const vouched = updateBundle({ root });
+  const substitute = updateBundle({
+    root,
+    targetsVersion: 3,
+    targetBytes: Buffer.from('substituted-package', 'utf8'),
+  });
+  assert.equal(substitute.snapshot.signed.version, vouched.snapshot.signed.version);
+
+  const rawVouchedSnapshot = rawMetadataBytes(vouched.snapshot);
+  vouched.timestamp.signed.meta['snapshot.json'] = metadataDescriptor(
+    vouched.snapshot,
+    vouched.snapshot.signed.version,
+    rawVouchedSnapshot,
+  );
+  resign(vouched.timestamp, ['timestampA']);
+
+  // Snapshot bytes A satisfy the timestamp hash; a different validly signed
+  // snapshot B of the same version must not drive the decision.
+  assertCode('RAW_METADATA_MISMATCH', () => verifyTopLevelMetadata({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: vouched.timestamp,
+      snapshot: substitute.snapshot,
+      targets: substitute.targets,
+      rawMetadata: { snapshot: rawVouchedSnapshot },
+    },
+    now: NOW,
+  }));
+
+  const bytesOnly = verifyTopLevelMetadata({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: vouched.timestamp,
+      targets: vouched.targets,
+      rawMetadata: { snapshot: rawVouchedSnapshot },
+    },
+    now: NOW,
+  });
+  assert.equal(bytesOnly.status, 'metadata-verified');
+  assert.equal(bytesOnly.targetsVersion, vouched.targets.signed.version);
+});

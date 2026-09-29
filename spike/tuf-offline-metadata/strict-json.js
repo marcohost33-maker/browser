@@ -34,18 +34,19 @@ function isHexDigit(char) {
   return char !== undefined && /^[0-9a-fA-F]$/.test(char);
 }
 
-function copyRawBytes(value, label, maxBytes) {
+// Type- and size-check a raw metadata view WITHOUT copying it. The generic core
+// makes the single defensive copy that is then both parsed and hashed.
+function checkedRawBytes(value, label, maxBytes) {
   if (!(Buffer.isBuffer(value) || value instanceof Uint8Array)) {
     fail('INVALID_RAW_METADATA', `${label} must be Buffer or Uint8Array`);
   }
-  // Size-gate the caller's view before allocating the defensive copy.
   if (value.byteLength > maxBytes) {
     fail('METADATA_TOO_LARGE', `${label} exceeds the raw byte limit`, {
       actual: value.byteLength,
       limit: maxBytes,
     });
   }
-  return Buffer.from(value);
+  return value;
 }
 
 function rawMetadataByteLimit(limits) {
@@ -72,6 +73,22 @@ function rawRootCandidates(bundle, limits) {
     });
   }
   return roots;
+}
+
+/**
+ * Fail-fast shape, count and size gate for a raw bundle. Only raw bytes are passed
+ * on: the core derives every verified object from exactly these bytes, so no
+ * caller-supplied parse result can diverge from the hashed file.
+ */
+function checkedRawMetadata(bundle, limits) {
+  const rawRoots = rawRootCandidates(bundle, limits);
+  const maxBytes = rawMetadataByteLimit(limits);
+  return {
+    roots: Array.from(rawRoots, (bytes, index) => checkedRawBytes(bytes, `root[${index}]`, maxBytes)),
+    timestamp: checkedRawBytes(bundle.timestamp, 'timestamp', maxBytes),
+    snapshot: checkedRawBytes(bundle.snapshot, 'snapshot', maxBytes),
+    targets: checkedRawBytes(bundle.targets, 'targets', maxBytes),
+  };
 }
 
 class StrictJsonParser {
@@ -370,32 +387,10 @@ export function verifyTopLevelMetadataBytes({
   if (!isPlainObject(bundle)) {
     fail('INVALID_INPUT', 'raw top-level bundle must be an object');
   }
-  const rawRoots = rawRootCandidates(bundle, limits);
-
-  const maxBytes = rawMetadataByteLimit(limits);
-  const rootBytes = rawRoots.map(
-    (bytes, index) => copyRawBytes(bytes, `root[${index}]`, maxBytes),
-  );
-  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp', maxBytes);
-  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot', maxBytes);
-  const targetsBytes = copyRawBytes(bundle.targets, 'targets', maxBytes);
-
-  const parsed = {
-    roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),
-    timestamp: parseTufMetadataBytes(timestampBytes, limits, 'timestamp'),
-    snapshot: parseTufMetadataBytes(snapshotBytes, limits, 'snapshot'),
-    targets: parseTufMetadataBytes(targetsBytes, limits, 'targets'),
-    rawMetadata: {
-      roots: rootBytes,
-      timestamp: timestampBytes,
-      snapshot: snapshotBytes,
-      targets: targetsBytes,
-    },
-  };
 
   return verifyTopLevelMetadata({
     trustedState,
-    bundle: parsed,
+    bundle: { rawMetadata: checkedRawMetadata(bundle, limits) },
     now,
     limits,
   });
@@ -418,33 +413,13 @@ export function verifyOfflineBundleBytes({
   if (!isPlainObject(bundle)) {
     fail('INVALID_INPUT', 'raw offline bundle must be an object');
   }
-  const rawRoots = rawRootCandidates(bundle, limits);
-
-  const maxBytes = rawMetadataByteLimit(limits);
-  const rootBytes = rawRoots.map(
-    (bytes, index) => copyRawBytes(bytes, `root[${index}]`, maxBytes),
-  );
-  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp', maxBytes);
-  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot', maxBytes);
-  const targetsBytes = copyRawBytes(bundle.targets, 'targets', maxBytes);
-
-  const parsed = {
-    roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),
-    timestamp: parseTufMetadataBytes(timestampBytes, limits, 'timestamp'),
-    snapshot: parseTufMetadataBytes(snapshotBytes, limits, 'snapshot'),
-    targets: parseTufMetadataBytes(targetsBytes, limits, 'targets'),
-    target: bundle.target,
-    rawMetadata: {
-      roots: rootBytes,
-      timestamp: timestampBytes,
-      snapshot: snapshotBytes,
-      targets: targetsBytes,
-    },
-  };
 
   return verifyOfflineBundle({
     trustedState,
-    bundle: parsed,
+    bundle: {
+      target: bundle.target,
+      rawMetadata: checkedRawMetadata(bundle, limits),
+    },
     targetPath,
     now,
     approveCapabilityExpansion,
