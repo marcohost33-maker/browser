@@ -447,16 +447,19 @@ test('downloadTargets honours raised target-path limits end to end', async () =>
     [`${TARGET_URL}${remoteParts.join('/')}`, targetBytes],
   ]);
 
-  const result = await downloadTargets({
-    metadataDir,
-    metadataUrl: METADATA_URL,
-    targetBaseUrl: TARGET_URL,
-    targetDir,
-    targetNames: [targetName],
-    now: NOW,
-    limits,
-    fetchImpl: fakeFetch(routes, []),
-  });
+  let result;
+  await assert.doesNotReject(async () => {
+    result = await downloadTargets({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      targetBaseUrl: TARGET_URL,
+      targetDir,
+      targetNames: [targetName],
+      now: NOW,
+      limits,
+      fetchImpl: fakeFetch(routes, []),
+    });
+  }, 'a signed target within the configured path limits must download');
   assert.equal(result.downloaded[0].cached, false);
   assert.deepEqual(await readFile(join(targetDir, ...targetName.split('/'))), targetBytes);
 });
