@@ -291,7 +291,13 @@ PostgreSQL `durable_rename()` source on 2026-09-29:
   refused (`STORE_ROOT_INVALID`), as is a world-writable or linked root.
 - [`harness/platform-probe.mjs`](harness/platform-probe.mjs) records what a platform's
   adapter actually offers; the `activation-store-ci` workflow runs it together with
-  the tests and the real-filesystem crash matrix on Windows and macOS.
+  the tests and the real-filesystem crash matrix on Windows and macOS. Measured on
+  2026-09-29 (`windows-2025`, Windows Server 2025 10.0.26100, Node 22.23.1):
+  `syncDir: false`, `syncFile: true`, `hasONoFollow: false`, hard links created and
+  refused when present, exclusive create refuses an existing name, rename and
+  unlink of a `0444` object succeed; the store reports `file-fsync-only` there and
+  312/312 real-filesystem process crashes recovered on NTFS. `macos-15` (APFS):
+  every probe true, 312/312.
 
 Internal records use canonical JSON with UTF-16 code-unit key order, matching the CWAP
 rule in ADR-007a section 2. All record keys are ASCII, so the Unicode code-point order
