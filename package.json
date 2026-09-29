@@ -27,7 +27,7 @@
   },
   "overrides": {
     "ip-address": "10.4.0",
-    "undici": "7.29.0",
+    "undici": "7.29.1",
     "xmlbuilder2": {
       "js-yaml": "4.3.2"
     },
