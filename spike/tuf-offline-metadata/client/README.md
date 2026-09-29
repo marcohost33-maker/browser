@@ -10,7 +10,10 @@ conformance work.
 
 - `init`: persist the externally supplied trusted `root.json` exactly as received;
 - `refresh`: fetch and verify root/timestamp/snapshot/targets, then persist the exact
-  verified metadata bytes;
+  verified metadata bytes; an unchanged timestamp version is `no-update`, but the
+  retained timestamp/snapshot/targets are then re-verified as final metadata
+  against the current root (signatures, hashes, versions, expiry), so a timestamp
+  served again past its expiry or expired retained targets fail closed;
 - `download`: refresh first, resolve a top-level target, verify length/SHA-256,
   then atomically replace the cached target.
 

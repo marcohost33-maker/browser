@@ -299,6 +299,42 @@ async function persistVerifiedMetadata(metadataDir, verified, bundle) {
   return writes;
 }
 
+/**
+ * An equal timestamp version ends the update cycle without new metadata
+ * (TUF 1.0.35 section 5.4.3), after which the client keeps USING its retained
+ * timestamp, snapshot and targets (5.7). Those must still be valid as final
+ * metadata against the current trusted root: python-tuf keeps the old timestamp
+ * and still raises ExpiredMetadataError from _check_final_timestamp(), and only
+ * reuses local snapshot/targets that pass _check_final_snapshot() and the
+ * targets signature/expiry checks. Without this, a repository or mirror that
+ * keeps serving the same timestamp version past its expiry freezes the client
+ * on stale targets (5.4.4/5.5.6/5.6.6 freeze protection).
+ *
+ * The retained files are re-run through the generic verifier with only the
+ * timestamp rollback floor cleared, so no signature, hash, version or expiry
+ * check is skipped; the snapshot/targets rollback floors stay in force.
+ */
+function assertRetainedMetadataFinal({ verified, local, now, limits }) {
+  if (local.raw.timestamp === null || local.raw.snapshot === null || local.raw.targets === null) {
+    fail('INCOMPLETE_LOCAL_STATE', 'no-update requires retained timestamp, snapshot and targets');
+  }
+  verifyTopLevelMetadataBytes({
+    trustedState: {
+      ...local.trustedState,
+      root: verified.trustedState.root,
+      versions: { ...local.trustedState.versions, timestamp: 0 },
+    },
+    bundle: {
+      roots: [],
+      timestamp: local.raw.timestamp,
+      snapshot: local.raw.snapshot,
+      targets: local.raw.targets,
+    },
+    now,
+    limits,
+  });
+}
+
 export async function initClient(metadataDir, trustedRootPath) {
   const trustedRootBytes = await readFile(trustedRootPath);
   return atomicWriteFile(rolePath(metadataDir, 'root'), trustedRootBytes);
@@ -354,6 +390,9 @@ export async function refreshClient({
       limits,
     });
     const writes = await persistVerifiedMetadata(metadataDir, verified, bundle);
+    if (verified.status === 'no-update') {
+      assertRetainedMetadataFinal({ verified, local, now, limits });
+    }
     return {
       ...verified,
       writes,
@@ -393,6 +432,11 @@ export async function refreshClient({
   });
 
   const writes = await persistVerifiedMetadata(metadataDir, verified, bundle);
+  if (verified.status === 'no-update') {
+    // Root progress is already persisted (5.3.8); the retained snapshot/targets
+    // must now verify against that root before anything relies on them.
+    assertRetainedMetadataFinal({ verified, local, now, limits });
+  }
   return {
     ...verified,
     writes,
