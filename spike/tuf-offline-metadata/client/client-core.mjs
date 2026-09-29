@@ -6,7 +6,12 @@ import {
   rename,
   unlink,
 } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import {
+  basename,
+  dirname,
+  join,
+  resolve,
+} from 'node:path';
 
 import {
   DEFAULT_LIMITS,
@@ -74,10 +79,44 @@ async function syncDirectory(path) {
  * This is not a multi-file transaction and does not yet couple package activation
  * to metadata persistence.
  */
+/**
+ * mkdir({ recursive: true }) adds one directory entry to the parent of EVERY
+ * directory it creates. Each of those entries is durable only after an fsync of
+ * the directory that holds it, i.e. of every missing directory's parent, up to
+ * and including the nearest pre-existing ancestor. Returns those parents
+ * deepest-first; empty when `parent` already exists.
+ *
+ * Determined by walking up with lstat BEFORE mkdir rather than from mkdir's
+ * return value, whose form is platform-specific (Windows returns a \\?\ path).
+ * A directory created concurrently by someone else only adds a harmless extra
+ * fsync; it can never drop one we need.
+ */
+async function parentsOfMissingDirectories(parent) {
+  const parents = [];
+  let dir = resolve(parent);
+  while (true) {
+    try {
+      await lstat(dir);
+      return parents;
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    const up = dirname(dir);
+    if (up === dir) return parents;
+    parents.push(up);
+    dir = up;
+  }
+}
+
 export async function atomicWriteFile(path, bytes) {
   const data = Buffer.from(bytes);
   const parent = dirname(path);
+  const ancestorsToSync = await parentsOfMissingDirectories(parent);
   await mkdir(parent, { recursive: true });
+  const directorySyncs = [];
+  for (const directory of ancestorsToSync) {
+    directorySyncs.push({ path: directory, synced: await syncDirectory(directory) });
+  }
 
   const tempPath = join(
     parent,
@@ -95,12 +134,14 @@ export async function atomicWriteFile(path, bytes) {
 
     await rename(tempPath, path);
     renamed = true;
-    const directorySynced = await syncDirectory(parent);
+    directorySyncs.push({ path: resolve(parent), synced: await syncDirectory(parent) });
     return {
       path,
       bytes: data.length,
       fileSynced: true,
-      directorySynced,
+      // true only if EVERY directory entry this call created or replaced was synced.
+      directorySynced: directorySyncs.every((entry) => entry.synced),
+      directorySyncs,
     };
   } finally {
     await handle?.close();

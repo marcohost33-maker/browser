@@ -460,3 +460,31 @@ test('downloadTargets honours raised target-path limits end to end', async () =>
   assert.equal(result.downloaded[0].cached, false);
   assert.deepEqual(await readFile(join(targetDir, ...targetName.split('/'))), targetBytes);
 });
+
+test('atomicWriteFile fsyncs every directory entry that recursive mkdir created', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'browser-tuf-durable-'));
+  const path = join(base, 'a', 'b', 'c', 'state.json');
+
+  const created = await atomicWriteFile(path, Buffer.from('first'));
+  assert.ok(Array.isArray(created.directorySyncs), 'directory syncs must be reported');
+  assert.deepEqual(
+    created.directorySyncs.map((entry) => entry.path),
+    [
+      join(base, 'a', 'b'),
+      join(base, 'a'),
+      base,
+      join(base, 'a', 'b', 'c'),
+    ],
+  );
+  assert.equal(
+    created.directorySynced,
+    created.directorySyncs.every((entry) => entry.synced),
+  );
+
+  const replaced = await atomicWriteFile(path, Buffer.from('second'));
+  assert.deepEqual(
+    replaced.directorySyncs.map((entry) => entry.path),
+    [join(base, 'a', 'b', 'c')],
+  );
+  assert.equal((await readFile(path)).toString(), 'second');
+});

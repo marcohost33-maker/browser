@@ -31,7 +31,10 @@ Each individual file uses:
 2. complete write;
 3. file `fsync`;
 4. atomic rename;
-5. parent-directory `fsync` where the platform exposes it.
+5. parent-directory `fsync` where the platform exposes it; when the parent had to be
+   created, every directory that received a new entry from the recursive `mkdir`
+   (up to the nearest pre-existing ancestor) is fsynced as well, and each sync is
+   reported in `directorySyncs`.
 
 This is **single-file crash safety only**. It does not yet claim a transaction across
 root/timestamp/snapshot/targets, and it does not atomically couple metadata state to
