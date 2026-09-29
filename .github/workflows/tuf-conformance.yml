@@ -1,0 +1,41 @@
+name: tuf-conformance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: tuf-conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22.23.1"
+          cache: npm
+      - name: verify repository toolchain and tests
+        run: |
+          set -euo pipefail
+          npm run toolchain:check
+          npm run lockfile:check
+          npm ci --ignore-scripts --audit=false --fund=false
+          npm run audit:ci
+          npm test
+      - name: prepare client-under-test entrypoint
+        run: chmod +x scripts/tuf-conformance-client.mjs
+      - name: run upstream TUF client conformance
+        uses: theupdateframework/tuf-conformance@1bc18916ee35f753b6eb8ee19dabb98449ca7326 # v2.5.0
+        with:
+          entrypoint: scripts/tuf-conformance-client.mjs
+          artifact-name: browser-tuf-conformance
