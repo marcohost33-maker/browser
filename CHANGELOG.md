@@ -49,9 +49,11 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Handle; jedes Lesen validierte den kompletten Versionsdatensatz neu (99 ms bei
   10'000 Ressourcen) -> Cache validierter, content-adressierter Datensaetze nur
   fuer den Servierpfad, Commits/Verifikation/Recovery/GC lesen weiterhin von der
-  Platte. Staging ist fsync-gebunden (rund 1.6-3 ms pro Objekt auf ext4 in der
-  Mess-VM; 10'000 Objekte kosten dort 16 s) -- ein Messwert fuer den
-  D4-Containerentscheid.
+  Platte. Staging ist fsync-gebunden: pro Objekt 0.7-1.0 ms auf ext4
+  (Hosted-Runner), 1.8-2.8 ms auf ext4 (Mess-VM) und APFS, 9-12 ms auf NTFS;
+  10'000 Objekte kosten 6.5 s / 18 s / 92 s, waehrend Verifikation grosser Objekte
+  ueberall bei 850-1'170 MiB/s liegt -- ein Messwert fuer den D4-Containerentscheid
+  (wenige Store-Objekte pro Container) und fuer die Installer-UX auf Windows.
   **Offen:** Stromausfall-Evidenz auf Windows/macOS (NTFS-Journal-Hypothese ist
   modelliert, nicht gemessen), realer Stromausfall-Drill, Messung auf Zielhardware
   statt Hosted-Runnern, Installer-Anbindung nach dem D4-Containerentscheid.

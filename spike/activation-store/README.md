@@ -277,6 +277,26 @@ What the numbers say:
    chunks awaiting garbage collection, not live data, and a native runtime would not
    have it.
 
+The same bounded set on hosted runners (`activation-store-ci`, run 36564687244 on
+`dd28226`, Node 22.23.1; reports kept as artifacts `activation-bench-<os>`), next to
+the VM above:
+
+| Host | stage per object: small / medium / many-tiny | stage 64 MiB (MiB/s) | verify 64 MiB (MiB/s) | many-tiny: stage / activate | read p50: small / many-tiny | open → first byte, 64 MiB | stream 64 MiB (MiB/s) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ext4 VM, Xeon 2.8 GHz (table above) | 2.5 / 2.8 / 1.8 ms | 82 | 262 | 17.9 s / 6.7 s | 0.9 / 1.0 ms | 220 ms | 740 |
+| `ubuntu-24.04`, ext4, EPYC 9V74 | 0.97 / 0.90 / 0.65 ms | 162 | 905 | 6.5 s / 3.2 s | 0.45 / 0.47 ms | 69 ms | 1,615 |
+| `windows-2025`, NTFS, EPYC 7763 | 9.4 / 11.7 / 9.2 ms | 107 | 849 | 92.0 s / 6.2 s | 0.89 / 0.86 ms | 72 ms | 1,223 |
+| `macos-15`, APFS, Apple M1 (virtual) | 2.4 / 2.3 / 1.8 ms | 158 | 1,172 | 17.8 s / 3.6 s | 0.36 / 0.74 ms | 62 ms | 2,301 |
+
+The shape of the results is the same on every host; only the per-object fsync cost
+moves. On NTFS a durable object costs 9 to 12 ms (create, write, `FlushFileBuffers`,
+`MoveFileExW`), ten times ext4 on the same runner class, so a 10,000-file package
+stages in 92 s there while it verifies and activates in 6 s. APFS with `F_FULLFSYNC`
+sits between the two. Whole-object reads hold 64 MiB on every host; streaming holds
+17 to 29 MiB of collected-later copies. For decision D4 this is the strongest
+measured argument so far for a container that maps to few store objects, and for an
+installer on Windows that shows progress rather than blocking.
+
 The first run of this benchmark, before the two serving-path fixes, is kept as
 negative results 8 and 9 below.
 
