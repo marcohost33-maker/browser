@@ -186,7 +186,7 @@ Primary sources (from the Quella 2026-07-16 deliverable):
   <https://www.electronjs.org/docs/latest/tutorial/security> ·
   <https://www.electronjs.org/docs/latest/tutorial/sandbox>
 - Chromium isolation:
-  <https://chromium.googlesource.com/chromium/src/+/main/docs/process_model_and_site_isolation.md>
+  <https://www.chromium.org/developers/design-documents/site-isolation/>
   · <https://www.chromium.org/Home/chromium-security/site-isolation/> ·
   <https://github.com/WICG/origin-agent-cluster>
 - WebView2 patch model:

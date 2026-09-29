@@ -10,6 +10,53 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 ### Added
 
 - Scaffold aus `code-factory` Copier-Template (14-Element-Struktur).
+- Formatneutraler Activation-Store als Spike fuer ADR-007a Abschnitt 6
+  (`spike/activation-store/`): content-adressierte, unveraenderliche Objekte statt
+  entpackter Paketpfade (Traversal-, Symlink-, Reparse- und Case-Kollisionsklassen
+  entfallen konstruktiv), genau ein atomarer Commit-Punkt `state/CURRENT`,
+  Compare-and-Swap auf der Generation, Last-Good-Retention gebunden an den
+  autoritativen Commit-Datensatz statt an Dateinamen (schliesst P1-RECOVERY-1 aus dem
+  CWAP-v0.1.1-Review; P1-RECOVERY-2 entfaellt durch Content-Adressierung),
+  deterministischer Rollback, Commit-Bindings fuer Update-Metadaten im selben
+  atomaren Schritt und eine Recovery, die Barrieren wiederherstellt und nie selbst
+  Versionen wechselt. Keine Formatwahl, kein Installer, keine Runtime-Anbindung.
+  **Evidenz:** Crash-Matrix ueber Prozess-Crash-, POSIX-strikte und
+  geordnete-Journal-Persistenzmodelle in drei Plattformvarianten (POSIX-
+  Verzeichnisbarriere, NTFS-Journal-Hypothese, keine Barriere): 58'078/58'078
+  Crash-Faelle konsistent, 0 Durability-Verletzungen, 4/4 Negativkontrollen
+  erkannt, 312/312 reale Prozess-Crashes (Linux); 18/18 Kontroll-Mutationen
+  getoetet; Report byteweise reproduzierbar und an die exakten Quell-Digests
+  gebunden. Die Matrix fand echte Durability-Fehler im eigenen Entwurf
+  (Initialisierung, sichtbarer aber nicht dauerhafter Marker, Barrierenreihenfolge,
+  Commit-Abhaengigkeit von der Staging-Historie), alle behoben.
+  **Haertung nach Review (2026-09-29):** jeder Commit stellt die Verzeichnis-
+  barrieren aller referenzierten Objekte selbst her (haengt nicht mehr davon ab,
+  wie die Objekte entstanden sind); `durable_rename` vollstaendig (Datei-fsync unter
+  dem neuen Namen, dann Verzeichnis), womit auch Windows ohne Verzeichnis-fsync eine
+  Barriere hat und der Store meldet, welche gehalten hat (`directory-fsync`,
+  `file-fsync-only`, `unavailable`); Verifikation streamt Objekte statt sie zu
+  laden; Store-Root eines fremden Kontos wird abgelehnt; Leser wiederholen eine
+  Aufloesung genau einmal gegen einen zwischenzeitlich bewegten Commit.
+  **Neu:** Workflow `activation-store-ci` (advisory, pfadgefiltert) mit Tests,
+  Plattform-Sonde, realer Prozess-Crash-Matrix und ADR-007a-§9-Benchmark auf
+  Linux, Windows und macOS; Benchmark-Reports als Artefakte.
+  **Messung (ADR-007a §9, `bench.mjs`):** p50/p95-Latenz von Stage, Activate,
+  Verify, Read, Open/Stream und Recover sowie Spitzenspeicher ueber sechs
+  Paketformen entlang des Ressourcen-Envelopes (200 KiB bis 512 MiB, 1 bis 10'000
+  Objekte). Befunde und Behebung: `readResource` allozierte pro Lesen das ganze
+  Objekt (129 MiB Puffer bei 64 MiB) -> neue Primitive `openResource` verifiziert
+  ueber ein einziges Handle vor dem ersten Byte und streamt danach aus demselben
+  Handle; jedes Lesen validierte den kompletten Versionsdatensatz neu (99 ms bei
+  10'000 Ressourcen) -> Cache validierter, content-adressierter Datensaetze nur
+  fuer den Servierpfad, Commits/Verifikation/Recovery/GC lesen weiterhin von der
+  Platte. Staging ist fsync-gebunden: pro Objekt 0.7-1.0 ms auf ext4
+  (Hosted-Runner), 1.8-2.8 ms auf ext4 (Mess-VM) und APFS, 9-12 ms auf NTFS;
+  10'000 Objekte kosten 6.5 s / 18 s / 92 s, waehrend Verifikation grosser Objekte
+  ueberall bei 850-1'170 MiB/s liegt -- ein Messwert fuer den D4-Containerentscheid
+  (wenige Store-Objekte pro Container) und fuer die Installer-UX auf Windows.
+  **Offen:** Stromausfall-Evidenz auf Windows/macOS (NTFS-Journal-Hypothese ist
+  modelliert, nicht gemessen), realer Stromausfall-Drill, Messung auf Zielhardware
+  statt Hosted-Runnern, Installer-Anbindung nach dem D4-Containerentscheid.
 
 ### Security
 

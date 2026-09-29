@@ -1,6 +1,6 @@
 # `browser` — Implementation Status
 
-- Updated: 2026-07-28
+- Updated: 2026-09-29
 - Repository: `marcohost33-maker/browser`
 - Product: standalone native, offline-capable web-application runtime
 - Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
@@ -79,11 +79,43 @@ capability approval, secure updates, safe extraction or runtime isolation.
 - immutable bytes/capability identity for a reused application version;
 - 20 deterministic TUF tests plus four ADR-governance tests, all locally green.
 
+### Activation-store spike (ADR-007a section 6)
+
+- format-neutral content-addressed object store; package paths are keys only and never
+  touch the filesystem;
+- one atomic commit point (`state/CURRENT`), compare-and-swap generations, verified
+  last-good retention bound to the commit record, deterministic rollback;
+- commit-level bindings that move update metadata atomically with the active version;
+- commits that re-establish their own object-directory barriers and complete the
+  `durable_rename` sequence (file sync under the new name, then directory sync), so
+  a platform without directory flush still gets a barrier and reports which one held;
+- fail-closed recovery that re-establishes durability barriers and never switches
+  versions on its own; streamed verification; root-ownership check;
+- two serving primitives: `readResource` (small resources, bytes re-hashed) and
+  `openResource` (large resources: whole-object verification through one handle,
+  then a chunked stream from that same handle); validated version records are cached
+  for serving only;
+- ADR-007a section 9 benchmark (`bench.mjs`): p50/p95 latency of stage, activate,
+  verify, read, open/stream and recover plus peak memory across six package shapes
+  along the resource envelope, run per platform in CI with the report kept as an
+  artifact;
+- crash matrix over process-crash, posix-strict and ordered-prefix persistence models
+  in three platform variants (POSIX, NTFS journal hypothesis, no barrier):
+  58,078/58,078 crash cases consistent, 0 durability violations, 4/4 negative
+  controls detected, 312/312 real-filesystem process crashes on Linux;
+- 19/19 control mutations killed; evidence report bound to exact source digests;
+- `activation-store-ci` workflow: tests, platform probe and the real-filesystem
+  process-crash matrix on Windows and macOS (advisory, path-filtered).
+
+Not wired to any verifier, installer or runtime. See `spike/activation-store/README.md`.
+
 ## Not implemented
 
 - native application shell or Chromium host;
 - package parser/verifier and signature validation wired to a product path;
-- content-addressed staging, atomic activation and recovery;
+- installer wiring of the activation-store spike, power-loss evidence on Windows and
+  macOS (the NTFS journal-barrier hypothesis is modelled, not measured) and a real
+  power-loss drill;
 - production TUF client/repository, raw-byte parser, delegations, durable monotonic
   state, revocation operations or atomic offline update activation;
 - publisher admission, namespace ownership and capability approval engine;

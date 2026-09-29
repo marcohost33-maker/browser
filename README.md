@@ -120,6 +120,7 @@ local toolchain-version check is advisory; CI owns exact-version enforcement.
 - [`docs/verification/`](docs/verification/) — evidence and readiness matrices
 - [`spike/cwap-canonical-json/`](spike/cwap-canonical-json/) — accepted Track-B manifest core
 - [`spike/tuf-offline-metadata/`](spike/tuf-offline-metadata/) — initial ADR-009 offline update verifier spike
+- [`spike/activation-store/`](spike/activation-store/) — format-neutral ADR-007a §6 activation store spike with crash matrix
 - [`src/security/`](src/security/) and [`tests/security/`](tests/security/) — current executable policy foundation
 - [`scripts/check-doc-governance.js`](scripts/check-doc-governance.js) — ADR identity/link consistency gate
 

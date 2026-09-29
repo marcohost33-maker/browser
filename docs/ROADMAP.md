@@ -1,6 +1,6 @@
 # ROADMAP — `browser`
 
-- Updated: 2026-07-28
+- Updated: 2026-09-29
 - Scope: only `marcohost33-maker/browser`
 - Product: standalone native offline web-application runtime
 - Delivery order: T1 → T2 → T3; T1 first release, T3 north star
@@ -37,7 +37,9 @@ package installation, captured content, PWA installation and remote browsing.
 - [ ] Implement independent verifiers and differential/fuzz gates.
 - [ ] Enforce file-count, byte, ratio, nesting, path and time limits before allocation/extraction.
 - [ ] Implement content-addressed staging, same-volume atomic activation, last-good
-  rollback and interruption recovery.
+  rollback and interruption recovery. Format-neutral spike with crash-matrix evidence:
+  `spike/activation-store/` (process crashes verified on Linux, Windows and macOS in
+  CI); installer wiring and non-Linux power-loss evidence remain open.
 
 **Gate M2:** zero accepted malicious corpus cases, zero verifier disagreement and
 successful recovery for every injected interruption.
