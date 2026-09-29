@@ -637,3 +637,45 @@ test('rejects oversized raw metadata before making any defensive copy', (t) => {
   }));
   assert.equal(copiedOversized(), false, 'generic core copied before its size gate');
 });
+
+test('rejects an over-limit raw root chain before reading any candidate', () => {
+  const limits = { ...DEFAULT_LIMITS, rootUpdates: 2 };
+  const root = rootMetadata();
+  const bundle = updateBundle({ root });
+  let candidateReads = 0;
+  const overLimitRoots = () => {
+    const roots = [];
+    for (let index = 0; index <= limits.rootUpdates; index += 1) {
+      Object.defineProperty(roots, index, {
+        enumerable: true,
+        get() {
+          candidateReads += 1;
+          return rawMetadataBytes(root);
+        },
+      });
+    }
+    return roots;
+  };
+  const rawBundle = () => ({
+    roots: overLimitRoots(),
+    timestamp: rawMetadataBytes(bundle.timestamp),
+    snapshot: rawMetadataBytes(bundle.snapshot),
+    targets: rawMetadataBytes(bundle.targets),
+    target: bundle.target,
+  });
+
+  assertCode('TOO_MANY_ROOT_UPDATES', () => verifyOfflineBundleBytes({
+    trustedState: trustedState(root),
+    bundle: rawBundle(),
+    targetPath: TARGET_PATH,
+    now: NOW,
+    limits,
+  }));
+  assertCode('TOO_MANY_ROOT_UPDATES', () => verifyTopLevelMetadataBytes({
+    trustedState: trustedState(root),
+    bundle: rawBundle(),
+    now: NOW,
+    limits,
+  }));
+  assert.equal(candidateReads, 0, 'root candidates were read before the count gate');
+});

@@ -52,6 +52,28 @@ function rawMetadataByteLimit(limits) {
   return positiveSafeLimit(limits?.metadataBytes, DEFAULT_LIMITS.metadataBytes, 'metadataBytes');
 }
 
+/**
+ * Bound the root chain by COUNT before any candidate is read, copied or parsed.
+ * updateRootChain() enforces the same limit, but only after the byte ingress has
+ * already done per-candidate work; without this gate the aggregate cost of an
+ * untrusted bundle grows with its array length instead of with rootUpdates
+ * (TUF 5.3.3/5.3.9: the client stops after a bounded number of root files).
+ */
+function rawRootCandidates(bundle, limits) {
+  const roots = bundle.roots ?? [];
+  if (!Array.isArray(roots)) {
+    fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
+  }
+  const limit = positiveSafeLimit(limits?.rootUpdates, DEFAULT_LIMITS.rootUpdates, 'rootUpdates');
+  if (roots.length > limit) {
+    fail('TOO_MANY_ROOT_UPDATES', 'root update chain exceeds the limit', {
+      actual: roots.length,
+      limit,
+    });
+  }
+  return roots;
+}
+
 class StrictJsonParser {
   constructor(text, { maxDepth, maxNodes }) {
     this.text = text;
@@ -348,12 +370,10 @@ export function verifyTopLevelMetadataBytes({
   if (!isPlainObject(bundle)) {
     fail('INVALID_INPUT', 'raw top-level bundle must be an object');
   }
-  if (!Array.isArray(bundle.roots ?? [])) {
-    fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
-  }
+  const rawRoots = rawRootCandidates(bundle, limits);
 
   const maxBytes = rawMetadataByteLimit(limits);
-  const rootBytes = (bundle.roots ?? []).map(
+  const rootBytes = rawRoots.map(
     (bytes, index) => copyRawBytes(bytes, `root[${index}]`, maxBytes),
   );
   const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp', maxBytes);
@@ -398,12 +418,10 @@ export function verifyOfflineBundleBytes({
   if (!isPlainObject(bundle)) {
     fail('INVALID_INPUT', 'raw offline bundle must be an object');
   }
-  if (!Array.isArray(bundle.roots ?? [])) {
-    fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
-  }
+  const rawRoots = rawRootCandidates(bundle, limits);
 
   const maxBytes = rawMetadataByteLimit(limits);
-  const rootBytes = (bundle.roots ?? []).map(
+  const rootBytes = rawRoots.map(
     (bytes, index) => copyRawBytes(bytes, `root[${index}]`, maxBytes),
   );
   const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp', maxBytes);
