@@ -28,6 +28,7 @@ import {
 } from '../../spike/tuf-offline-metadata/strict-json.js';
 import {
   canonicalBytes,
+  DEFAULT_LIMITS,
   keyIdFor,
   sha256,
 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
@@ -411,4 +412,51 @@ test('initClient refuses a metadata directory that already holds trusted state',
   for (const [role, bytes] of Object.entries(before)) {
     assert.deepEqual(await readFile(join(metadataDir, `${role}.json`)), bytes, `${role}.json changed`);
   }
+});
+
+test('downloadTargets honours raised target-path limits end to end', async () => {
+  const fx = await fixture();
+  const limits = { ...DEFAULT_LIMITS, targetPathComponents: 128 };
+  const components = DEFAULT_LIMITS.targetPathComponents + 6;
+  const targetName = `${Array.from({ length: components - 1 }, () => 'd').join('/')}/demo.bin`;
+  const targetBytes = Buffer.from('deep-target', 'utf8');
+  const chain = rebuildChain(fx, {
+    mutateTargets(metadata) {
+      metadata.signed.targets = {
+        [targetName]: {
+          length: targetBytes.length,
+          hashes: { sha256: sha256(targetBytes) },
+        },
+      };
+    },
+  });
+
+  const metadataDir = join(fx.dir, 'metadata');
+  const targetDir = join(fx.dir, 'targets');
+  const sourceRoot = join(fx.dir, 'source-root.json');
+  await writeFile(sourceRoot, fx.root);
+  await initClient(metadataDir, sourceRoot);
+
+  const remoteParts = targetName.split('/');
+  remoteParts[remoteParts.length - 1] = `${sha256(targetBytes)}.demo.bin`;
+  const routes = new Map([
+    [`${METADATA_URL}2.root.json`, null],
+    [`${METADATA_URL}timestamp.json`, chain.timestamp],
+    [`${METADATA_URL}2.snapshot.json`, chain.snapshot],
+    [`${METADATA_URL}2.targets.json`, chain.targets],
+    [`${TARGET_URL}${remoteParts.join('/')}`, targetBytes],
+  ]);
+
+  const result = await downloadTargets({
+    metadataDir,
+    metadataUrl: METADATA_URL,
+    targetBaseUrl: TARGET_URL,
+    targetDir,
+    targetNames: [targetName],
+    now: NOW,
+    limits,
+    fetchImpl: fakeFetch(routes, []),
+  });
+  assert.equal(result.downloaded[0].cached, false);
+  assert.deepEqual(await readFile(join(targetDir, ...targetName.split('/'))), targetBytes);
 });

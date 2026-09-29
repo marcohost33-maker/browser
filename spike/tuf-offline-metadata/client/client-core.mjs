@@ -482,8 +482,10 @@ export async function refreshClient({
   };
 }
 
-function targetFetchPath(targetPath, descriptor, consistentSnapshot) {
-  validateTargetPath(targetPath);
+function targetFetchPath(targetPath, descriptor, consistentSnapshot, limits) {
+  // Same configured limits as refresh validation; the default-only call here
+  // rejected signed targets that the caller's raised limits admit.
+  validateTargetPath(targetPath, limits);
   if (!consistentSnapshot) return targetPath;
 
   const digest = descriptor?.hashes?.sha256;
@@ -545,7 +547,12 @@ export async function downloadTargets({
       continue;
     }
 
-    const remotePath = targetFetchPath(targetName, descriptor, refresh.consistentSnapshot);
+    const remotePath = targetFetchPath(
+      targetName,
+      descriptor,
+      refresh.consistentSnapshot,
+      limits,
+    );
     const bytes = await fetchBounded(childUrl(targetBase, remotePath), {
       maxBytes: limitValue(limits, 'targetBytes'),
       fetchImpl,
