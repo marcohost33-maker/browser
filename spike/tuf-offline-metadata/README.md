@@ -140,6 +140,14 @@ review because it would conflate two different TUF byte domains:
 The candidate therefore retains the exact downloaded bytes beside the parsed
 objects and threads those bytes into descriptor length/hash verification.
 
+Hash binding and semantic verification must refer to the same file. Whenever
+`bundle.rawMetadata` supplies bytes for a role, the generic core makes one private
+copy, strictly re-parses it and verifies signatures, versions and expiry on that
+parse result; the same copy feeds the descriptor hash. A separately supplied
+object is accepted only if it is canonically identical, otherwise the core fails
+with `RAW_METADATA_MISMATCH`. The byte-ingress functions pass raw bytes only, after
+bounding the root chain by count and each file by size before any copy.
+
 Upstream TUF v1.0.36 is now available, but this research POUF remains pinned to
 v1.0.35 until the specification delta is reviewed separately. A version bump is not
 part of this raw-ingress change.

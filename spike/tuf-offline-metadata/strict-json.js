@@ -34,11 +34,61 @@ function isHexDigit(char) {
   return char !== undefined && /^[0-9a-fA-F]$/.test(char);
 }
 
-function copyRawBytes(value, label) {
+// Type- and size-check a raw metadata view WITHOUT copying it. The generic core
+// makes the single defensive copy that is then both parsed and hashed.
+function checkedRawBytes(value, label, maxBytes) {
   if (!(Buffer.isBuffer(value) || value instanceof Uint8Array)) {
     fail('INVALID_RAW_METADATA', `${label} must be Buffer or Uint8Array`);
   }
-  return Buffer.from(value);
+  if (value.byteLength > maxBytes) {
+    fail('METADATA_TOO_LARGE', `${label} exceeds the raw byte limit`, {
+      actual: value.byteLength,
+      limit: maxBytes,
+    });
+  }
+  return value;
+}
+
+function rawMetadataByteLimit(limits) {
+  return positiveSafeLimit(limits?.metadataBytes, DEFAULT_LIMITS.metadataBytes, 'metadataBytes');
+}
+
+/**
+ * Bound the root chain by COUNT before any candidate is read, copied or parsed.
+ * updateRootChain() enforces the same limit, but only after the byte ingress has
+ * already done per-candidate work; without this gate the aggregate cost of an
+ * untrusted bundle grows with its array length instead of with rootUpdates
+ * (TUF 5.3.3/5.3.9: the client stops after a bounded number of root files).
+ */
+function rawRootCandidates(bundle, limits) {
+  const roots = bundle.roots ?? [];
+  if (!Array.isArray(roots)) {
+    fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
+  }
+  const limit = positiveSafeLimit(limits?.rootUpdates, DEFAULT_LIMITS.rootUpdates, 'rootUpdates');
+  if (roots.length > limit) {
+    fail('TOO_MANY_ROOT_UPDATES', 'root update chain exceeds the limit', {
+      actual: roots.length,
+      limit,
+    });
+  }
+  return roots;
+}
+
+/**
+ * Fail-fast shape, count and size gate for a raw bundle. Only raw bytes are passed
+ * on: the core derives every verified object from exactly these bytes, so no
+ * caller-supplied parse result can diverge from the hashed file.
+ */
+function checkedRawMetadata(bundle, limits) {
+  const rawRoots = rawRootCandidates(bundle, limits);
+  const maxBytes = rawMetadataByteLimit(limits);
+  return {
+    roots: Array.from(rawRoots, (bytes, index) => checkedRawBytes(bytes, `root[${index}]`, maxBytes)),
+    timestamp: checkedRawBytes(bundle.timestamp, 'timestamp', maxBytes),
+    snapshot: checkedRawBytes(bundle.snapshot, 'snapshot', maxBytes),
+    targets: checkedRawBytes(bundle.targets, 'targets', maxBytes),
+  };
 }
 
 class StrictJsonParser {
@@ -266,16 +316,19 @@ export function parseStrictJsonBytes(rawBytes, {
     fail('INVALID_RAW_METADATA', `${label} must be Buffer or Uint8Array`);
   }
 
-  const bytes = Buffer.from(rawBytes);
   const byteLimit = positiveSafeLimit(maxBytes, DEFAULT_LIMITS.metadataBytes, 'maxBytes');
   const depthLimit = positiveSafeLimit(maxDepth, DEFAULT_LIMITS.jsonDepth, 'maxDepth');
   const nodeLimit = positiveSafeLimit(maxNodes, DEFAULT_LIMITS.jsonNodes, 'maxNodes');
-  if (bytes.length > byteLimit) {
+  // Reject on the caller's view length BEFORE the defensive copy: copying first
+  // would let an oversized input force a full-size allocation the limit exists
+  // to prevent.
+  if (rawBytes.byteLength > byteLimit) {
     fail('METADATA_TOO_LARGE', `${label} exceeds the raw byte limit`, {
-      actual: bytes.length,
+      actual: rawBytes.byteLength,
       limit: byteLimit,
     });
   }
+  const bytes = Buffer.from(rawBytes);
   if (bytes.subarray(0, UTF8_BOM.length).equals(UTF8_BOM)) {
     fail('JSON_BOM_FORBIDDEN', `${label} must not contain a UTF-8 BOM`);
   }
@@ -334,31 +387,10 @@ export function verifyTopLevelMetadataBytes({
   if (!isPlainObject(bundle)) {
     fail('INVALID_INPUT', 'raw top-level bundle must be an object');
   }
-  if (!Array.isArray(bundle.roots ?? [])) {
-    fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
-  }
-
-  const rootBytes = (bundle.roots ?? []).map((bytes, index) => copyRawBytes(bytes, `root[${index}]`));
-  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp');
-  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot');
-  const targetsBytes = copyRawBytes(bundle.targets, 'targets');
-
-  const parsed = {
-    roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),
-    timestamp: parseTufMetadataBytes(timestampBytes, limits, 'timestamp'),
-    snapshot: parseTufMetadataBytes(snapshotBytes, limits, 'snapshot'),
-    targets: parseTufMetadataBytes(targetsBytes, limits, 'targets'),
-    rawMetadata: {
-      roots: rootBytes,
-      timestamp: timestampBytes,
-      snapshot: snapshotBytes,
-      targets: targetsBytes,
-    },
-  };
 
   return verifyTopLevelMetadata({
     trustedState,
-    bundle: parsed,
+    bundle: { rawMetadata: checkedRawMetadata(bundle, limits) },
     now,
     limits,
   });
@@ -381,32 +413,13 @@ export function verifyOfflineBundleBytes({
   if (!isPlainObject(bundle)) {
     fail('INVALID_INPUT', 'raw offline bundle must be an object');
   }
-  if (!Array.isArray(bundle.roots ?? [])) {
-    fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
-  }
-
-  const rootBytes = (bundle.roots ?? []).map((bytes, index) => copyRawBytes(bytes, `root[${index}]`));
-  const timestampBytes = copyRawBytes(bundle.timestamp, 'timestamp');
-  const snapshotBytes = copyRawBytes(bundle.snapshot, 'snapshot');
-  const targetsBytes = copyRawBytes(bundle.targets, 'targets');
-
-  const parsed = {
-    roots: rootBytes.map((bytes, index) => parseTufMetadataBytes(bytes, limits, `root[${index}]`)),
-    timestamp: parseTufMetadataBytes(timestampBytes, limits, 'timestamp'),
-    snapshot: parseTufMetadataBytes(snapshotBytes, limits, 'snapshot'),
-    targets: parseTufMetadataBytes(targetsBytes, limits, 'targets'),
-    target: bundle.target,
-    rawMetadata: {
-      roots: rootBytes,
-      timestamp: timestampBytes,
-      snapshot: snapshotBytes,
-      targets: targetsBytes,
-    },
-  };
 
   return verifyOfflineBundle({
     trustedState,
-    bundle: parsed,
+    bundle: {
+      target: bundle.target,
+      rawMetadata: checkedRawMetadata(bundle, limits),
+    },
     targetPath,
     now,
     approveCapabilityExpansion,
