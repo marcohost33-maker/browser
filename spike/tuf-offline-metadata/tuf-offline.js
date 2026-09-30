@@ -79,6 +79,26 @@ function assertStringWellFormed(value, label) {
   }
 }
 
+function compareUnicodeCodePoints(left, right) {
+  const leftIterator = left[Symbol.iterator]();
+  const rightIterator = right[Symbol.iterator]();
+
+  while (true) {
+    const leftNext = leftIterator.next();
+    const rightNext = rightIterator.next();
+    if (leftNext.done || rightNext.done) {
+      if (leftNext.done && rightNext.done) return 0;
+      return leftNext.done ? -1 : 1;
+    }
+
+    const leftCodePoint = leftNext.value.codePointAt(0);
+    const rightCodePoint = rightNext.value.codePointAt(0);
+    if (leftCodePoint !== rightCodePoint) {
+      return leftCodePoint < rightCodePoint ? -1 : 1;
+    }
+  }
+}
+
 function canonicalJsonValue(value, label, state, depth) {
   state.nodes += 1;
   if (state.nodes > state.maxNodes) {
@@ -123,11 +143,12 @@ function canonicalJsonValue(value, label, state, depth) {
 
   state.active.add(value);
   try {
-    const keys = Object.keys(value).sort();
-    return `{${keys.map((key) => {
-      assertStringWellFormed(key, `${label} key`);
-      return `${JSON.stringify(key)}:${canonicalJsonValue(value[key], `${label}.${key}`, state, depth + 1)}`;
-    }).join(',')}}`;
+    const keys = Object.keys(value);
+    for (const key of keys) assertStringWellFormed(key, `${label} key`);
+    keys.sort(compareUnicodeCodePoints);
+    return `{${keys.map((key) => (
+      `${JSON.stringify(key)}:${canonicalJsonValue(value[key], `${label}.${key}`, state, depth + 1)}`
+    )).join(',')}}`;
   } finally {
     state.active.delete(value);
   }
@@ -137,8 +158,9 @@ function canonicalJsonValue(value, label, state, depth) {
  * Deterministic JSON for the spike POUF.
  *
  * This is deliberately smaller than a general JSON canonicalization library:
- * finite safe integers only, plain objects only, UTF-16 code-unit key order and
- * explicit depth/node bounds. Raw JSON parsing and duplicate-key rejection remain
+ * finite safe integers only, plain objects only, Unicode code-point key order
+ * matching the OLPC canonical JSON used by python-tuf/securesystemslib, and explicit
+ * depth/node bounds. Raw JSON parsing and duplicate-key rejection remain
  * outside this spike.
  */
 export function canonicalJson(value, label = '$', limits = DEFAULT_LIMITS) {
@@ -686,7 +708,14 @@ export function verifyTopLevelMetadata({
     fail('TIMESTAMP_ROLLBACK', 'timestamp version rolled back');
   }
   if (timestampVersion === trustedTimestampVersion && trustedTimestampVersion !== 0) {
-    return { status: 'no-update', trustedState };
+    return {
+      status: 'no-update',
+      trustedState: {
+        ...trustedState,
+        root: trustedRoot,
+      },
+      rootUpdated: trustedRoot.signed.version !== trustedState.root.signed.version,
+    };
   }
 
   assertNotExpired(bundle.timestamp.signed.expires, now, 'timestamp');

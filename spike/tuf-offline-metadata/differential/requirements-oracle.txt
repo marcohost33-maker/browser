@@ -1,0 +1,9 @@
+# Independent TUF oracle dependencies.
+# Wheels are pinned to published PyPI SHA-256 values and installed with
+# --require-hashes --only-binary=:all: in CI.
+tuf==7.0.1 \
+    --hash=sha256:d30434bda6e079ab303fb30d1b3006d939a10ca34783b1573d61cd9b802fa45c
+securesystemslib==1.5.1 \
+    --hash=sha256:ada8bdf817da29ece4ba91654f6a162ce7cfbadbc3ae3f840f7313f9d22675de
+urllib3==2.8.0 \
+    --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
