@@ -9,6 +9,7 @@ import test from 'node:test';
 import {
   canonicalBytes,
   canonicalJson,
+  DEFAULT_LIMITS,
   keyIdFor,
   POUF,
   sha256,
@@ -18,7 +19,11 @@ import {
   verifyTopLevelMetadata,
 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 
-import { verifyOfflineBundleBytes } from '../../spike/tuf-offline-metadata/strict-json.js';
+import {
+  parseStrictJsonBytes,
+  verifyOfflineBundleBytes,
+  verifyTopLevelMetadataBytes,
+} from '../../spike/tuf-offline-metadata/strict-json.js';
 
 const NOW = new Date('2026-07-28T12:00:00.000Z');
 const FUTURE = '2027-07-28T12:00:00Z';
@@ -632,4 +637,300 @@ test('rejects metadata above the configured pre-allocation envelope', () => {
       capabilities: 16,
     },
   }));
+});
+
+test('rejects oversized raw metadata before making any defensive copy', (t) => {
+  const limits = { ...DEFAULT_LIMITS, metadataBytes: 16 * 1024 };
+  const oversized = new Uint8Array(limits.metadataBytes + 1);
+  const root = rootMetadata();
+  const bundle = updateBundle({ root });
+  const bufferFrom = t.mock.method(Buffer, 'from');
+  const copiedOversized = () => bufferFrom.mock.calls.some(
+    (call) => call.arguments[0] === oversized,
+  );
+
+  assertCode('METADATA_TOO_LARGE', () => parseStrictJsonBytes(oversized, {
+    maxBytes: limits.metadataBytes,
+  }));
+  assert.equal(copiedOversized(), false, 'strict parser copied before its size gate');
+
+  assertCode('METADATA_TOO_LARGE', () => verifyOfflineBundleBytes({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: oversized,
+      snapshot: oversized,
+      targets: oversized,
+      target: bundle.target,
+    },
+    targetPath: TARGET_PATH,
+    now: NOW,
+    limits,
+  }));
+  assert.equal(copiedOversized(), false, 'raw ingress copied before its size gate');
+
+  assertCode('METADATA_TOO_LARGE', () => verifyTopLevelMetadata({
+    trustedState: trustedState(root),
+    bundle: { ...bundle, rawMetadata: { timestamp: oversized } },
+    now: NOW,
+    limits,
+  }));
+  assert.equal(copiedOversized(), false, 'generic core copied before its size gate');
+});
+
+test('rejects an over-limit raw root chain before reading any candidate', () => {
+  const limits = { ...DEFAULT_LIMITS, rootUpdates: 2 };
+  const root = rootMetadata();
+  const bundle = updateBundle({ root });
+  let candidateReads = 0;
+  const overLimitRoots = () => {
+    const roots = [];
+    for (let index = 0; index <= limits.rootUpdates; index += 1) {
+      Object.defineProperty(roots, index, {
+        enumerable: true,
+        get() {
+          candidateReads += 1;
+          return rawMetadataBytes(root);
+        },
+      });
+    }
+    return roots;
+  };
+  const rawBundle = () => ({
+    roots: overLimitRoots(),
+    timestamp: rawMetadataBytes(bundle.timestamp),
+    snapshot: rawMetadataBytes(bundle.snapshot),
+    targets: rawMetadataBytes(bundle.targets),
+    target: bundle.target,
+  });
+
+  assertCode('TOO_MANY_ROOT_UPDATES', () => verifyOfflineBundleBytes({
+    trustedState: trustedState(root),
+    bundle: rawBundle(),
+    targetPath: TARGET_PATH,
+    now: NOW,
+    limits,
+  }));
+  assertCode('TOO_MANY_ROOT_UPDATES', () => verifyTopLevelMetadataBytes({
+    trustedState: trustedState(root),
+    bundle: rawBundle(),
+    now: NOW,
+    limits,
+  }));
+  assert.equal(candidateReads, 0, 'root candidates were read before the count gate');
+});
+
+test('generic core decides on the exact raw bytes its descriptors hashed', () => {
+  const root = rootMetadata();
+  const vouched = updateBundle({ root });
+  const substitute = updateBundle({
+    root,
+    targetsVersion: 3,
+    targetBytes: Buffer.from('substituted-package', 'utf8'),
+  });
+  assert.equal(substitute.snapshot.signed.version, vouched.snapshot.signed.version);
+
+  const rawVouchedSnapshot = rawMetadataBytes(vouched.snapshot);
+  vouched.timestamp.signed.meta['snapshot.json'] = metadataDescriptor(
+    vouched.snapshot,
+    vouched.snapshot.signed.version,
+    rawVouchedSnapshot,
+  );
+  resign(vouched.timestamp, ['timestampA']);
+
+  // Snapshot bytes A satisfy the timestamp hash; a different validly signed
+  // snapshot B of the same version must not drive the decision.
+  assertCode('RAW_METADATA_MISMATCH', () => verifyTopLevelMetadata({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: vouched.timestamp,
+      snapshot: substitute.snapshot,
+      targets: substitute.targets,
+      rawMetadata: { snapshot: rawVouchedSnapshot },
+    },
+    now: NOW,
+  }));
+
+  const bytesOnly = verifyTopLevelMetadata({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: vouched.timestamp,
+      targets: vouched.targets,
+      rawMetadata: { snapshot: rawVouchedSnapshot },
+    },
+    now: NOW,
+  });
+  assert.equal(bytesOnly.status, 'metadata-verified');
+  assert.equal(bytesOnly.targetsVersion, vouched.targets.signed.version);
+});
+
+function rawBoundBundle(root) {
+  const bundle = updateBundle({ root });
+  const rawTargets = rawMetadataBytes(bundle.targets);
+  bundle.snapshot.signed.meta['targets.json'] = metadataDescriptor(
+    bundle.targets,
+    bundle.targets.signed.version,
+    rawTargets,
+  );
+  resign(bundle.snapshot, ['snapshotA']);
+  const rawSnapshot = rawMetadataBytes(bundle.snapshot);
+  bundle.timestamp.signed.meta['snapshot.json'] = metadataDescriptor(
+    bundle.snapshot,
+    bundle.snapshot.signed.version,
+    rawSnapshot,
+  );
+  resign(bundle.timestamp, ['timestampA']);
+  return {
+    bundle,
+    raw: {
+      roots: [],
+      timestamp: rawMetadataBytes(bundle.timestamp),
+      snapshot: rawSnapshot,
+      targets: rawTargets,
+    },
+  };
+}
+
+test('returns exactly the target bytes it hashed, reading target.bytes once', () => {
+  const root = rootMetadata();
+  const { bundle, raw } = rawBoundBundle(root);
+  const vouched = Buffer.from(bundle.target.bytes);
+  const unvouched = Buffer.from('unvouched-payload-served-on-a-later-read', 'utf8');
+  const entries = [
+    ['raw ingress', (target) => verifyOfflineBundleBytes({
+      trustedState: trustedState(root),
+      bundle: { ...raw, target },
+      targetPath: TARGET_PATH,
+      now: NOW,
+    })],
+    ['object ingress', (target) => verifyOfflineBundle({
+      trustedState: trustedState(root),
+      // Object mode signs descriptors over canonical bytes, so it needs its
+      // own fixture; the target bytes are the same default package.
+      bundle: { ...cloneBundle(updateBundle({ root })), target },
+      targetPath: TARGET_PATH,
+      now: NOW,
+    })],
+  ];
+
+  for (const [label, verify] of entries) {
+    // Accessor: the first read serves the vouched bytes, every later read other
+    // bytes. Only one read may happen, and the result must be the hashed bytes.
+    let reads = 0;
+    const accessorTarget = {
+      path: TARGET_PATH,
+      get bytes() {
+        reads += 1;
+        return reads === 1 ? vouched : unvouched;
+      },
+    };
+    const viaAccessor = verify(accessorTarget);
+    assert.equal(viaAccessor.status, 'update-verified', label);
+    assert.equal(reads, 1, `${label}: target.bytes read more than once`);
+    assert.ok(viaAccessor.target.equals(vouched), `${label}: returned bytes differ from hashed bytes`);
+    assert.equal(sha256(viaAccessor.target), viaAccessor.nextState.app.digest, label);
+
+    // Plain buffer: the result is a private copy, so a caller mutation after
+    // verification cannot change the bytes that were reported as verified.
+    const callerBuffer = Buffer.from(vouched);
+    const viaBuffer = verify({ path: TARGET_PATH, bytes: callerBuffer });
+    assert.equal(viaBuffer.status, 'update-verified', label);
+    assert.notEqual(viaBuffer.target, callerBuffer, `${label}: result aliases the caller buffer`);
+    callerBuffer.fill(0x41);
+    assert.ok(viaBuffer.target.equals(vouched), `${label}: caller mutation reached the result`);
+    assert.equal(sha256(viaBuffer.target), viaBuffer.nextState.app.digest, label);
+  }
+});
+
+test('target size gate uses the intrinsic byte length, not caller-owned properties', () => {
+  const root = rootMetadata();
+  const { bundle, raw } = rawBoundBundle(root);
+  const limits = { ...DEFAULT_LIMITS, targetBytes: 8 };
+  const bytes = Buffer.from(bundle.target.bytes);
+  assert.ok(bytes.length > limits.targetBytes);
+  Object.defineProperty(bytes, 'length', { value: 1 });
+  Object.defineProperty(bytes, 'byteLength', { value: 1 });
+
+  assertCode('TARGET_TOO_LARGE', () => verifyOfflineBundleBytes({
+    trustedState: trustedState(root),
+    bundle: { ...raw, target: { path: TARGET_PATH, bytes } },
+    targetPath: TARGET_PATH,
+    now: NOW,
+    limits,
+  }));
+});
+
+test('a canonically equal caller object never replaces the parse of the hashed bytes', () => {
+  const root = rootMetadata();
+  const { bundle, raw } = rawBoundBundle(root);
+  const hiddenPath = 'apps/hidden.cwap';
+  const hiddenBytes = Buffer.from('never-vouched-by-the-hashed-targets-file', 'utf8');
+
+  // A non-enumerable entry is invisible to the canonical comparison but visible
+  // to a direct lookup. Only the object parsed from the hashed bytes may be used.
+  const supplied = structuredClone(bundle.targets);
+  Object.defineProperty(supplied.signed.targets, hiddenPath, {
+    enumerable: false,
+    value: {
+      length: hiddenBytes.length,
+      hashes: { sha256: sha256(hiddenBytes) },
+      custom: { app_id: 'demo.app', app_version: 2, capabilities: ['storage.read'] },
+    },
+  });
+  const state = trustedState(root);
+  delete state.app.targetPath;
+
+  assertCode('TARGET_NOT_FOUND', () => verifyOfflineBundle({
+    trustedState: state,
+    bundle: {
+      roots: [],
+      timestamp: bundle.timestamp,
+      snapshot: bundle.snapshot,
+      targets: supplied,
+      rawMetadata: { snapshot: raw.snapshot, targets: raw.targets },
+      target: { path: hiddenPath, bytes: hiddenBytes },
+    },
+    targetPath: hiddenPath,
+    now: NOW,
+  }));
+
+  const result = verifyTopLevelMetadata({
+    trustedState: trustedState(root),
+    bundle: {
+      roots: [],
+      timestamp: bundle.timestamp,
+      snapshot: bundle.snapshot,
+      targets: supplied,
+      rawMetadata: { snapshot: raw.snapshot, targets: raw.targets },
+    },
+    now: NOW,
+  });
+  assert.equal(result.status, 'metadata-verified');
+  assert.notEqual(result.targets, supplied, 'verified targets object is the caller object');
+  assert.equal(Object.hasOwn(result.targets.signed.targets, hiddenPath), false);
+  assert.ok(canonicalBytes(result.targets).equals(
+    canonicalBytes(JSON.parse(raw.targets.toString('utf8'))),
+  ));
+});
+
+test('raw ingress enforces the POUF value domain outside the signed portion too', () => {
+  const root = rootMetadata();
+  const { bundle, raw } = rawBoundBundle(root);
+  // Escape sequences as TEXT in the file bytes (not JS-decoded characters).
+  const withEnvelopeField = (fieldJson) => Buffer.from(
+    raw.timestamp.toString('utf8').replace(/^\{/, `{\n  "x": ${fieldJson},`),
+    'utf8',
+  );
+  const verifyWithTimestamp = (timestamp) => verifyOfflineBundleBytes({
+    trustedState: trustedState(root),
+    bundle: { ...raw, timestamp, target: bundle.target },
+    targetPath: TARGET_PATH,
+    now: NOW,
+  });
+
+  assert.equal(verifyWithTimestamp(withEnvelopeField('"ok"')).status, 'update-verified');
+  assertCode('INVALID_UNICODE', () => verifyWithTimestamp(withEnvelopeField(String.raw`"\ud800"`)));
+  assertCode('INVALID_NUMBER', () => verifyWithTimestamp(withEnvelopeField('9007199254740993')));
 });
