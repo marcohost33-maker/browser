@@ -15,7 +15,10 @@ import {
 
 import {
   DEFAULT_LIMITS,
+  TufSpikeError,
   validateTargetPath,
+  verifyBootstrapRoot,
+  verifyRetainedRoleMetadata,
   verifyTargetBytes,
 } from '../tuf-offline.js';
 import {
@@ -159,12 +162,37 @@ function rolePath(metadataDir, role) {
   return join(metadataDir, `${role}.json`);
 }
 
+/**
+ * A retained timestamp/snapshot is a rollback floor only while it still verifies
+ * against the trusted root. TUF 1.0.35 section 5.3.11: "If the timestamp and / or
+ * snapshot keys have been rotated, then delete the trusted timestamp and snapshot
+ * metadata files." The core applies that reset when the rotation happens inside
+ * one refresh; but root.json is persisted first (5.3.8), so a crash before the
+ * new timestamp is written leaves old-key files next to the new root. Checking
+ * them against the loaded root on every load makes the reset survive that crash
+ * without a multi-file transaction: files signed by rotated-out keys are treated
+ * as deleted (both of them, as 5.3.11 requires), exactly as if the refresh had
+ * completed. Other failures (unreadable/invalid JSON) still fail closed.
+ */
+function retainedRollbackFloorValid(metadata, root, role, limits) {
+  try {
+    verifyRetainedRoleMetadata(metadata, root, role, limits);
+    return true;
+  } catch (error) {
+    if (error instanceof TufSpikeError) return false;
+    throw error;
+  }
+}
+
 export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
   const rootBytes = await readMaybe(rolePath(metadataDir, 'root'));
   if (rootBytes === null) {
     fail('MISSING_TRUSTED_ROOT', 'metadata directory has no root.json');
   }
-  const root = parseTufMetadataBytes(rootBytes, limits, 'trusted-root');
+  const root = verifyBootstrapRoot(
+    parseTufMetadataBytes(rootBytes, limits, 'trusted-root'),
+    limits,
+  );
 
   const timestampBytes = await readMaybe(rolePath(metadataDir, 'timestamp'));
   const snapshotBytes = await readMaybe(rolePath(metadataDir, 'snapshot'));
@@ -177,15 +205,25 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
     fail('INCOMPLETE_LOCAL_STATE', 'targets.json exists without snapshot.json');
   }
 
-  const timestamp = timestampBytes === null
+  const parsedTimestamp = timestampBytes === null
     ? null
     : parseTufMetadataBytes(timestampBytes, limits, 'trusted-timestamp');
-  const snapshot = snapshotBytes === null
+  const parsedSnapshot = snapshotBytes === null
     ? null
     : parseTufMetadataBytes(snapshotBytes, limits, 'trusted-snapshot');
   const targets = targetsBytes === null
     ? null
     : parseTufMetadataBytes(targetsBytes, limits, 'trusted-targets');
+
+  const rotatedOut = [
+    ['timestamp', parsedTimestamp],
+    ['snapshot', parsedSnapshot],
+  ].filter(([role, metadata]) => (
+    metadata !== null && !retainedRollbackFloorValid(metadata, root, role, limits)
+  )).map(([role]) => role);
+  const rollbackStateReset = rotatedOut.length > 0;
+  const timestamp = rollbackStateReset ? null : parsedTimestamp;
+  const snapshot = rollbackStateReset ? null : parsedSnapshot;
 
   return {
     trustedState: {
@@ -199,11 +237,12 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
     },
     raw: {
       root: rootBytes,
-      timestamp: timestampBytes,
-      snapshot: snapshotBytes,
+      timestamp: rollbackStateReset ? null : timestampBytes,
+      snapshot: rollbackStateReset ? null : snapshotBytes,
       targets: targetsBytes,
     },
     parsed: { root, timestamp, snapshot, targets },
+    rollbackStateReset: rollbackStateReset ? { rotatedOut } : null,
   };
 }
 
@@ -407,7 +446,7 @@ async function existingTrustedMetadata(metadataDir) {
  * Re-initialisation is therefore refused rather than silently merged; the
  * operator removes the old state explicitly.
  */
-export async function initClient(metadataDir, trustedRootPath) {
+export async function initClient(metadataDir, trustedRootPath, limits = DEFAULT_LIMITS) {
   const trustedRootBytes = await readFile(trustedRootPath);
   const present = await existingTrustedMetadata(metadataDir);
   if (present.length > 0) {
@@ -416,7 +455,119 @@ export async function initClient(metadataDir, trustedRootPath) {
       present,
     });
   }
+  // Fail closed BEFORE anything is persisted: the file must be a strict-JSON TUF
+  // root of this POUF that is signed by a threshold of its own root keys.
+  verifyBootstrapRoot(parseTufMetadataBytes(trustedRootBytes, limits, 'trusted-root'), limits);
   return atomicWriteFile(rolePath(metadataDir, 'root'), trustedRootBytes);
+}
+
+/**
+ * Codes that mean "the retained snapshot/targets are not the files the trusted
+ * timestamp/snapshot pin" - the signature of persistence interrupted between two
+ * role files (single-file crash safety only). Re-downloading can repair exactly
+ * this; for anything else (expiry, signatures) the pinned bytes would be the same,
+ * so the original error stands.
+ */
+const INTERRUPTED_PERSISTENCE_CODES = Object.freeze(new Set([
+  'INCOMPLETE_LOCAL_STATE',
+  'METADATA_LENGTH',
+  'METADATA_HASH',
+  'SNAPSHOT_VERSION',
+  'TARGETS_VERSION',
+]));
+
+async function fetchSnapshotAndTargets({
+  metadataBase,
+  snapshotVersion,
+  consistentSnapshot,
+  limits,
+  fetchBytes,
+}) {
+  const snapshot = await fetchBytes(
+    childUrl(metadataBase, metadataFilename('snapshot', snapshotVersion, consistentSnapshot)),
+    { maxBytes: limitValue(limits, 'metadataBytes') },
+  );
+
+  const parsedSnapshot = parseTufMetadataBytes(snapshot, limits, 'remote-snapshot');
+  const targetsDescriptor = parsedSnapshot.signed.meta?.['targets.json'];
+  if (!targetsDescriptor || !Number.isSafeInteger(targetsDescriptor.version)) {
+    fail('INVALID_SNAPSHOT_META', 'snapshot does not provide targets version');
+  }
+
+  const targets = await fetchBytes(
+    childUrl(metadataBase, metadataFilename(
+      'targets',
+      targetsDescriptor.version,
+      consistentSnapshot,
+    )),
+    { maxBytes: limitValue(limits, 'metadataBytes') },
+  );
+  return { snapshot, targets };
+}
+
+/**
+ * Equal timestamp version (5.4.3.1): the new timestamp is discarded and the
+ * TRUSTED one stays in use. If the retained snapshot/targets are not the files it
+ * pins (persistence was interrupted after timestamp.json), complete the update
+ * from that trusted timestamp (5.5/5.6) instead of failing until the repository
+ * happens to publish a newer timestamp. The trusted timestamp is re-verified in
+ * full by the generic core (only its own equal-version floor is lifted); the
+ * snapshot/targets rollback floors stay in force.
+ */
+async function finishNoUpdate({
+  verified,
+  local,
+  metadataDir,
+  metadataBase,
+  consistentSnapshot,
+  now,
+  limits,
+  fetchBytes,
+}) {
+  try {
+    assertRetainedMetadataFinal({ verified, local, now, limits });
+    return null;
+  } catch (error) {
+    if (!INTERRUPTED_PERSISTENCE_CODES.has(error?.code) || local.parsed.timestamp === null) {
+      throw error;
+    }
+    try {
+      verifyRetainedRoleMetadata(
+        local.parsed.timestamp,
+        verified.trustedState.root,
+        'timestamp',
+        limits,
+        { now },
+      );
+    } catch {
+      throw error;
+    }
+  }
+
+  const snapshotDescriptor = local.parsed.timestamp.signed.meta?.['snapshot.json'];
+  if (!snapshotDescriptor || !Number.isSafeInteger(snapshotDescriptor.version)) {
+    fail('INVALID_TIMESTAMP_META', 'trusted timestamp does not provide snapshot version');
+  }
+  const { snapshot, targets } = await fetchSnapshotAndTargets({
+    metadataBase,
+    snapshotVersion: snapshotDescriptor.version,
+    consistentSnapshot,
+    limits,
+    fetchBytes,
+  });
+  const bundle = { roots: [], timestamp: local.raw.timestamp, snapshot, targets };
+  const resumed = verifyTopLevelMetadataBytes({
+    trustedState: {
+      ...local.trustedState,
+      root: verified.trustedState.root,
+      versions: { ...local.trustedState.versions, timestamp: 0 },
+    },
+    bundle,
+    now,
+    limits,
+  });
+  const writes = await persistVerifiedMetadata(metadataDir, resumed, bundle);
+  return { verified: resumed, writes };
 }
 
 export async function refreshClient({
@@ -447,6 +598,16 @@ export async function refreshClient({
   }
 
   const consistentSnapshot = consistentSnapshotFromRoots(local.parsed.root, roots, limits);
+  const finish = (verified) => finishNoUpdate({
+    verified,
+    local,
+    metadataDir,
+    metadataBase,
+    consistentSnapshot,
+    now,
+    limits,
+    fetchBytes,
+  });
 
   // With no root transition, an equal timestamp is a complete no-update signal
   // after its signature/rollback checks. Use the existing local snapshot/targets
@@ -469,38 +630,15 @@ export async function refreshClient({
       limits,
     });
     const writes = await persistVerifiedMetadata(metadataDir, verified, bundle);
-    if (verified.status === 'no-update') {
-      assertRetainedMetadataFinal({ verified, local, now, limits });
-    }
-    return {
-      ...verified,
-      writes,
-      consistentSnapshot,
-    };
+    return completeRefresh({ verified, writes, finish, consistentSnapshot });
   }
-  const snapshot = await fetchBytes(
-    childUrl(metadataBase, metadataFilename(
-      'snapshot',
-      snapshotDescriptor.version,
-      consistentSnapshot,
-    )),
-    { maxBytes: limitValue(limits, 'metadataBytes') },
-  );
-
-  const parsedSnapshot = parseTufMetadataBytes(snapshot, limits, 'remote-snapshot');
-  const targetsDescriptor = parsedSnapshot.signed.meta?.['targets.json'];
-  if (!targetsDescriptor || !Number.isSafeInteger(targetsDescriptor.version)) {
-    fail('INVALID_SNAPSHOT_META', 'snapshot does not provide targets version');
-  }
-
-  const targets = await fetchBytes(
-    childUrl(metadataBase, metadataFilename(
-      'targets',
-      targetsDescriptor.version,
-      consistentSnapshot,
-    )),
-    { maxBytes: limitValue(limits, 'metadataBytes') },
-  );
+  const { snapshot, targets } = await fetchSnapshotAndTargets({
+    metadataBase,
+    snapshotVersion: snapshotDescriptor.version,
+    consistentSnapshot,
+    limits,
+    fetchBytes,
+  });
 
   const bundle = { roots, timestamp, snapshot, targets };
   const verified = verifyTopLevelMetadataBytes({
@@ -510,15 +648,21 @@ export async function refreshClient({
     limits,
   });
 
+  // Root progress is already persisted (5.3.8) before the retained
+  // snapshot/targets are checked against that root in finishNoUpdate().
   const writes = await persistVerifiedMetadata(metadataDir, verified, bundle);
-  if (verified.status === 'no-update') {
-    // Root progress is already persisted (5.3.8); the retained snapshot/targets
-    // must now verify against that root before anything relies on them.
-    assertRetainedMetadataFinal({ verified, local, now, limits });
+  return completeRefresh({ verified, writes, finish, consistentSnapshot });
+}
+
+async function completeRefresh({ verified, writes, finish, consistentSnapshot }) {
+  const resumed = verified.status === 'no-update' ? await finish(verified) : null;
+  if (resumed === null) {
+    return { ...verified, writes, consistentSnapshot };
   }
   return {
-    ...verified,
-    writes,
+    ...resumed.verified,
+    resumedFromTrustedTimestamp: true,
+    writes: [...writes, ...resumed.writes],
     consistentSnapshot,
   };
 }
@@ -542,8 +686,7 @@ async function readVerifiedCachedTarget(path, descriptor, limits) {
   const bytes = await readMaybe(path);
   if (bytes === null) return null;
   try {
-    verifyTargetBytes(bytes, descriptor, limits);
-    return bytes;
+    return verifyTargetBytes(bytes, descriptor, limits);
   } catch {
     return null;
   }
@@ -598,9 +741,16 @@ export async function downloadTargets({
       maxBytes: limitValue(limits, 'targetBytes'),
       fetchImpl,
     });
-    verifyTargetBytes(bytes, descriptor, limits);
-    const write = await atomicWriteFile(outputPath, bytes);
-    downloaded.push({ targetName, outputPath, cached: false, bytes: bytes.length, write });
+    // Persist exactly the private copy that was hashed (verifyTargetBytes).
+    const verifiedBytes = verifyTargetBytes(bytes, descriptor, limits);
+    const write = await atomicWriteFile(outputPath, verifiedBytes);
+    downloaded.push({
+      targetName,
+      outputPath,
+      cached: false,
+      bytes: verifiedBytes.length,
+      write,
+    });
   }
 
   return { refresh, downloaded };

@@ -11,7 +11,10 @@ conformance work.
 - `init`: persist the externally supplied trusted `root.json` exactly as received,
   into a directory without trusted metadata; a directory that already holds any of
   `root/timestamp/snapshot/targets.json` is refused (`METADATA_DIR_INITIALIZED`)
-  instead of splicing a new root under old state;
+  instead of splicing a new root under old state. Before anything is written, the
+  file must parse as strict JSON and verify as a root of this POUF signed by a
+  threshold of its own root keys (TUF 5.2; expiry is not checked there); anything
+  else fails closed with the verifier's error code;
 - `refresh`: fetch and verify root/timestamp/snapshot/targets, then persist the exact
   verified metadata bytes; an unchanged timestamp version is `no-update`, but the
   retained timestamp/snapshot/targets are then re-verified as final metadata
@@ -39,6 +42,33 @@ Each individual file uses:
 This is **single-file crash safety only**. It does not yet claim a transaction across
 root/timestamp/snapshot/targets, and it does not atomically couple metadata state to
 package activation. Those remain ADR-009 blockers.
+
+Two consequences of that are handled explicitly, so that a crash between two role
+files cannot wedge or weaken the client:
+
+- **Rotation reset survives a crash (TUF 5.3.11).** A refresh persists `root.json`
+  first (5.3.8). If it dies before the new timestamp is written, old-key
+  `timestamp.json`/`snapshot.json` remain next to the new root. On every load, the
+  retained timestamp and snapshot are therefore verified against the loaded root
+  (role, spec version, signature threshold; not expiry). If either does not verify,
+  both are treated as deleted, exactly as 5.3.11 requires ("If the timestamp and /
+  or snapshot keys have been rotated, then delete the trusted timestamp and snapshot
+  metadata files"); `loadTrustedState()` reports this as `rollbackStateReset`.
+  Without it, a fast-forwarded old-key timestamp would keep its rollback floor and
+  freeze the client (`TIMESTAMP_ROLLBACK`) until the new-key timestamp overtook it.
+- **Interrupted update resumes from the trusted timestamp (5.4.3.1).** If the
+  repository timestamp equals the trusted one but the retained snapshot/targets are
+  not the files that timestamp pins (crash after `timestamp.json`, or after
+  `snapshot.json`), the refresh downloads snapshot/targets named by the trusted
+  timestamp and verifies the whole chain again (`resumedFromTrustedTimestamp: true`).
+  Only pin mismatches (`METADATA_LENGTH`, `METADATA_HASH`, `SNAPSHOT_VERSION`,
+  `TARGETS_VERSION`, `INCOMPLETE_LOCAL_STATE`) trigger this; expired or badly signed
+  retained metadata still fails closed, because re-downloading pinned bytes cannot
+  change them.
+
+Both paths are covered by crash simulations that abort the real write sequence after
+file N (`tests/tuf/tuf-client-cli.test.js`). A real process kill or power loss has not
+been measured.
 
 On Windows, directory fsync support must be measured separately. The function reports
 whether the parent directory was synced rather than silently claiming durability.

@@ -423,6 +423,39 @@ export function updateRootChain(trustedRoot, candidates, fixedStartTime, limits 
   return { root: current, timestampKeysRotated, snapshotKeysRotated };
 }
 
+/**
+ * Bootstrap check for a trusted root (TUF 1.0.35 section 5.2): a well-formed
+ * root of this POUF, signed by a threshold of its OWN root keys. Expiry is not
+ * checked: per 5.2 "the expiration of the trusted root metadata file does not
+ * matter, because we will attempt to update it in the next step".
+ */
+export function verifyBootstrapRoot(root, limits = DEFAULT_LIMITS) {
+  assertMetadataLimit(root, limits, 'root');
+  assertRoleMetadata(root, 'root', undefined, { checkExpiry: false });
+  assertRootShape(root.signed, limits);
+  verifyRoleSignatures(root, root.signed, 'root', limits);
+  return root;
+}
+
+/**
+ * Check a RETAINED (already persisted) timestamp/snapshot against the trusted
+ * root: envelope, role type, spec version and a signature threshold of that
+ * role's keys in `trustedRoot`. Used to decide whether the file may still act as
+ * a rollback floor (TUF 5.3.11). Expiry is not checked unless `now` is given: an
+ * expired trusted file remains a valid rollback floor.
+ */
+export function verifyRetainedRoleMetadata(
+  metadata,
+  trustedRoot,
+  roleName,
+  limits = DEFAULT_LIMITS,
+  { now } = {},
+) {
+  assertRoleMetadata(metadata, roleName, now, { checkExpiry: now !== undefined });
+  verifyRoleSignatures(metadata, trustedRoot.signed, roleName, limits);
+  return metadata;
+}
+
 function assertDigest(actual, expected, code, label) {
   if (typeof expected !== 'string' || !HEX_64.test(expected)) {
     fail('INVALID_HASH', `${label} has an invalid SHA-256 digest`);

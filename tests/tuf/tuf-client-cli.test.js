@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   createPrivateKey,
   createPublicKey,
   sign as signBytes,
 } from 'node:crypto';
-import {
+import fsPromises, {
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   writeFile,
 } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -19,6 +21,7 @@ import test from 'node:test';
 import {
   atomicWriteFile,
   downloadTargets,
+  fetchBounded,
   initClient,
   loadTrustedState,
   refreshClient,
@@ -34,6 +37,7 @@ import {
 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 
 const GENERATOR = 'spike/tuf-offline-metadata/differential/generate-corpus.mjs';
+const CLI = 'spike/tuf-offline-metadata/client/tuf-client-cli.mjs';
 const NOW = new Date('2026-09-27T19:45:00.000Z');
 const METADATA_URL = 'https://repo.test/metadata/';
 const TARGET_URL = 'https://repo.test/targets/';
@@ -490,4 +494,443 @@ test('atomicWriteFile fsyncs every directory entry that recursive mkdir created'
     [join(base, 'a', 'b', 'c')],
   );
   assert.equal((await readFile(path)).toString(), 'second');
+});
+
+// Simulated crash inside the real write sequence: the first `completed` atomic
+// replacements (rename) succeed, every later one throws, as if the process had
+// died right after file N was durably in place. Patches the builtin fs/promises
+// binding that client-core imports, and always restores it.
+async function crashAfterWrites(completed, action) {
+  const original = fsPromises.rename;
+  let renames = 0;
+  fsPromises.rename = async (...args) => {
+    renames += 1;
+    if (renames > completed) {
+      throw Object.assign(new Error('simulated crash'), { code: 'SIMULATED_CRASH' });
+    }
+    return original(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    return await action();
+  } finally {
+    fsPromises.rename = original;
+    syncBuiltinESMExports();
+  }
+}
+
+const isSimulatedCrash = (error) => error?.code === 'SIMULATED_CRASH';
+
+async function readRoleFiles(metadataDir) {
+  const files = {};
+  for (const role of ['root', 'timestamp', 'snapshot', 'targets']) {
+    try {
+      files[role] = await readFile(join(metadataDir, `${role}.json`));
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      files[role] = null;
+    }
+  }
+  return files;
+}
+
+test('refresh resumes after a crash between role files of one update (C1)', async () => {
+  const fx = await fixture();
+  const v3 = rebuildChain(fx, {
+    mutateTargets(metadata) { metadata.signed.version = 3; },
+    mutateSnapshot(metadata) { metadata.signed.version = 3; },
+    mutateTimestamp(metadata) { metadata.signed.version = 3; },
+  });
+  const v3Routes = () => new Map([
+    [`${METADATA_URL}2.root.json`, null],
+    [`${METADATA_URL}timestamp.json`, v3.timestamp],
+    [`${METADATA_URL}3.snapshot.json`, v3.snapshot],
+    [`${METADATA_URL}3.targets.json`, v3.targets],
+  ]);
+
+  // completed = 1: timestamp.json v3 written, snapshot.json still v2.
+  // completed = 2: timestamp.json and snapshot.json v3, targets.json still v2.
+  for (const completed of [1, 2]) {
+    const metadataDir = join(fx.dir, `metadata-c1-${completed}`);
+    const sourceRoot = join(fx.dir, 'source-root.json');
+    await writeFile(sourceRoot, fx.root);
+    await initClient(metadataDir, sourceRoot);
+    await refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(metadataRoutes(fx), []),
+    });
+
+    await assert.rejects(crashAfterWrites(completed, () => refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(v3Routes(), []),
+    })), isSimulatedCrash);
+    const crashed = await readRoleFiles(metadataDir);
+    assert.deepEqual(crashed.timestamp, v3.timestamp, `crash point ${completed}`);
+    assert.deepEqual(crashed.snapshot, completed >= 2 ? v3.snapshot : fx.snapshot);
+    assert.deepEqual(crashed.targets, fx.targets);
+
+    const requests = [];
+    const resumed = await refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(v3Routes(), requests),
+    });
+    assert.equal(resumed.status, 'metadata-verified', `crash point ${completed}`);
+    assert.equal(resumed.resumedFromTrustedTimestamp, true);
+    assert.deepEqual(requests, [
+      `${METADATA_URL}2.root.json`,
+      `${METADATA_URL}timestamp.json`,
+      `${METADATA_URL}3.snapshot.json`,
+      `${METADATA_URL}3.targets.json`,
+    ]);
+    assert.deepEqual(await readRoleFiles(metadataDir), {
+      root: fx.root,
+      timestamp: v3.timestamp,
+      snapshot: v3.snapshot,
+      targets: v3.targets,
+    });
+
+    // Healed: the next refresh is an ordinary two-request no-update.
+    const quietRequests = [];
+    const quiet = await refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(v3Routes(), quietRequests),
+    });
+    assert.equal(quiet.status, 'no-update');
+    assert.equal(quiet.resumedFromTrustedTimestamp, undefined);
+    assert.equal(quietRequests.length, 2);
+  }
+});
+
+test('resume after a crash still fails closed on files the trusted timestamp does not pin', async () => {
+  const fx = await fixture();
+  const v3 = rebuildChain(fx, {
+    mutateTargets(metadata) { metadata.signed.version = 3; },
+    mutateSnapshot(metadata) { metadata.signed.version = 3; },
+    mutateTimestamp(metadata) { metadata.signed.version = 3; },
+  });
+  // Same version 3, validly signed, but not the snapshot that timestamp v3 pins.
+  const other = rebuildChain(fx, {
+    mutateTargets(metadata) { metadata.signed.version = 3; },
+    mutateSnapshot(metadata) {
+      metadata.signed.version = 3;
+      metadata.signed.expires = '2027-01-01T00:00:00Z';
+    },
+    mutateTimestamp(metadata) { metadata.signed.version = 3; },
+  });
+  assert.notDeepEqual(other.snapshot, v3.snapshot);
+  const routes = (snapshot) => new Map([
+    [`${METADATA_URL}2.root.json`, null],
+    [`${METADATA_URL}timestamp.json`, v3.timestamp],
+    [`${METADATA_URL}3.snapshot.json`, snapshot],
+    [`${METADATA_URL}3.targets.json`, v3.targets],
+  ]);
+
+  const metadataDir = join(fx.dir, 'metadata');
+  const sourceRoot = join(fx.dir, 'source-root.json');
+  await writeFile(sourceRoot, fx.root);
+  await initClient(metadataDir, sourceRoot);
+  await refreshClient({
+    metadataDir,
+    metadataUrl: METADATA_URL,
+    now: NOW,
+    fetchImpl: fakeFetch(metadataRoutes(fx), []),
+  });
+  await assert.rejects(crashAfterWrites(1, () => refreshClient({
+    metadataDir,
+    metadataUrl: METADATA_URL,
+    now: NOW,
+    fetchImpl: fakeFetch(routes(v3.snapshot), []),
+  })), isSimulatedCrash);
+  const crashed = await readRoleFiles(metadataDir);
+
+  await assert.rejects(
+    refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(routes(other.snapshot), []),
+    }),
+    (error) => error?.code === 'METADATA_LENGTH' || error?.code === 'METADATA_HASH',
+  );
+  assert.deepEqual(await readRoleFiles(metadataDir), crashed, 'a failed resume must not write');
+});
+
+test('a crash after root.json keeps the TUF 5.3.11 rotation reset (C2)', async () => {
+  const fx = await fixture();
+  const rotation = fx.corpus.cases.find(
+    (entry) => entry.name === 'accept-root-rotation-old-and-new-threshold',
+  );
+  assert.ok(rotation, 'rotation fixture missing');
+  const rotatedRoot = decode(rotation.roots_b64[0]);
+  const rotated = {
+    timestamp: decode(rotation.timestamp_b64),
+    snapshot: decode(rotation.snapshot_b64),
+    targets: decode(rotation.targets_b64),
+  };
+  // Fast-forward attack state: an old-key timestamp at version 1000 is trusted.
+  const fastForward = rebuildChain(fx, {
+    mutateTimestamp(metadata) { metadata.signed.version = 1000; },
+  });
+  const recoveryRoutes = () => new Map([
+    [`${METADATA_URL}2.root.json`, rotatedRoot],
+    [`${METADATA_URL}3.root.json`, null],
+    [`${METADATA_URL}timestamp.json`, rotated.timestamp],
+    [`${METADATA_URL}2.snapshot.json`, rotated.snapshot],
+    [`${METADATA_URL}2.targets.json`, rotated.targets],
+  ]);
+
+  async function fastForwardedClient(name) {
+    const metadataDir = join(fx.dir, name);
+    const sourceRoot = join(fx.dir, 'source-root.json');
+    await writeFile(sourceRoot, fx.root);
+    await initClient(metadataDir, sourceRoot);
+    const routes = metadataRoutes(fx);
+    routes.set(`${METADATA_URL}timestamp.json`, fastForward.timestamp);
+    await refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(routes, []),
+    });
+    assert.equal((await loadTrustedState(metadataDir)).trustedState.versions.timestamp, 1000);
+    return metadataDir;
+  }
+
+  // Control: the uninterrupted rotation resets the floor within one refresh.
+  const controlDir = await fastForwardedClient('metadata-c2-control');
+  const control = await refreshClient({
+    metadataDir: controlDir,
+    metadataUrl: METADATA_URL,
+    now: NOW,
+    fetchImpl: fakeFetch(recoveryRoutes(), []),
+  });
+  assert.equal(control.status, 'metadata-verified');
+  assert.equal(control.metadataRollbackStateReset, true);
+
+  // completed = 1: only root.json v2; completed = 2: plus new-key timestamp.json.
+  for (const completed of [1, 2]) {
+    const metadataDir = await fastForwardedClient(`metadata-c2-${completed}`);
+    await assert.rejects(crashAfterWrites(completed, () => refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(recoveryRoutes(), []),
+    })), isSimulatedCrash);
+    const crashed = await readRoleFiles(metadataDir);
+    assert.deepEqual(crashed.root, rotatedRoot, `crash point ${completed}`);
+    assert.deepEqual(
+      crashed.timestamp,
+      completed >= 2 ? rotated.timestamp : fastForward.timestamp,
+    );
+
+    const loaded = await loadTrustedState(metadataDir);
+    assert.deepEqual(loaded.rollbackStateReset, {
+      rotatedOut: completed >= 2 ? ['snapshot'] : ['timestamp', 'snapshot'],
+    });
+    assert.equal(loaded.trustedState.versions.timestamp, 0);
+    assert.equal(loaded.trustedState.versions.snapshot, 0);
+    assert.equal(loaded.trustedState.versions.targets, 2, 'targets floor is never reset');
+
+    const recovered = await refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(recoveryRoutes(), []),
+    });
+    assert.equal(recovered.status, 'metadata-verified', `crash point ${completed}`);
+    assert.deepEqual(await readRoleFiles(metadataDir), { root: rotatedRoot, ...rotated });
+    assert.equal((await loadTrustedState(metadataDir)).rollbackStateReset, null);
+  }
+});
+
+test('after a rotation reset, the old-key chain served again is still refused', async () => {
+  const fx = await fixture();
+  const rotation = fx.corpus.cases.find(
+    (entry) => entry.name === 'accept-root-rotation-old-and-new-threshold',
+  );
+  const rotatedRoot = decode(rotation.roots_b64[0]);
+  const metadataDir = join(fx.dir, 'metadata');
+  await writeTrustedState(metadataDir, {
+    root: rotatedRoot,
+    timestamp: fx.timestamp,
+    snapshot: fx.snapshot,
+    targets: fx.targets,
+  });
+  // The repository (or an attacker) serves the OLD-key chain again: it must not
+  // verify under the rotated root even though the local floors were reset.
+  const routes = metadataRoutes(fx);
+  routes.set(`${METADATA_URL}2.root.json`, null);
+  routes.set(`${METADATA_URL}3.root.json`, null);
+  await assert.rejects(
+    refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(routes, []),
+    }),
+    (error) => error?.code === 'SIGNATURE_THRESHOLD' && error?.details?.role === 'timestamp',
+  );
+});
+
+test('init refuses anything but a self-signed TUF root and writes nothing', async () => {
+  const fx = await fixture();
+  const unsignedRoot = parseTufMetadataBytes(fx.root);
+  unsignedRoot.signatures = [];
+  const tamperedRoot = parseTufMetadataBytes(fx.root);
+  tamperedRoot.signed.version = 7;
+  const cases = [
+    ['not-json', Buffer.from('this is not a TUF root\n', 'utf8')],
+    ['empty-object', Buffer.from('{}\n', 'utf8')],
+    ['targets-not-root', fx.targets],
+    ['unsigned-root', Buffer.from(`${JSON.stringify(unsignedRoot, null, 2)}\n`, 'utf8')],
+    ['tampered-root', Buffer.from(`${JSON.stringify(tamperedRoot, null, 2)}\n`, 'utf8')],
+  ];
+  const expectedCodes = {
+    'empty-object': 'INVALID_METADATA',
+    'targets-not-root': 'ROLE_MISMATCH',
+    'unsigned-root': 'SIGNATURE_THRESHOLD',
+    'tampered-root': 'SIGNATURE_THRESHOLD',
+  };
+
+  for (const [name, bytes] of cases) {
+    const sourceRoot = join(fx.dir, `${name}.json`);
+    await writeFile(sourceRoot, bytes);
+    const metadataDir = join(fx.dir, `metadata-${name}`);
+    await assert.rejects(initClient(metadataDir, sourceRoot), (error) => {
+      assert.equal(typeof error?.code, 'string', name);
+      if (expectedCodes[name]) assert.equal(error.code, expectedCodes[name], name);
+      return true;
+    });
+    await assert.rejects(
+      readFile(join(metadataDir, 'root.json')),
+      (error) => error?.code === 'ENOENT',
+      `${name}: root.json was written`,
+    );
+  }
+
+  // Same through the CLI: non-zero exit, error code on stderr, nothing written.
+  const sourceRoot = join(fx.dir, 'not-json.json');
+  const metadataDir = join(fx.dir, 'metadata-cli');
+  const cli = spawnSync(process.execPath, [CLI, 'init', sourceRoot, '--metadata-dir', metadataDir], {
+    encoding: 'utf8',
+  });
+  assert.equal(cli.status, 1);
+  assert.match(cli.stderr, /tuf-client-cli \[[A-Z_]+\]/);
+  await assert.rejects(
+    readFile(join(metadataDir, 'root.json')),
+    (error) => error?.code === 'ENOENT',
+  );
+
+  // Positive control: the genuine corpus root is accepted by the same path.
+  const goodDir = join(fx.dir, 'metadata-good');
+  const goodRoot = join(fx.dir, 'good-root.json');
+  await writeFile(goodRoot, fx.root);
+  const ok = spawnSync(process.execPath, [CLI, 'init', goodRoot, '--metadata-dir', goodDir], {
+    encoding: 'utf8',
+  });
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.deepEqual(await readFile(join(goodDir, 'root.json')), fx.root);
+});
+
+test('refresh refuses snapshot.json without timestamp.json and targets.json without snapshot.json', async () => {
+  const fx = await fixture();
+  const layouts = [
+    ['snapshot-without-timestamp', { root: fx.root, snapshot: fx.snapshot, targets: fx.targets }],
+    ['targets-without-snapshot', { root: fx.root, timestamp: fx.timestamp, targets: fx.targets }],
+  ];
+  for (const [name, files] of layouts) {
+    const metadataDir = join(fx.dir, name);
+    await writeTrustedState(metadataDir, files);
+    const requests = [];
+    await assert.rejects(
+      refreshClient({
+        metadataDir,
+        metadataUrl: METADATA_URL,
+        now: NOW,
+        fetchImpl: fakeFetch(metadataRoutes(fx), requests),
+      }),
+      (error) => error?.code === 'INCOMPLETE_LOCAL_STATE',
+      name,
+    );
+    assert.deepEqual(requests, [], `${name}: no request before the local-state check`);
+  }
+});
+
+test('fetchBounded enforces the byte ceiling on a stream without Content-Length', async () => {
+  const chunk = new Uint8Array(1024).fill(0x61);
+  const streamOf = (chunks) => {
+    let sent = 0;
+    let cancelled = false;
+    const body = new ReadableStream({
+      pull(controller) {
+        if (sent === chunks) {
+          controller.close();
+          return;
+        }
+        sent += 1;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    return { body, state: () => ({ sent, cancelled }) };
+  };
+
+  const oversized = streamOf(8);
+  const response = new Response(oversized.body, { status: 200 });
+  assert.equal(response.headers.get('content-length'), null);
+  await assert.rejects(
+    fetchBounded('https://repo.test/stream', {
+      maxBytes: 5000,
+      fetchImpl: async () => response,
+    }),
+    (error) => error?.code === 'DOWNLOAD_TOO_LARGE',
+  );
+  assert.ok(oversized.state().sent < 8, 'the stream was read past the ceiling');
+  assert.equal(oversized.state().cancelled, true);
+
+  // Positive control: the same stream at an exactly sufficient ceiling.
+  const exact = streamOf(8);
+  const bytes = await fetchBounded('https://repo.test/stream', {
+    maxBytes: 8 * 1024,
+    fetchImpl: async () => new Response(exact.body, { status: 200 }),
+  });
+  assert.equal(bytes.length, 8 * 1024);
+});
+
+test('fetchBounded refuses an HTTP redirect instead of following it', async () => {
+  const server = createServer((request, response) => {
+    if (request.url === '/metadata/timestamp.json') {
+      response.writeHead(302, { location: '/elsewhere/timestamp.json' });
+      response.end();
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'application/octet-stream' });
+    response.end('redirected-content');
+  });
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+  try {
+    const { port } = server.address();
+    const base = `http://127.0.0.1:${port}`;
+    // Positive control: the redirect target itself is reachable.
+    assert.equal(
+      (await fetchBounded(`${base}/elsewhere/timestamp.json`, { maxBytes: 1024 })).toString(),
+      'redirected-content',
+    );
+    await assert.rejects(
+      fetchBounded(`${base}/metadata/timestamp.json`, { maxBytes: 1024 }),
+      (error) => error instanceof TypeError,
+    );
+  } finally {
+    await new Promise((resolveClose) => server.close(resolveClose));
+  }
 });
