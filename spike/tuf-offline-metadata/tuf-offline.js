@@ -467,11 +467,34 @@ function normalizeCapabilities(value, limits) {
   return result.sort();
 }
 
-function verifyTargetDescriptor(target, descriptor, limits) {
-  if (!Buffer.isBuffer(target.bytes)) fail('INVALID_TARGET', 'target bytes must be a Buffer');
-  if (target.bytes.length > boundedLimit(limits, 'targetBytes')) {
+// Intrinsic TypedArray byteLength: an own `length`/`byteLength` property on the
+// caller's Buffer instance cannot misreport the size that the gate checks.
+const typedArrayByteLength = Object.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype),
+  'byteLength',
+).get;
+
+/**
+ * Read the caller's target bytes EXACTLY ONCE and return a private copy.
+ *
+ * Every later step (length, hash, return value) uses only this copy, so the
+ * bytes handed back as verified are the bytes that were hashed, even if
+ * `target.bytes` is an accessor or the caller mutates its buffer afterwards.
+ * The size gate runs before the copy, on the intrinsic length of the view.
+ */
+function privateTargetBytes(target, limits) {
+  const supplied = target.bytes;
+  if (!Buffer.isBuffer(supplied)) fail('INVALID_TARGET', 'target bytes must be a Buffer');
+  const byteLength = Reflect.apply(typedArrayByteLength, supplied, []);
+  if (byteLength > boundedLimit(limits, 'targetBytes')) {
     fail('TARGET_TOO_LARGE', 'target exceeds the configured byte limit');
   }
+  const copy = Buffer.alloc(byteLength);
+  copy.set(supplied);
+  return copy;
+}
+
+function verifyTargetDescriptor(targetBytes, descriptor) {
   if (!isPlainObject(descriptor)
       || !Number.isSafeInteger(descriptor.length)
       || descriptor.length < 0
@@ -479,13 +502,13 @@ function verifyTargetDescriptor(target, descriptor, limits) {
       || !isPlainObject(descriptor.custom)) {
     fail('INVALID_TARGET_DESCRIPTOR', 'target descriptor is invalid');
   }
-  if (target.bytes.length !== descriptor.length) {
+  if (targetBytes.length !== descriptor.length) {
     fail('TARGET_LENGTH', 'target length mismatch', {
-      actual: target.bytes.length,
+      actual: targetBytes.length,
       expected: descriptor.length,
     });
   }
-  assertDigest(sha256(target.bytes), descriptor.hashes.sha256, 'TARGET_HASH', 'target');
+  assertDigest(sha256(targetBytes), descriptor.hashes.sha256, 'TARGET_HASH', 'target');
 }
 
 function assertTimestampMetaMap(timestamp) {
@@ -761,13 +784,16 @@ export function verifyOfflineBundle({
 
   const descriptor = verifiedTargets.signed.targets[targetPath];
   if (!descriptor) fail('TARGET_NOT_FOUND', `target is not authorized: ${targetPath}`);
-  if (!isPlainObject(bundle.target) || bundle.target.path !== targetPath) {
+  const suppliedTarget = bundle.target;
+  if (!isPlainObject(suppliedTarget) || suppliedTarget.path !== targetPath) {
     fail('WRONG_TARGET', 'offline bundle target path does not match the requested target');
   }
   if (trustedState.app?.targetPath && trustedState.app.targetPath !== targetPath) {
     fail('TARGET_PATH_MISMATCH', 'target path does not match trusted application state');
   }
-  verifyTargetDescriptor(bundle.target, descriptor, limits);
+  // Single read + private copy: the bytes checked here are the bytes returned.
+  const targetBytes = privateTargetBytes(suppliedTarget, limits);
+  verifyTargetDescriptor(targetBytes, descriptor);
 
   const appId = descriptor.custom.app_id;
   const appVersion = descriptor.custom.app_version;
@@ -840,7 +866,7 @@ export function verifyOfflineBundle({
 
   return {
     status: appVersion === previousAppVersion ? 'metadata-updated' : 'update-verified',
-    target: bundle.target.bytes,
+    target: targetBytes,
     nextState,
     persistenceRequired: true,
   };
