@@ -5,6 +5,12 @@ import {
   verify as verifySignature,
 } from 'node:crypto';
 
+// Deliberate import cycle: strict-json.js imports this module for its public byte
+// ingress, and the core re-parses any raw metadata it is handed (see
+// bindRawMetadata). Neither module touches the other's bindings during module
+// evaluation, only at call time, so either may be the entry point.
+import { parseTufMetadataBytes } from './strict-json.js';
+
 export const POUF = Object.freeze({
   specVersion: '1.0.35',
   signatureScheme: 'ed25519',
@@ -206,11 +212,33 @@ function assertRoleMetadata(metadata, expectedRole, fixedStartTime, { checkExpir
   if (checkExpiry) assertNotExpired(metadata.signed.expires, fixedStartTime, expectedRole);
 }
 
-function assertMetadataLimit(metadata, limits, roleName) {
+function assertMetadataLimit(metadata, limits, roleName, rawBytes = undefined) {
   if (!isPlainObject(metadata) || !Array.isArray(metadata.signatures) || !isPlainObject(metadata.signed)) {
     fail('INVALID_METADATA', `${roleName} metadata has an invalid envelope`);
   }
-  const bytes = metadataBytes(metadata, limits);
+
+  let bytes;
+  if (rawBytes === undefined) {
+    // Object-mode remains for deterministic research fixtures. A real ingress must
+    // provide the exact downloaded bytes so descriptor length/hash checks bind the
+    // file that was actually received, not a re-serialization.
+    bytes = metadataBytes(metadata, limits);
+  } else {
+    if (!(Buffer.isBuffer(rawBytes) || rawBytes instanceof Uint8Array)) {
+      fail('INVALID_RAW_METADATA', `${roleName} raw metadata must be Buffer or Uint8Array`);
+    }
+    // Check the view length before copying so an oversized input cannot force
+    // a full-size allocation that the limit exists to prevent.
+    if (rawBytes.byteLength > boundedLimit(limits, 'metadataBytes')) {
+      fail('METADATA_TOO_LARGE', `${roleName} metadata exceeds the byte limit`, {
+        role: roleName,
+        actual: rawBytes.byteLength,
+        limit: boundedLimit(limits, 'metadataBytes'),
+      });
+    }
+    bytes = Buffer.from(rawBytes);
+  }
+
   if (bytes.length > boundedLimit(limits, 'metadataBytes')) {
     fail('METADATA_TOO_LARGE', `${roleName} metadata exceeds the byte limit`, {
       role: roleName,
@@ -384,7 +412,7 @@ function assertDigest(actual, expected, code, label) {
   }
 }
 
-function verifyMetadataDescriptor(metadata, descriptor, label, limits) {
+function verifyMetadataDescriptor(metadata, descriptor, label, limits, rawBytes = undefined) {
   if (!isPlainObject(descriptor)
       || !Number.isSafeInteger(descriptor.length)
       || descriptor.length < 0
@@ -394,7 +422,10 @@ function verifyMetadataDescriptor(metadata, descriptor, label, limits) {
     fail('INVALID_META_DESCRIPTOR', `${label} descriptor is invalid`);
   }
 
-  const bytes = assertMetadataLimit(metadata, limits, label);
+  // TUF metadata-file descriptors bind the file bytes, not a canonicalized
+  // reconstruction of the envelope. Signature verification remains over the
+  // canonical form of metadata.signed.
+  const bytes = assertMetadataLimit(metadata, limits, label, rawBytes);
   if (bytes.length !== descriptor.length) {
     fail('METADATA_LENGTH', `${label} length mismatch`, {
       actual: bytes.length,
@@ -436,11 +467,34 @@ function normalizeCapabilities(value, limits) {
   return result.sort();
 }
 
-function verifyTargetDescriptor(target, descriptor, limits) {
-  if (!Buffer.isBuffer(target.bytes)) fail('INVALID_TARGET', 'target bytes must be a Buffer');
-  if (target.bytes.length > boundedLimit(limits, 'targetBytes')) {
+// Intrinsic TypedArray byteLength: an own `length`/`byteLength` property on the
+// caller's Buffer instance cannot misreport the size that the gate checks.
+const typedArrayByteLength = Object.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype),
+  'byteLength',
+).get;
+
+/**
+ * Read the caller's target bytes EXACTLY ONCE and return a private copy.
+ *
+ * Every later step (length, hash, return value) uses only this copy, so the
+ * bytes handed back as verified are the bytes that were hashed, even if
+ * `target.bytes` is an accessor or the caller mutates its buffer afterwards.
+ * The size gate runs before the copy, on the intrinsic length of the view.
+ */
+function privateTargetBytes(target, limits) {
+  const supplied = target.bytes;
+  if (!Buffer.isBuffer(supplied)) fail('INVALID_TARGET', 'target bytes must be a Buffer');
+  const byteLength = Reflect.apply(typedArrayByteLength, supplied, []);
+  if (byteLength > boundedLimit(limits, 'targetBytes')) {
     fail('TARGET_TOO_LARGE', 'target exceeds the configured byte limit');
   }
+  const copy = Buffer.alloc(byteLength);
+  copy.set(supplied);
+  return copy;
+}
+
+function verifyTargetDescriptor(targetBytes, descriptor) {
   if (!isPlainObject(descriptor)
       || !Number.isSafeInteger(descriptor.length)
       || descriptor.length < 0
@@ -448,13 +502,24 @@ function verifyTargetDescriptor(target, descriptor, limits) {
       || !isPlainObject(descriptor.custom)) {
     fail('INVALID_TARGET_DESCRIPTOR', 'target descriptor is invalid');
   }
-  if (target.bytes.length !== descriptor.length) {
+  if (targetBytes.length !== descriptor.length) {
     fail('TARGET_LENGTH', 'target length mismatch', {
-      actual: target.bytes.length,
+      actual: targetBytes.length,
       expected: descriptor.length,
     });
   }
-  assertDigest(sha256(target.bytes), descriptor.hashes.sha256, 'TARGET_HASH', 'target');
+  assertDigest(sha256(targetBytes), descriptor.hashes.sha256, 'TARGET_HASH', 'target');
+}
+
+function assertTimestampMetaMap(timestamp) {
+  if (!isPlainObject(timestamp.signed.meta)) {
+    fail('INVALID_TIMESTAMP', 'timestamp meta must be an object');
+  }
+  const metaPaths = Object.keys(timestamp.signed.meta);
+  if (metaPaths.length !== 1 || metaPaths[0] !== 'snapshot.json') {
+    fail('INVALID_TIMESTAMP_META', 'timestamp meta must describe exactly snapshot.json');
+  }
+  return timestamp.signed.meta;
 }
 
 function assertMetaMap(snapshot, limits) {
@@ -463,7 +528,94 @@ function assertMetaMap(snapshot, limits) {
   if (entries.length === 0 || entries.length > boundedLimit(limits, 'targetCount')) {
     fail('INVALID_SNAPSHOT', 'snapshot metadata count is outside the accepted envelope');
   }
+
+  // Delegated targets are deliberately unsupported by the current POUF. Reject
+  // extra metadata names instead of silently ignoring state that would acquire
+  // security meaning once delegation traversal is implemented.
+  if (entries.length !== 1 || entries[0][0] !== 'targets.json') {
+    fail('UNSUPPORTED_SNAPSHOT_META', 'top-level-only POUF accepts exactly targets.json');
+  }
   return snapshot.signed.meta;
+}
+
+const RAW_BOUND_ROLES = Object.freeze(['timestamp', 'snapshot', 'targets']);
+
+function bindRawRole(supplied, rawBytes, label, limits) {
+  if (!(Buffer.isBuffer(rawBytes) || rawBytes instanceof Uint8Array)) {
+    fail('INVALID_RAW_METADATA', `${label} raw metadata must be Buffer or Uint8Array`);
+  }
+  const limit = boundedLimit(limits, 'metadataBytes');
+  if (rawBytes.byteLength > limit) {
+    fail('METADATA_TOO_LARGE', `${label} metadata exceeds the byte limit`, {
+      role: label,
+      actual: rawBytes.byteLength,
+      limit,
+    });
+  }
+  // One private copy is both parsed and later hashed, so the descriptor check
+  // and every semantic check see the same bytes even if the caller's buffer is
+  // shared or mutated afterwards.
+  const bytes = Buffer.from(rawBytes);
+  const parsed = parseTufMetadataBytes(bytes, limits, label);
+  if (supplied !== undefined
+      && canonicalJson(supplied, label, limits) !== canonicalJson(parsed, label, limits)) {
+    fail('RAW_METADATA_MISMATCH', `${label} object does not match its raw metadata bytes`);
+  }
+  return { parsed, bytes };
+}
+
+/**
+ * Couple every raw metadata file to the object that is actually verified.
+ *
+ * TUF 5.5.2/5.6.2 bind the snapshot/targets FILE via its hashes, and 5.5.3ff then
+ * verify signatures, versions and expiry on "the new ... metadata file". Those
+ * must be the same file: when raw bytes are supplied, the verified object is the
+ * strict parse of exactly those bytes. A separately supplied object is accepted
+ * only if it is canonically identical, otherwise it could satisfy the signature
+ * checks while different bytes satisfy the hash (mix-and-match).
+ */
+function bindRawMetadata(bundle, limits) {
+  const raw = bundle.rawMetadata;
+  if (raw === undefined) return bundle;
+  if (!isPlainObject(raw)) {
+    fail('INVALID_RAW_METADATA', 'bundle.rawMetadata must be an object when provided');
+  }
+
+  const bound = { ...bundle, rawMetadata: {} };
+  if (raw.roots !== undefined) {
+    if (!Array.isArray(raw.roots)) {
+      fail('INVALID_RAW_METADATA', 'raw root metadata must be an array');
+    }
+    if (raw.roots.length > boundedLimit(limits, 'rootUpdates')) {
+      fail('TOO_MANY_ROOT_UPDATES', 'root update chain exceeds the limit');
+    }
+    if (bundle.roots !== undefined
+        && (!Array.isArray(bundle.roots) || bundle.roots.length !== raw.roots.length)) {
+      fail('INVALID_RAW_METADATA', 'raw root metadata must align one-to-one with root candidates');
+    }
+    const roots = [];
+    const rootBytes = [];
+    for (let index = 0; index < raw.roots.length; index += 1) {
+      const { parsed, bytes } = bindRawRole(
+        bundle.roots?.[index],
+        raw.roots[index],
+        `root[${index}]`,
+        limits,
+      );
+      roots.push(parsed);
+      rootBytes.push(bytes);
+    }
+    bound.roots = roots;
+    bound.rawMetadata.roots = rootBytes;
+  }
+
+  for (const role of RAW_BOUND_ROLES) {
+    if (raw[role] === undefined) continue;
+    const { parsed, bytes } = bindRawRole(bundle[role], raw[role], role, limits);
+    bound[role] = parsed;
+    bound.rawMetadata[role] = bytes;
+  }
+  return bound;
 }
 
 function currentTrustedVersion(trustedState, roleName) {
@@ -489,21 +641,29 @@ function trustedSnapshotTargetVersion(trustedState) {
  * persistence is deliberately returned as a proposed next state and is not claimed
  * by this spike.
  */
-export function verifyOfflineBundle({
+export function verifyTopLevelMetadata({
   trustedState,
-  bundle,
-  targetPath,
+  bundle: inputBundle,
   now = new Date(),
-  approveCapabilityExpansion = () => false,
   limits = DEFAULT_LIMITS,
 }) {
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
     fail('INVALID_TIME', 'now must be a valid Date');
   }
-  if (!isPlainObject(trustedState) || !isPlainObject(bundle)) {
+  if (!isPlainObject(trustedState) || !isPlainObject(inputBundle)) {
     fail('INVALID_INPUT', 'trusted state and bundle must be objects');
   }
-  validateTargetPath(targetPath, limits);
+
+  const bundle = bindRawMetadata(inputBundle, limits);
+  const rawMetadata = bundle.rawMetadata;
+  if (rawMetadata?.roots !== undefined) {
+    if (!Array.isArray(rawMetadata.roots) || rawMetadata.roots.length !== (bundle.roots ?? []).length) {
+      fail('INVALID_RAW_METADATA', 'raw root metadata must align one-to-one with root candidates');
+    }
+    for (let index = 0; index < rawMetadata.roots.length; index += 1) {
+      assertMetadataLimit(bundle.roots[index], limits, 'root', rawMetadata.roots[index]);
+    }
+  }
 
   const rootUpdate = updateRootChain(trustedState.root, bundle.roots ?? [], now, limits);
   const trustedRoot = rootUpdate.root;
@@ -517,7 +677,7 @@ export function verifyOfflineBundle({
     : currentTrustedVersion(trustedState, 'snapshot');
   const trustedTargetsVersion = currentTrustedVersion(trustedState, 'targets');
 
-  assertMetadataLimit(bundle.timestamp, limits, 'timestamp');
+  assertMetadataLimit(bundle.timestamp, limits, 'timestamp', rawMetadata?.timestamp);
   assertRoleMetadata(bundle.timestamp, 'timestamp', now, { checkExpiry: false });
   verifyRoleSignatures(bundle.timestamp, trustedRoot.signed, 'timestamp', limits);
 
@@ -531,13 +691,13 @@ export function verifyOfflineBundle({
 
   assertNotExpired(bundle.timestamp.signed.expires, now, 'timestamp');
 
-  const snapshotDescriptor = bundle.timestamp.signed.meta?.['snapshot.json'];
-  if (!snapshotDescriptor) fail('MISSING_SNAPSHOT', 'timestamp does not describe snapshot.json');
+  const timestampMeta = assertTimestampMetaMap(bundle.timestamp);
+  const snapshotDescriptor = timestampMeta['snapshot.json'];
   if (snapshotDescriptor.version < trustedSnapshotVersion) {
     fail('SNAPSHOT_ROLLBACK', 'timestamp points to an older snapshot version');
   }
 
-  verifyMetadataDescriptor(bundle.snapshot, snapshotDescriptor, 'snapshot', limits);
+  verifyMetadataDescriptor(bundle.snapshot, snapshotDescriptor, 'snapshot', limits, rawMetadata?.snapshot);
   assertRoleMetadata(bundle.snapshot, 'snapshot', now, { checkExpiry: false });
   verifyRoleSignatures(bundle.snapshot, trustedRoot.signed, 'snapshot', limits);
   if (bundle.snapshot.signed.version !== snapshotDescriptor.version) {
@@ -548,7 +708,6 @@ export function verifyOfflineBundle({
 
   const snapshotMeta = assertMetaMap(bundle.snapshot, limits);
   const targetsDescriptor = snapshotMeta['targets.json'];
-  if (!targetsDescriptor) fail('MISSING_TARGETS', 'snapshot does not describe targets.json');
 
   const oldTargetsVersion = metadataRollbackStateReset
     ? trustedTargetsVersion
@@ -557,7 +716,7 @@ export function verifyOfflineBundle({
     fail('TARGETS_ROLLBACK', 'snapshot points to an older targets version');
   }
 
-  verifyMetadataDescriptor(bundle.targets, targetsDescriptor, 'targets', limits);
+  verifyMetadataDescriptor(bundle.targets, targetsDescriptor, 'targets', limits, rawMetadata?.targets);
   assertRoleMetadata(bundle.targets, 'targets', now, { checkExpiry: false });
   verifyRoleSignatures(bundle.targets, trustedRoot.signed, 'targets', limits);
   if (bundle.targets.signed.version !== targetsDescriptor.version) {
@@ -575,15 +734,66 @@ export function verifyOfflineBundle({
   }
   for (const entryPath of targetEntries) validateTargetPath(entryPath, limits);
 
-  const descriptor = bundle.targets.signed.targets[targetPath];
+  return {
+    status: 'metadata-verified',
+    trustedRoot,
+    timestampVersion,
+    snapshotVersion: bundle.snapshot.signed.version,
+    targetsVersion: bundle.targets.signed.version,
+    snapshotMeta,
+    targets: bundle.targets,
+    metadataRollbackStateReset,
+  };
+}
+
+/**
+ * Verify a self-contained offline Browser update bundle.
+ *
+ * Generic top-level TUF verification is performed by verifyTopLevelMetadata().
+ * Browser-specific application identity, target and capability policy is layered
+ * on only after the generic metadata chain is accepted.
+ */
+export function verifyOfflineBundle({
+  trustedState,
+  bundle,
+  targetPath,
+  now = new Date(),
+  approveCapabilityExpansion = () => false,
+  limits = DEFAULT_LIMITS,
+}) {
+  validateTargetPath(targetPath, limits);
+
+  const metadataResult = verifyTopLevelMetadata({
+    trustedState,
+    bundle,
+    now,
+    limits,
+  });
+  if (metadataResult.status === 'no-update') return metadataResult;
+
+  // Use the metadata the core actually verified (raw-bound when raw bytes were
+  // supplied), never the caller's independently supplied objects.
+  const {
+    trustedRoot,
+    timestampVersion,
+    snapshotVersion,
+    targetsVersion,
+    snapshotMeta,
+    targets: verifiedTargets,
+  } = metadataResult;
+
+  const descriptor = verifiedTargets.signed.targets[targetPath];
   if (!descriptor) fail('TARGET_NOT_FOUND', `target is not authorized: ${targetPath}`);
-  if (!isPlainObject(bundle.target) || bundle.target.path !== targetPath) {
+  const suppliedTarget = bundle.target;
+  if (!isPlainObject(suppliedTarget) || suppliedTarget.path !== targetPath) {
     fail('WRONG_TARGET', 'offline bundle target path does not match the requested target');
   }
   if (trustedState.app?.targetPath && trustedState.app.targetPath !== targetPath) {
     fail('TARGET_PATH_MISMATCH', 'target path does not match trusted application state');
   }
-  verifyTargetDescriptor(bundle.target, descriptor, limits);
+  // Single read + private copy: the bytes checked here are the bytes returned.
+  const targetBytes = privateTargetBytes(suppliedTarget, limits);
+  verifyTargetDescriptor(targetBytes, descriptor);
 
   const appId = descriptor.custom.app_id;
   const appVersion = descriptor.custom.app_version;
@@ -632,8 +842,8 @@ export function verifyOfflineBundle({
     root: trustedRoot,
     versions: {
       timestamp: timestampVersion,
-      snapshot: bundle.snapshot.signed.version,
-      targets: bundle.targets.signed.version,
+      snapshot: snapshotVersion,
+      targets: targetsVersion,
     },
     snapshotMeta,
     app: {
@@ -647,8 +857,8 @@ export function verifyOfflineBundle({
       verifiedAt: now.toISOString(),
       rootVersion: trustedRoot.signed.version,
       timestampVersion,
-      snapshotVersion: bundle.snapshot.signed.version,
-      targetsVersion: bundle.targets.signed.version,
+      snapshotVersion,
+      targetsVersion,
       targetPath,
       targetDigest: digest,
     },
@@ -656,7 +866,7 @@ export function verifyOfflineBundle({
 
   return {
     status: appVersion === previousAppVersion ? 'metadata-updated' : 'update-verified',
-    target: bundle.target.bytes,
+    target: targetBytes,
     nextState,
     persistenceRequired: true,
   };
