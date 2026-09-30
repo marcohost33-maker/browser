@@ -574,12 +574,15 @@ test('refresh resumes after a crash between role files of one update (C1)', asyn
     assert.deepEqual(crashed.targets, fx.targets);
 
     const requests = [];
-    const resumed = await refreshClient({
-      metadataDir,
-      metadataUrl: METADATA_URL,
-      now: NOW,
-      fetchImpl: fakeFetch(v3Routes(), requests),
-    });
+    let resumed;
+    await assert.doesNotReject(async () => {
+      resumed = await refreshClient({
+        metadataDir,
+        metadataUrl: METADATA_URL,
+        now: NOW,
+        fetchImpl: fakeFetch(v3Routes(), requests),
+      });
+    }, `crash point ${completed}: refresh must resume, not wait for a newer timestamp`);
     assert.equal(resumed.status, 'metadata-verified', `crash point ${completed}`);
     assert.equal(resumed.resumedFromTrustedTimestamp, true);
     assert.deepEqual(requests, [
@@ -739,12 +742,15 @@ test('a crash after root.json keeps the TUF 5.3.11 rotation reset (C2)', async (
     assert.equal(loaded.trustedState.versions.snapshot, 0);
     assert.equal(loaded.trustedState.versions.targets, 2, 'targets floor is never reset');
 
-    const recovered = await refreshClient({
-      metadataDir,
-      metadataUrl: METADATA_URL,
-      now: NOW,
-      fetchImpl: fakeFetch(recoveryRoutes(), []),
-    });
+    let recovered;
+    await assert.doesNotReject(async () => {
+      recovered = await refreshClient({
+        metadataDir,
+        metadataUrl: METADATA_URL,
+        now: NOW,
+        fetchImpl: fakeFetch(recoveryRoutes(), []),
+      });
+    }, `crash point ${completed}: the rotation reset must survive the crash`);
     assert.equal(recovered.status, 'metadata-verified', `crash point ${completed}`);
     assert.deepEqual(await readRoleFiles(metadataDir), { root: rotatedRoot, ...rotated });
     assert.equal((await loadTrustedState(metadataDir)).rollbackStateReset, null);
