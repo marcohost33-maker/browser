@@ -1,0 +1,72 @@
+# activation-store-ci — cross-platform evidence for the ADR-007a section 6 activation
+# store spike (spike/activation-store/, issue #24).
+#
+# The Linux gate (security-ci `npm test`) already runs the model matrix, the negative
+# controls and the real-filesystem process crashes on ext4. This workflow repeats the
+# store tests and the real-filesystem crash matrix on Linux (ext4), Windows (NTFS, no
+# directory fsync, no O_NOFOLLOW, MoveFileExW rename) and macOS (APFS, F_FULLFSYNC),
+# records what each platform's adapter actually offers (platform probe) and measures
+# p50/p95 latency and peak memory by package size (ADR-007a section 9); the benchmark
+# report is kept as an artifact. It needs no npm dependencies: the store and its
+# harness use the Node.js standard library only.
+#
+# ADVISORY (not a required check) while #24 is an owner-gated spike: both triggers are
+# path-filtered to the spike tree, so this posts no status on unrelated PRs and must
+# NOT be added to branch protection as required (that would phantom-block docs-only
+# PRs). A real power-loss run is out of reach for hosted runners and stays an open
+# gate in spike/activation-store/README.md.
+name: activation-store-ci
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "spike/activation-store/**"
+      - "tests/activation/**"
+      - ".github/workflows/activation-store-ci.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "spike/activation-store/**"
+      - "tests/activation/**"
+      - ".github/workflows/activation-store-ci.yml"
+
+permissions: {}
+
+concurrency:
+  group: activation-store-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-platform:
+    name: activation store (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: "22.23.1"
+      - name: record what this platform's filesystem adapter offers
+        run: node spike/activation-store/harness/platform-probe.mjs
+      - name: store, model and crash-matrix tests
+        run: node --test "tests/activation/*.test.js"
+      - name: real-filesystem process crashes for every scenario
+        run: node spike/activation-store/crash-matrix.mjs --real-fs-only
+      - name: latency and peak memory by package size (ADR-007a section 9)
+        run: node spike/activation-store/bench.mjs --ci --json activation-bench.json
+      - name: keep the benchmark report
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: activation-bench-${{ matrix.os }}
+          path: activation-bench.json
+          if-no-files-found: error
+          retention-days: 90

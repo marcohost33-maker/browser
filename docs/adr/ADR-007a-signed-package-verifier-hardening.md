@@ -163,3 +163,28 @@ Required evidence:
 Hard vetoes are any accepted malicious package, verifier crash/hang/OOM, parser
 verdict disagreement on the accepted set, unauthorized namespace/key, rollback,
 freeze bypass, capability escalation or incomplete recovery.
+
+## Evidence status — 2026-09-29 (non-normative)
+
+Section 6 is prototyped, format-neutral, in `spike/activation-store/`. The spike stores
+payloads as immutable content-addressed objects, so package paths never reach the
+filesystem; it publishes every state through one atomic commit record, binds last-good
+retention to that record, re-establishes every barrier a commit relies on inside the
+commit itself, and recovers fail-closed. Its crash matrix reports 58,078/58,078
+consistent crash cases across process-crash, posix-strict and ordered-prefix
+persistence models in three platform variants (POSIX directory barrier, NTFS journal
+hypothesis, no barrier) with zero durability violations; all four negative controls
+are detected and 19/19 control mutations are killed. Process crashes on the real
+filesystem run on Linux, Windows and macOS in CI, as does the section 9 benchmark
+(p50/p95 latency and peak memory by package size); its per-platform reports are kept
+as CI artifacts and the spike README records the measured numbers. The measurement
+found two size-proportional costs in the serving path and both are fixed: a whole-
+object allocation per read (now a streaming primitive that verifies through one
+handle before the first byte) and a full record re-validation per read (now a
+serving-only cache of validated, content-addressed records).
+
+This does not satisfy section 6 for a product path. Still open: wiring a verified
+container into the store, power-loss evidence on Windows and macOS (the NTFS
+journal-barrier hypothesis behind the post-rename file sync is modelled, not
+measured), a real power-loss drill, measurements on target hardware rather than
+hosted runners, and independent review. Sections 1 to 5 and 7 remain unimplemented.
