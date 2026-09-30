@@ -423,6 +423,39 @@ export function updateRootChain(trustedRoot, candidates, fixedStartTime, limits 
   return { root: current, timestampKeysRotated, snapshotKeysRotated };
 }
 
+/**
+ * Bootstrap check for a trusted root (TUF 1.0.35 section 5.2): a well-formed
+ * root of this POUF, signed by a threshold of its OWN root keys. Expiry is not
+ * checked: per 5.2 "the expiration of the trusted root metadata file does not
+ * matter, because we will attempt to update it in the next step".
+ */
+export function verifyBootstrapRoot(root, limits = DEFAULT_LIMITS) {
+  assertMetadataLimit(root, limits, 'root');
+  assertRoleMetadata(root, 'root', undefined, { checkExpiry: false });
+  assertRootShape(root.signed, limits);
+  verifyRoleSignatures(root, root.signed, 'root', limits);
+  return root;
+}
+
+/**
+ * Check a RETAINED (already persisted) timestamp/snapshot against the trusted
+ * root: envelope, role type, spec version and a signature threshold of that
+ * role's keys in `trustedRoot`. Used to decide whether the file may still act as
+ * a rollback floor (TUF 5.3.11). Expiry is not checked unless `now` is given: an
+ * expired trusted file remains a valid rollback floor.
+ */
+export function verifyRetainedRoleMetadata(
+  metadata,
+  trustedRoot,
+  roleName,
+  limits = DEFAULT_LIMITS,
+  { now } = {},
+) {
+  assertRoleMetadata(metadata, roleName, now, { checkExpiry: now !== undefined });
+  verifyRoleSignatures(metadata, trustedRoot.signed, roleName, limits);
+  return metadata;
+}
+
 function assertDigest(actual, expected, code, label) {
   if (typeof expected !== 'string' || !HEX_64.test(expected)) {
     fail('INVALID_HASH', `${label} has an invalid SHA-256 digest`);
@@ -457,7 +490,7 @@ function verifyMetadataDescriptor(metadata, descriptor, label, limits, rawBytes 
   assertDigest(sha256(bytes), descriptor.hashes.sha256, 'METADATA_HASH', label);
 }
 
-function validateTargetPath(targetPath, limits) {
+export function validateTargetPath(targetPath, limits = DEFAULT_LIMITS) {
   assertStringWellFormed(targetPath, 'target path');
   const components = targetPath.split('/');
   if (targetPath.length === 0
@@ -490,38 +523,35 @@ function normalizeCapabilities(value, limits) {
 }
 
 // Intrinsic TypedArray byteLength: an own `length`/`byteLength` property on the
-// caller's Buffer instance cannot misreport the size that the gate checks.
+// caller's view cannot misreport the size that the gate checks.
 const typedArrayByteLength = Object.getOwnPropertyDescriptor(
   Object.getPrototypeOf(Uint8Array.prototype),
   'byteLength',
 ).get;
 
 /**
- * Read the caller's target bytes EXACTLY ONCE and return a private copy.
+ * Verify target bytes against a signed descriptor and return a PRIVATE copy.
  *
- * Every later step (length, hash, return value) uses only this copy, so the
- * bytes handed back as verified are the bytes that were hashed, even if
- * `target.bytes` is an accessor or the caller mutates its buffer afterwards.
- * The size gate runs before the copy, on the intrinsic length of the view.
+ * The size gate runs before the copy, on the intrinsic length of the view;
+ * length, hash and the return value then use only the copy. Callers must use
+ * the returned buffer: it is exactly the bytes that were hashed, even if the
+ * caller's buffer is shared or mutated afterwards.
  */
-function privateTargetBytes(target, limits) {
-  const supplied = target.bytes;
-  if (!Buffer.isBuffer(supplied)) fail('INVALID_TARGET', 'target bytes must be a Buffer');
-  const byteLength = Reflect.apply(typedArrayByteLength, supplied, []);
+export function verifyTargetBytes(bytes, descriptor, limits = DEFAULT_LIMITS) {
+  if (!(Buffer.isBuffer(bytes) || bytes instanceof Uint8Array)) {
+    fail('INVALID_TARGET', 'target bytes must be Buffer or Uint8Array');
+  }
+  const byteLength = Reflect.apply(typedArrayByteLength, bytes, []);
   if (byteLength > boundedLimit(limits, 'targetBytes')) {
     fail('TARGET_TOO_LARGE', 'target exceeds the configured byte limit');
   }
-  const copy = Buffer.alloc(byteLength);
-  copy.set(supplied);
-  return copy;
-}
-
-function verifyTargetDescriptor(targetBytes, descriptor) {
+  const targetBytes = Buffer.alloc(byteLength);
+  targetBytes.set(bytes);
   if (!isPlainObject(descriptor)
       || !Number.isSafeInteger(descriptor.length)
       || descriptor.length < 0
       || !isPlainObject(descriptor.hashes)
-      || !isPlainObject(descriptor.custom)) {
+      || typeof descriptor.hashes.sha256 !== 'string') {
     fail('INVALID_TARGET_DESCRIPTOR', 'target descriptor is invalid');
   }
   if (targetBytes.length !== descriptor.length) {
@@ -531,6 +561,19 @@ function verifyTargetDescriptor(targetBytes, descriptor) {
     });
   }
   assertDigest(sha256(targetBytes), descriptor.hashes.sha256, 'TARGET_HASH', 'target');
+  return targetBytes;
+}
+
+/**
+ * Browser policy wrapper: reads `target.bytes` EXACTLY ONCE (an accessor cannot
+ * serve different bytes to the hash and to the caller) and returns the private,
+ * verified copy.
+ */
+function verifyTargetDescriptor(target, descriptor, limits) {
+  if (!isPlainObject(descriptor?.custom)) {
+    fail('INVALID_TARGET_DESCRIPTOR', 'Browser target descriptor requires custom policy');
+  }
+  return verifyTargetBytes(target.bytes, descriptor, limits);
 }
 
 function assertTimestampMetaMap(timestamp) {
@@ -821,8 +864,7 @@ export function verifyOfflineBundle({
     fail('TARGET_PATH_MISMATCH', 'target path does not match trusted application state');
   }
   // Single read + private copy: the bytes checked here are the bytes returned.
-  const targetBytes = privateTargetBytes(suppliedTarget, limits);
-  verifyTargetDescriptor(targetBytes, descriptor);
+  const targetBytes = verifyTargetDescriptor(suppliedTarget, descriptor, limits);
 
   const appId = descriptor.custom.app_id;
   const appVersion = descriptor.custom.app_version;
