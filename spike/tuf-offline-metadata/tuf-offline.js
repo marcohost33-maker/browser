@@ -781,8 +781,14 @@ export function verifyTopLevelMetadata({
   const snapshotMeta = assertMetaMap(bundle.snapshot, limits);
   const targetsDescriptor = snapshotMeta['targets.json'];
 
+  // TUF 5.3.11: a timestamp/snapshot key rotation discards the trusted
+  // timestamp AND snapshot; the targets rollback floor is the version that
+  // trusted snapshot recorded (5.5.5), so it goes with it. Keeping the old
+  // targets version here would let a compromised, fast-forwarded targets
+  // version block the recovery chain forever (#57, python-tuf
+  // test_updater_key_rotations).
   const oldTargetsVersion = metadataRollbackStateReset
-    ? trustedTargetsVersion
+    ? 0
     : Math.max(trustedTargetsVersion, trustedSnapshotTargetVersion(trustedState));
   if (targetsDescriptor.version < oldTargetsVersion) {
     fail('TARGETS_ROLLBACK', 'snapshot points to an older targets version');
