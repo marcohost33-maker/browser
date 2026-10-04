@@ -1,0 +1,3 @@
+# Deliberate limitation of the generic conformance adapter.
+# Node 22 does not expose the ML-DSA verification surface used by TAP 21.
+test_mldsa_keytype_and_scheme
