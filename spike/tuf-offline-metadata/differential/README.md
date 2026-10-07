@@ -35,6 +35,29 @@ that implements the detailed client metadata workflow without repository network
 I/O. This is intentionally a research oracle: it is not linked into the Browser
 runtime.
 
+## Independent keyid check (#56)
+
+python-tuf does not check that a keyid matches its key, and the corpus generator
+derives keyids with the Browser's own `keyIdFor()`/`canonicalBytes()`. A drift in
+that formula would therefore pass both decision paths. The Python oracle
+recomputes every keyid in every corpus root as
+`sha256(securesystemslib.formats.encode_canonical(key))` and reports
+`keyid_check`; the comparison fails on any mismatch or on a missing check.
+
+The corpus also holds one conformance case per top-level role signed with another
+role's key (`reject-<role>-signed-by-<key>-key`). Those keys are all in
+`root.keys`, so only the keyid-to-role binding can reject them.
+
+Mutation evidence, local run on 2026-10-07:
+
+| Mutant | `node --test tests/tuf/*.test.js` | Differential |
+|---|---|---|
+| keyid-to-role binding removed (`role.keyids` check) | 3 failures | 3 conformance failures |
+| `keyIdFor` hashes non-canonical `JSON.stringify(key)` | 0 failures | keyid check: 90 mismatches |
+
+The second row shows why the check sits in the oracle: a self-consistent drift
+cannot be seen from inside the code under test.
+
 ## Outputs
 
 The workflow emits:

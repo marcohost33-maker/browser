@@ -56,15 +56,27 @@ for (const testCase of corpus.cases) {
   });
 }
 
+// #56: keyids recomputed by the oracle independently of the code under test.
+// A missing check is a failure too, so the gate cannot pass by omission.
+const keyidCheck = python.keyid_check;
+const keyidCheckPassed = Boolean(keyidCheck)
+  && Array.isArray(keyidCheck.mismatches)
+  && keyidCheck.mismatches.length === 0
+  && Number.isSafeInteger(keyidCheck.roots_checked)
+  && keyidCheck.roots_checked > 0;
+if (!keyidCheckPassed) failures += 1;
+
 const report = {
   schema_version: 1,
   python_tuf_version: python.version,
+  keyid_check: { passed: keyidCheckPassed, ...keyidCheck },
   summary: {
     cases: rows.length,
     conformance_cases: rows.filter((row) => row.class === 'conformance').length,
     profile_observations: rows.filter(
       (row) => row.class === 'profile-observation',
     ).length,
+    keyid_check_passed: keyidCheckPassed,
     failures,
   },
   rows,
@@ -77,6 +89,11 @@ for (const row of rows) {
     `${row.pass ? 'PASS' : 'FAIL'} ${row.name}: browser=${row.browser} python-tuf=${row.python_tuf} class=${row.class}`,
   );
 }
+console.log(
+  `${keyidCheckPassed ? 'PASS' : 'FAIL'} independent keyid check: `
+  + `${keyidCheck?.roots_checked ?? 0} roots, `
+  + `${keyidCheck?.mismatches?.length ?? 'missing'} mismatches`,
+);
 console.log(JSON.stringify(report.summary));
 
 if (failures !== 0) {

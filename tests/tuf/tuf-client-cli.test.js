@@ -740,7 +740,9 @@ test('a crash after root.json keeps the TUF 5.3.11 rotation reset (C2)', async (
     });
     assert.equal(loaded.trustedState.versions.timestamp, 0);
     assert.equal(loaded.trustedState.versions.snapshot, 0);
-    assert.equal(loaded.trustedState.versions.targets, 2, 'targets floor is never reset');
+    // #57 reverses the #33 invariant: the targets floor goes with the snapshot.
+    assert.equal(loaded.trustedState.versions.targets, 0, 'targets floor goes with the snapshot');
+    assert.equal(loaded.targetsUnpinned, true);
 
     let recovered;
     await assert.doesNotReject(async () => {
@@ -755,6 +757,125 @@ test('a crash after root.json keeps the TUF 5.3.11 rotation reset (C2)', async (
     assert.deepEqual(await readRoleFiles(metadataDir), { root: rotatedRoot, ...rotated });
     assert.equal((await loadTrustedState(metadataDir)).rollbackStateReset, null);
   }
+});
+
+test('a crash after root.json drops a fast-forwarded targets floor with the rotation reset (C3, #57)', async () => {
+  const fx = await fixture();
+  const rotation = fx.corpus.cases.find(
+    (entry) => entry.name === 'accept-root-rotation-old-and-new-threshold',
+  );
+  assert.ok(rotation, 'rotation fixture missing');
+  const rotatedRoot = decode(rotation.roots_b64[0]);
+  const rotated = {
+    timestamp: decode(rotation.timestamp_b64),
+    snapshot: decode(rotation.snapshot_b64),
+    targets: decode(rotation.targets_b64),
+  };
+  // Fast-forward attack state signed by the old keys: targets at 99999, bound by
+  // an old-key snapshot. The recovery chain points targets back to version 2.
+  const fastForward = rebuildChain(fx, {
+    mutateTargets(metadata) { metadata.signed.version = 99999; },
+    mutateTimestamp(metadata) { metadata.signed.version = 1000; },
+  });
+  const recoveryRoutes = () => new Map([
+    [`${METADATA_URL}2.root.json`, rotatedRoot],
+    [`${METADATA_URL}3.root.json`, null],
+    [`${METADATA_URL}timestamp.json`, rotated.timestamp],
+    [`${METADATA_URL}2.snapshot.json`, rotated.snapshot],
+    [`${METADATA_URL}2.targets.json`, rotated.targets],
+  ]);
+
+  async function fastForwardedClient(name) {
+    const metadataDir = join(fx.dir, name);
+    const sourceRoot = join(fx.dir, 'source-root.json');
+    await writeFile(sourceRoot, fx.root);
+    await initClient(metadataDir, sourceRoot);
+    const routes = metadataRoutes(fx);
+    routes.set(`${METADATA_URL}timestamp.json`, fastForward.timestamp);
+    routes.set(`${METADATA_URL}2.snapshot.json`, fastForward.snapshot);
+    routes.set(`${METADATA_URL}99999.targets.json`, fastForward.targets);
+    await refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(routes, []),
+    });
+    assert.equal((await loadTrustedState(metadataDir)).trustedState.versions.targets, 99999);
+    return metadataDir;
+  }
+
+  // Control: the uninterrupted rotation recovers within one refresh (#58 core fix).
+  const controlDir = await fastForwardedClient('metadata-c3-control');
+  const control = await refreshClient({
+    metadataDir: controlDir,
+    metadataUrl: METADATA_URL,
+    now: NOW,
+    fetchImpl: fakeFetch(recoveryRoutes(), []),
+  });
+  assert.equal(control.status, 'metadata-verified');
+  assert.equal(control.metadataRollbackStateReset, true);
+
+  // completed = 1: only root.json v2; completed = 2: plus new-key timestamp.json;
+  // completed = 3: plus new-key snapshot.json (old targets.json still on disk).
+  for (const completed of [1, 2, 3]) {
+    const metadataDir = await fastForwardedClient(`metadata-c3-${completed}`);
+    await assert.rejects(crashAfterWrites(completed, () => refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(recoveryRoutes(), []),
+    })), isSimulatedCrash);
+    assert.deepEqual((await readRoleFiles(metadataDir)).targets, fastForward.targets);
+
+    let recovered;
+    await assert.doesNotReject(async () => {
+      recovered = await refreshClient({
+        metadataDir,
+        metadataUrl: METADATA_URL,
+        now: NOW,
+        fetchImpl: fakeFetch(recoveryRoutes(), []),
+      });
+    }, `crash point ${completed}: the fast-forwarded targets floor must not survive the crash`);
+    assert.equal(recovered.status, 'metadata-verified', `crash point ${completed}`);
+    assert.deepEqual(await readRoleFiles(metadataDir), { root: rotatedRoot, ...rotated });
+  }
+});
+
+test('a validly signed targets.json the trusted snapshot does not pin is neither floor nor authority (#55)', async () => {
+  const fx = await fixture();
+  // Same version, signed by the real targets key, but not the bytes snapshot pins.
+  const tampered = rebuildChain(fx, {
+    mutateTargets(metadata) {
+      metadata.signed.version = 2;
+      metadata.signed.expires = '2027-01-01T00:00:00Z';
+    },
+  }).targets;
+  assert.notDeepEqual(tampered, fx.targets);
+  const metadataDir = join(fx.dir, 'metadata');
+  await writeTrustedState(metadataDir, {
+    root: fx.root,
+    timestamp: fx.timestamp,
+    snapshot: fx.snapshot,
+    targets: tampered,
+  });
+
+  const loaded = await loadTrustedState(metadataDir);
+  assert.equal(loaded.targetsUnpinned, true);
+  assert.equal(loaded.parsed.targets, null);
+  assert.equal(loaded.trustedState.versions.targets, 0);
+  // The rollback floor itself survives through the trusted snapshot (5.5.5).
+  assert.equal(loaded.trustedState.snapshotMeta['targets.json'].version, 2);
+
+  // An unchanged timestamp heals the cache miss from the pinned descriptor.
+  const result = await refreshClient({
+    metadataDir,
+    metadataUrl: METADATA_URL,
+    now: NOW,
+    fetchImpl: fakeFetch(metadataRoutes(fx), []),
+  });
+  assert.equal(result.resumedFromTrustedTimestamp, true);
+  assert.deepEqual((await readRoleFiles(metadataDir)).targets, fx.targets);
+  assert.equal((await loadTrustedState(metadataDir)).targetsUnpinned, false);
 });
 
 test('after a rotation reset, the old-key chain served again is still refused', async () => {

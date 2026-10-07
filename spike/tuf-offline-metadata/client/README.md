@@ -26,6 +26,34 @@ conformance work.
 The CLI is generic TUF infrastructure. Browser `app_id`, app-version and capability
 policy remain outside this layer.
 
+## Policy: an unchanged timestamp whose trusted copy has expired (#55)
+
+When the repository serves the same timestamp version as the trusted one, the
+client discards the new file and keeps the trusted timestamp, as TUF 1.0.36
+section 5.4.3.2 requires ("discard the new timestamp metadata and abort the update
+cycle. This is normal and it shouldn't raise any error"). It then still rejects
+the cycle if that retained timestamp, or the retained snapshot/targets it pins,
+has expired.
+
+This is a **project policy, not a literal spec duty**: 5.4.3.2 itself says only
+to abort without error. It is the same behaviour as the pinned independent oracle,
+python-tuf 7.0.1:
+
+- `Updater._load_timestamp()` catches `EqualVersionNumberError` and keeps the
+  trusted timestamp;
+- the following `TrustedMetadataSet.update_snapshot()` calls
+  `_check_final_timestamp()`, which raises `ExpiredMetadataError` for an expired
+  trusted timestamp.
+
+Without it, a mirror that keeps serving one timestamp version past its expiry
+would freeze the client on stale targets, the attack 5.4.4 exists to report.
+
+Evidence: unit tests `refreshClient rejects an expired timestamp served again at
+the trusted version` and `refreshClient does not keep using expired retained
+targets on an unchanged timestamp` (`tests/tuf/tuf-client-cli.test.js`). The
+python-tuf differential compares the core verifier only, so this client-level
+path is **not yet** in the differential corpus.
+
 ## Persistence model
 
 Each individual file uses:
@@ -56,6 +84,16 @@ files cannot wedge or weaken the client:
   metadata files"); `loadTrustedState()` reports this as `rollbackStateReset`.
   Without it, a fast-forwarded old-key timestamp would keep its rollback floor and
   freeze the client (`TIMESTAMP_ROLLBACK`) until the new-key timestamp overtook it.
+- **Retained `targets.json` counts only while the trusted snapshot pins it (#55,
+  #57).** The targets rollback floor is the version the trusted snapshot recorded
+  (5.5.5). A retained `targets.json` is used as floor and as authorization source
+  only if its exact bytes (length, SHA-256) and version match that snapshot's
+  `targets.json` descriptor; otherwise it is a cache miss (`targetsUnpinned: true`,
+  `parsed.targets: null`). With the snapshot rotated out, nothing pins it, so a
+  fast-forwarded old-key `targets.json` cannot resurrect its floor after a crash and
+  block the recovery chain with `TARGETS_ROLLBACK`. Rollback protection is not
+  weakened: the snapshot-recorded floor stays, and in normal persistence order a
+  retained `targets.json` is never newer than the one its snapshot pins.
 - **Interrupted update resumes from the trusted timestamp (5.4.3.1).** If the
   repository timestamp equals the trusted one but the retained snapshot/targets are
   not the files that timestamp pins (crash after `timestamp.json`, or after
@@ -66,7 +104,7 @@ files cannot wedge or weaken the client:
   retained metadata still fails closed, because re-downloading pinned bytes cannot
   change them.
 
-Both paths are covered by crash simulations that abort the real write sequence after
+All three are covered by crash simulations that abort the real write sequence after
 file N (`tests/tuf/tuf-client-cli.test.js`). A real process kill or power loss has not
 been measured.
 
