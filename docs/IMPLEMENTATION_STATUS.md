@@ -1,11 +1,11 @@
 # `browser` — Implementation Status
 
-- Updated: 2026-09-29
+- Updated: 2026-10-07
 - Repository: `marcohost33-maker/browser`
 - Product: standalone native, offline-capable web-application runtime
 - Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
 - First release scope: T1
-- Overall state: **security/evidence foundation plus manifest/update spikes; no runtime product**
+- Overall state: **security/evidence foundation plus manifest, update and activation spikes; no runtime product**
 
 ## Executive status
 
@@ -109,6 +109,32 @@ capability approval, secure updates, safe extraction or runtime isolation.
 
 Not wired to any verifier, installer or runtime. See `spike/activation-store/README.md`.
 
+### Coupled update transaction spike (ADR-009 / ADR-007a section 6)
+
+- one offline update bundle applied as **one** activation-store commit: the new package
+  version (one opaque, content-addressed object; no container decided) and the exact
+  bytes of root, timestamp, snapshot and targets plus an app trust state (identity,
+  version, digest, approved capabilities, decision record) move together or not at all;
+- compare-and-swap on the verified generation; a concurrent writer fails the update
+  with `GENERATION_CONFLICT` instead of overwriting it;
+- fail-closed loading: every load re-verifies the bound chain from its bytes
+  (signatures, thresholds, version/length/hash pins, target paths) and the trust state
+  against the bound targets, without evaluating freshness, so an expired but installed
+  app keeps starting offline; no rotation reset or resume path is needed;
+- local rollback moves only the package; metadata and all rollback floors stay bound;
+  start-up check reports `current` or `rolled-back` with the capabilities approved for
+  the active version;
+- activation store gained `readCommitBindings()` and `readVersionBindings()` (read side
+  only; commit protocol and its crash-matrix numbers unchanged);
+- crash matrix through the activation-store harness, six scenarios including a root
+  rotation of the online keys: 64,931/64,931 model crash cases consistent, 0 durability
+  violations, 329/329 real process crashes on Linux; two-commit negative control
+  detected as `state-not-old-or-new` in every variant; 11/11 control mutations killed;
+  16 unit tests; Windows/macOS process crashes in `activation-store-ci`.
+
+Not wired to the stateful TUF CLI, which still persists role by role. See
+`spike/update-activation/README.md`.
+
 ## Not implemented
 
 - native application shell or Chromium host;
@@ -116,8 +142,8 @@ Not wired to any verifier, installer or runtime. See `spike/activation-store/REA
 - installer wiring of the activation-store spike, power-loss evidence on Windows and
   macOS (the NTFS journal-barrier hypothesis is modelled, not measured) and a real
   power-loss drill;
-- production TUF client/repository, raw-byte parser, delegations, durable monotonic
-  state, revocation operations or atomic offline update activation;
+- production TUF client/repository, delegations, revocation operations, wiring of the
+  stateful CLI onto the coupled update transaction and a real power-loss drill for it;
 - publisher admission, namespace ownership and capability approval engine;
 - per-application process, profile, storage and permission isolation;
 - OS-enforced null-egress and independent process-tree/network observation;
@@ -130,9 +156,9 @@ Not wired to any verifier, installer or runtime. See `spike/activation-store/REA
 1. **Product falsifiability (#14):** primary user, anti-persona, top task and go/pivot/stop criteria.
 2. **Acquisition semantics (#30):** distinguish signed package, installed PWA, captured archive and remote browsing.
 3. **Package completion (#24):** container, signed-byte scope, strict crypto, resource limits, extraction and activation evidence.
-4. **Update security (#24 / ADR-009):** raw-byte parser, delegated publishers,
-   durable monotonic state, revocation, independent differential evidence and
-   atomic metadata/package recovery.
+4. **Update security (#24 / ADR-009):** findings #55, #56 and #57/#58 of the
+   post-merge review, delegated publishers, revocation, wiring the CLI onto the coupled
+   metadata/package commit, power-loss and independent review evidence.
 5. **Runtime evidence (#23):** exact Electron/CEF versions, sandbox configuration, compatibility and patch-SLA measurements.
 6. **T3 isolation:** outer sandbox/VM profile, OS-level deny, resource limits and independently observed null-egress.
 7. **T2 governance (#25):** publisher admission, capability approval, emergency removal and support lifecycle.
@@ -144,8 +170,8 @@ The next implementation should be small and evidence-producing:
 
 1. keep the repository/document consistency gate required;
 2. freeze the T1 package/update interface without selecting a container prematurely;
-3. extend the initial TUF harness with raw parsing, delegated publishers,
-   differential evidence and atomic persistence/activation;
+3. close the TUF review findings (#58, then #55 and #56), then move the stateful
+   client onto the coupled metadata/package commit and add delegated publishers;
 4. implement the package verifier only after the exact container/signed-byte decision;
 5. build an Electron compatibility harness with no native bridge and an outer
    Linux null-egress experiment;

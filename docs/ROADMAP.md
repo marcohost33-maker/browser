@@ -1,6 +1,6 @@
 # ROADMAP — `browser`
 
-- Updated: 2026-09-29
+- Updated: 2026-10-07
 - Scope: only `marcohost33-maker/browser`
 - Product: standalone native offline web-application runtime
 - Delivery order: T1 → T2 → T3; T1 first release, T3 north star
@@ -54,7 +54,10 @@ successful recovery for every injected interruption.
   authority separate.
 - [ ] Implement rollback, freeze, mix-and-match, wrong-target, endless-data,
   key-rotation and revocation tests.
-- [ ] Support offline update bundles and a fully disabled-update mode.
+- [ ] Support offline update bundles and a fully disabled-update mode. Spike:
+  `spike/update-activation/` applies one offline bundle as a single commit of TUF
+  metadata and package (crash-matrix evidence), and start-up never evaluates freshness;
+  CLI wiring, power-loss evidence and review remain open.
 - [ ] Require explicit re-consent for capability expansion.
 
 **Gate M3:** no rollback, freeze, mix-and-match, namespace crossover or unauthorized

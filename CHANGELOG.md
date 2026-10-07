@@ -57,6 +57,32 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   **Offen:** Stromausfall-Evidenz auf Windows/macOS (NTFS-Journal-Hypothese ist
   modelliert, nicht gemessen), realer Stromausfall-Drill, Messung auf Zielhardware
   statt Hosted-Runnern, Installer-Anbindung nach dem D4-Containerentscheid.
+- Gekoppelte Update-Transaktion als Spike (`spike/update-activation/`, ADR-009
+  "atomic metadata/package activation"): ein Offline-Update-Buendel wird als **ein**
+  Commit des Activation-Stores angewandt. Derselbe atomare Rename von `state/CURRENT`
+  benennt die neue Paketversion (ein opakes, content-adressiertes Objekt, kein
+  Containerformat gewaehlt) und bindet die exakten Bytes von root, timestamp, snapshot
+  und targets sowie einen App-Trust-State (Identitaet, Version, Digest, genehmigte
+  Capabilities, Entscheid). Compare-and-swap auf die verifizierte Generation; Laden
+  verifiziert die gebundene Kette bei jedem Start neu (Signaturen, Schwellen,
+  Versions-/Laengen-/Hash-Pins), aber **nie die Frische**, damit eine installierte App
+  offline weiterlaeuft; ein nicht verifizierender Zustand schlaegt fail-closed fehl
+  statt zurueckgesetzt zu werden. Die beiden Reparaturpfade des rollenweisen Clients
+  (Rotation-Reset nach TUF 5.3.11 beim Laden, Resume ab vertrautem Timestamp) entfallen
+  konstruktiv. Lokaler Rollback bewegt nur das Paket; Metadaten und Rollback-Floors
+  bleiben gebunden. Activation-Store um die Leseseite der Bindings ergaenzt
+  (`readCommitBindings()`, `readVersionBindings()`); Commit-Protokoll unveraendert, sein
+  Crash-Matrix-Report aendert sich nur im Quell-Digest.
+  **Evidenz:** Modell-Crash-Matrix ueber sechs Szenarien inkl. Root-Rotation der
+  Online-Schluessel: 64'931/64'931 Faelle konsistent, 0 Durability-Verletzungen;
+  329/329 reale Prozess-Crashes (ext4); Negativkontrolle (dieselbe Verifikation, aber
+  Metadaten und Paket in zwei Commits) in jeder Variante als `state-not-old-or-new`
+  erkannt (u. a. 53/100 Prozess-Crash-Punkte); 11/11 Kontroll-Mutationen getoetet;
+  16 Unit-Tests. Windows/macOS ueber `activation-store-ci`.
+  **Offen:** Anbindung des zustandsbehafteten CLI, realer Stromausfall-Drill,
+  Delegationen, unabhaengiges Review; der Start-Check kann einen lokalen Rollback nicht
+  von "Metadaten vor Paket" unterscheiden (vom gekoppelten Protokoll nie erzeugt,
+  per Test dokumentiert).
 
 ### Security
 

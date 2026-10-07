@@ -159,6 +159,37 @@ Upstream TUF v1.0.36 is current as of this amendment. This ADR deliberately rema
 pinned to v1.0.35 until a separate specification-delta review determines whether the
 project POUF should change.
 
+## Coupled persistence amendment — 2026-10-07
+
+The persistence-model question (role-by-role files versus one compare-and-swap
+generation with a single atomic pointer) now has measured evidence for the second
+option: [`spike/update-activation/`](../../spike/update-activation/README.md).
+
+- One offline update bundle is applied as **one** activation-store commit. That commit
+  names the new package version and binds the exact bytes of root, timestamp, snapshot
+  and targets plus an app trust state: identity, version, digest, approved capabilities
+  and the decision record. This implements the client-state invariant above: trusted
+  metadata never advances without the matching installation state, and a package is
+  never activated before both metadata and package verification pass.
+- Every load re-verifies the bound chain from its bytes, with signatures, thresholds and
+  the version/length/hash pins, but **not** freshness. A disabled or offline client keeps
+  starting after its metadata expired, while incoming bundles are still checked for
+  expiry.
+- Because a crash can only leave the old or the new commit, the two repair paths of the
+  role-by-role client (the TUF 5.3.11 rotation reset on load and the resume from the
+  trusted timestamp) are unnecessary. A bound chain that does not verify fails closed.
+- A local rollback moves only the package. Metadata and every rollback floor stay bound.
+- Evidence:
+  - The model crash matrix over six scenarios, including a root rotation of the online
+    keys: 64,931/64,931 consistent, 0 durability violations.
+  - 329/329 real process crashes on ext4.
+  - A two-commit negative control detected as mixed state in every variant.
+  - 11/11 control mutations killed.
+
+This is spike evidence for the deliverable "atomic metadata/package activation
+interruption matrix", not its acceptance. A real power-loss drill, wiring the stateful
+CLI onto this model, delegations and independent review remain open.
+
 ## Evaluation deliverables
 
 - [ ] exact v1.0.35 clauses mapped to implementation requirements;

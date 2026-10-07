@@ -962,6 +962,61 @@ export class ActivationStore {
     return statusOf(await this.readCommit());
   }
 
+  // Reads every object of a binding map, each re-hashed against the recorded digest
+  // and size. Returns the bytes, or the name of the first binding whose object is
+  // missing; any other damage fails closed.
+  async _readBindingSet(bindingMap) {
+    const bindings = {};
+    for (const [name, entry] of Object.entries(bindingMap)) {
+      let bytes;
+      try {
+        bytes = await this._readObject(entry.digest, Math.max(entry.size, 1));
+      } catch (error) {
+        if (!(error instanceof ActivationError)) throw error;
+        if (error.code === 'OBJECT_MISSING') return { bindings: null, missing: name };
+        fail('BINDING_INVALID', `binding ${name} does not reference a valid object (${error.code})`, { name, cause: error.code });
+      }
+      if (bytes.length !== entry.size) fail('BINDING_INVALID', `binding ${name} size differs from its record`, { name });
+      bindings[name] = { digest: entry.digest, size: entry.size, bytes };
+    }
+    return { bindings, missing: null };
+  }
+
+  // The read side of commit bindings: every binding of ONE commit with its bytes,
+  // each re-hashed against the digest and size that commit recorded. Reads take no
+  // lock, so a concurrent commit plus collection may remove an object between
+  // reading the commit and reading the object; as on the serving path, the whole
+  // set is then read again, once, from the new commit. The result therefore never
+  // mixes the bindings of two commits, and a miss on an unchanged generation is
+  // reported as damage.
+  async readCommitBindings() {
+    let commit = await this.readCommit();
+    for (let attempt = 0; ; attempt += 1) {
+      const status = statusOf(commit);
+      const { bindings, missing } = await this._readBindingSet(status.bindings);
+      if (missing === null) {
+        return { generation: status.generation, active: status.active, previous: status.previous, bindings };
+      }
+      const latest = await this.readCommit();
+      if (attempt > 0 || (latest?.generation ?? 0) === status.generation) {
+        fail('BINDING_INVALID', `binding ${missing} does not reference a valid object (OBJECT_MISSING)`, { name: missing, cause: 'OBJECT_MISSING' });
+      }
+      commit = latest;
+    }
+  }
+
+  // Version-level bindings with their bytes (for example the record that authorised
+  // the version), each re-hashed against the version record. A version record is
+  // immutable, so there is no generation to race against: a missing object is damage.
+  async readVersionBindings(versionId) {
+    const record = await this.readVersion(versionId);
+    const { bindings, missing } = await this._readBindingSet(record.bindings);
+    if (missing !== null) {
+      fail('BINDING_INVALID', `binding ${missing} does not reference a valid object (OBJECT_MISSING)`, { name: missing, cause: 'OBJECT_MISSING' });
+    }
+    return bindings;
+  }
+
   // Full verification re-hashes every object a version needs. It never repairs.
   async verifyVersion(versionId) {
     let record;

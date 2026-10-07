@@ -729,6 +729,79 @@ test('commit bindings are atomic with the pointer and must reference valid objec
   assert.deepEqual(Object.keys(together.bindings), ['update/snapshot']);
 });
 
+test('readCommitBindings returns the verified bytes of exactly one commit', async (t) => {
+  const { store, root } = await freshStore(t);
+  assert.deepEqual(await store.readCommitBindings(), { generation: 0, active: null, previous: null, bindings: {} });
+
+  const v1 = await install(store, 1);
+  const root1 = blob('root v1');
+  const empty = blob('');
+  await store.commitBindings({ 'update/root': root1, 'update/empty': empty }, { expectedGeneration: 1 });
+  const read = await (await reopen(root)).readCommitBindings();
+  assert.deepEqual([read.generation, read.active, read.previous], [2, v1, null]);
+  assert.deepEqual(Object.keys(read.bindings).sort(), ['update/empty', 'update/root']);
+  assert.deepEqual(read.bindings['update/root'], { digest: root1.digest, size: root1.size, bytes: root1.bytes });
+  assert.equal(read.bindings['update/empty'].bytes.length, 0);
+
+  // Damage is reported, never served: a flipped bit keeps the size, so only the hash sees it.
+  await corruptObject(store, root1.digest);
+  await assert.rejects((await reopen(root)).readCommitBindings(), (error) => {
+    assert.equal(error?.code, 'BINDING_INVALID');
+    assert.deepEqual(error.details, { name: 'update/root', cause: 'OBJECT_CORRUPT' });
+    return true;
+  });
+});
+
+test('readCommitBindings re-reads once when a concurrent commit collected its objects', async (t) => {
+  const { store, root } = await freshStore(t);
+  await store.commitBindings({ 'update/timestamp': blob('timestamp v1') }, { expectedGeneration: 0 });
+  const reader = await reopen(root);
+  const firstCommit = await reader.readCommit();
+
+  // The reader saw generation 1; a writer commits generation 2 and collects v1's blob
+  // before the reader gets to it. The retry must return generation 2 as a whole.
+  let raced = false;
+  const original = reader.readCommit.bind(reader);
+  reader.readCommit = async () => {
+    if (!raced) {
+      raced = true;
+      await store.commitBindings({ 'update/timestamp': blob('timestamp v2') }, { expectedGeneration: 1 });
+      return firstCommit;
+    }
+    return original();
+  };
+  const read = await reader.readCommitBindings();
+  assert.equal(read.generation, 2);
+  assert.equal(read.bindings['update/timestamp'].bytes.toString('utf8'), 'timestamp v2');
+
+  // The same miss on an unchanged generation is damage, not a race.
+  const v2 = blob('timestamp v2');
+  await rm(store.objectPath(v2.digest), { force: true });
+  await assert.rejects((await reopen(root)).readCommitBindings(), (error) => {
+    assert.equal(error?.code, 'BINDING_INVALID');
+    assert.equal(error.details.cause, 'OBJECT_MISSING');
+    return true;
+  });
+});
+
+test('readVersionBindings returns the verified bytes a version record binds', async (t) => {
+  const { store, root } = await freshStore(t);
+  const v1 = await install(store, 1);
+  const manifest = versionInput(1).bindings['package/manifest'];
+  const read = await (await reopen(root)).readVersionBindings(v1);
+  assert.deepEqual(read, { 'package/manifest': { digest: manifest.digest, size: manifest.size, bytes: manifest.bytes } });
+
+  await corruptObject(store, manifest.digest);
+  await assert.rejects((await reopen(root)).readVersionBindings(v1), rejectsWith('BINDING_INVALID'));
+  await rm(store.objectPath(manifest.digest), { force: true });
+  await assert.rejects((await reopen(root)).readVersionBindings(v1), (error) => {
+    assert.equal(error?.code, 'BINDING_INVALID');
+    assert.equal(error.details.cause, 'OBJECT_MISSING');
+    return true;
+  });
+  await assert.rejects(store.readVersionBindings(sha256('no such version')), rejectsWith('VERSION_MISSING'));
+});
+
 test('version bindings must carry their bytes', async (t) => {
   const { store } = await freshStore(t);
   const input = versionInput(1);

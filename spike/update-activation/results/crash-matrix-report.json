@@ -1,0 +1,1158 @@
+{
+  "schema": "browser-update-activation/crash-matrix-report/v1",
+  "sources": {
+    "update-activation.js": "0000cde5f7da57812e14d73945692c279942fb45d7fd20bdd685e629073c995d",
+    "harness/scenarios.js": "5dc993db2f60e5608d93c363519aea7e38725bb0cca06a6c6aa680a3cb3e41ee",
+    "harness/tuf-repository.js": "2661685dc7c011565392abada9088011d897c67e5260031cc02db8208a476c1f",
+    "../activation-store/activation-store.js": "423b50e99645dc37f612011af7be00e6d1392ba11ad8b51268f4aaa87385f7e8",
+    "../activation-store/harness/crash-matrix.js": "8bb9230acf609b846589ca347bb00a0aa827dca0b4978fc71e4f37f0e432a02a",
+    "../activation-store/harness/fault-injection.js": "a1707221d531786b7f078d755081031df086442a2510307a2da6681f80e9cc8d",
+    "../activation-store/harness/model-fs.js": "44728b5dbfd077f42d7de5e3da7cbf2f4aa5f70e6c0f623fe8222a3ac498b278",
+    "../tuf-offline-metadata/tuf-offline.js": "0ee7d86003b1846a0413adc0e9f4b6bf9531c795096ef776489f2b46760cbeb8",
+    "../tuf-offline-metadata/strict-json.js": "e8260ceb0dc99076bd7e027f4a1490bfc80f3e1b48f9abb335edcf12c953ad81"
+  },
+  "config": {
+    "samples": 12,
+    "postRecoverySamples": 4,
+    "seed": 20261007
+  },
+  "summary": {
+    "modelCrashCases": 64931,
+    "modelConsistent": 64931,
+    "modelRecoverySuccess": 1,
+    "durabilityViolations": 0,
+    "negativeControl": {
+      "scenario": "two-commit-update",
+      "crashCases": 8892,
+      "violations": 4959,
+      "discriminating": true,
+      "exampleViolations": [
+        "state-not-old-or-new"
+      ]
+    }
+  },
+  "modelResults": [
+    {
+      "variant": "directory-sync",
+      "scenario": "coupled-bootstrap",
+      "description": "bind the initial trusted root into an empty store",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": 17,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 448,
+          "distinctStates": 33,
+          "consistent": 448,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 59,
+          "distinctStates": 13,
+          "consistent": 59,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 267,
+          "distinctStates": 267,
+          "consistent": 267,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 392,
+          "distinctStates": 45,
+          "consistent": 392,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 46,
+          "distinctStates": 7,
+          "consistent": 46,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "coupled-first-install",
+      "description": "verify and install v1: package, metadata and trust state in one commit",
+      "mutatingOperations": 71,
+      "crashPoints": 72,
+      "durablePoint": 69,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 72,
+          "distinctStates": 72,
+          "consistent": 72,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 3342,
+          "distinctStates": 500,
+          "consistent": 3342,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 484,
+          "distinctStates": 44,
+          "consistent": 484,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1202,
+          "distinctStates": 1202,
+          "consistent": 1202,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 3440,
+          "distinctStates": 452,
+          "consistent": 3440,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 385,
+          "distinctStates": 57,
+          "consistent": 385,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "coupled-update",
+      "description": "update v1 -> v2: new package and new metadata in one commit",
+      "mutatingOperations": 78,
+      "crashPoints": 79,
+      "durablePoint": 72,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 79,
+          "distinctStates": 79,
+          "consistent": 79,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 3770,
+          "distinctStates": 569,
+          "consistent": 3770,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 505,
+          "distinctStates": 48,
+          "consistent": 505,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1332,
+          "distinctStates": 1332,
+          "consistent": 1332,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 3914,
+          "distinctStates": 490,
+          "consistent": 3914,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 438,
+          "distinctStates": 58,
+          "consistent": 438,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "coupled-update-root-rotation",
+      "description": "update v1 -> v2 with root v2 rotating timestamp and snapshot keys, all in one commit",
+      "mutatingOperations": 79,
+      "crashPoints": 80,
+      "durablePoint": 72,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 80,
+          "distinctStates": 80,
+          "consistent": 80,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 3926,
+          "distinctStates": 702,
+          "consistent": 3926,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 534,
+          "distinctStates": 51,
+          "consistent": 534,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1388,
+          "distinctStates": 1388,
+          "consistent": 1388,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 4154,
+          "distinctStates": 557,
+          "consistent": 4154,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 483,
+          "distinctStates": 65,
+          "consistent": 483,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "coupled-metadata-refresh",
+      "description": "newer timestamp/snapshot for the installed v2: bindings change, the package does not",
+      "mutatingOperations": 52,
+      "crashPoints": 53,
+      "durablePoint": 47,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 53,
+          "distinctStates": 53,
+          "consistent": 53,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 1922,
+          "distinctStates": 243,
+          "consistent": 1922,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 309,
+          "distinctStates": 28,
+          "consistent": 309,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 786,
+          "distinctStates": 786,
+          "consistent": 786,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 1920,
+          "distinctStates": 196,
+          "consistent": 1920,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 186,
+          "distinctStates": 21,
+          "consistent": 186,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "directory-sync",
+      "scenario": "coupled-rollback",
+      "description": "local rollback v2 -> v1: the package moves back, metadata and rollback floors stay",
+      "mutatingOperations": 24,
+      "crashPoints": 25,
+      "durablePoint": 22,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 25,
+          "distinctStates": 25,
+          "consistent": 25,
+          "violationCount": 0,
+          "examples": []
+        },
+        "posix-strict": {
+          "crashCases": 492,
+          "distinctStates": 13,
+          "consistent": 492,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 41,
+          "distinctStates": 9,
+          "consistent": 41,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 322,
+          "distinctStates": 322,
+          "consistent": 322,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/posix-strict": {
+          "crashCases": 396,
+          "distinctStates": 18,
+          "consistent": 396,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 50,
+          "distinctStates": 4,
+          "consistent": 50,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "coupled-bootstrap",
+      "description": "bind the initial trusted root into an empty store",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": 16,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 46,
+          "distinctStates": 13,
+          "consistent": 46,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 267,
+          "distinctStates": 267,
+          "consistent": 267,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 46,
+          "distinctStates": 7,
+          "consistent": 46,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "coupled-first-install",
+      "description": "verify and install v1: package, metadata and trust state in one commit",
+      "mutatingOperations": 71,
+      "crashPoints": 72,
+      "durablePoint": 68,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 72,
+          "distinctStates": 72,
+          "consistent": 72,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 193,
+          "distinctStates": 44,
+          "consistent": 193,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1202,
+          "distinctStates": 1202,
+          "consistent": 1202,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 385,
+          "distinctStates": 57,
+          "consistent": 385,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "coupled-update",
+      "description": "update v1 -> v2: new package and new metadata in one commit",
+      "mutatingOperations": 78,
+      "crashPoints": 79,
+      "durablePoint": 71,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 79,
+          "distinctStates": 79,
+          "consistent": 79,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 220,
+          "distinctStates": 48,
+          "consistent": 220,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1332,
+          "distinctStates": 1332,
+          "consistent": 1332,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 438,
+          "distinctStates": 58,
+          "consistent": 438,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "coupled-update-root-rotation",
+      "description": "update v1 -> v2 with root v2 rotating timestamp and snapshot keys, all in one commit",
+      "mutatingOperations": 79,
+      "crashPoints": 80,
+      "durablePoint": 71,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 80,
+          "distinctStates": 80,
+          "consistent": 80,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 231,
+          "distinctStates": 51,
+          "consistent": 231,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1388,
+          "distinctStates": 1388,
+          "consistent": 1388,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 483,
+          "distinctStates": 65,
+          "consistent": 483,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "coupled-metadata-refresh",
+      "description": "newer timestamp/snapshot for the installed v2: bindings change, the package does not",
+      "mutatingOperations": 52,
+      "crashPoints": 53,
+      "durablePoint": 46,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 53,
+          "distinctStates": 53,
+          "consistent": 53,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 136,
+          "distinctStates": 28,
+          "consistent": 136,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 786,
+          "distinctStates": 786,
+          "consistent": 786,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 186,
+          "distinctStates": 21,
+          "consistent": 186,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "coupled-rollback",
+      "description": "local rollback v2 -> v1: the package moves back, metadata and rollback floors stay",
+      "mutatingOperations": 24,
+      "crashPoints": 25,
+      "durablePoint": 21,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 25,
+          "distinctStates": 25,
+          "consistent": 25,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 62,
+          "distinctStates": 9,
+          "consistent": 62,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 322,
+          "distinctStates": 322,
+          "consistent": 322,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 50,
+          "distinctStates": 4,
+          "consistent": 50,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "coupled-bootstrap",
+      "description": "bind the initial trusted root into an empty store",
+      "mutatingOperations": 19,
+      "crashPoints": 20,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 20,
+          "distinctStates": 20,
+          "consistent": 20,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 117,
+          "distinctStates": 13,
+          "consistent": 117,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 267,
+          "distinctStates": 267,
+          "consistent": 267,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 229,
+          "distinctStates": 54,
+          "consistent": 229,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "coupled-first-install",
+      "description": "verify and install v1: package, metadata and trust state in one commit",
+      "mutatingOperations": 71,
+      "crashPoints": 72,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 72,
+          "distinctStates": 72,
+          "consistent": 72,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 1388,
+          "distinctStates": 44,
+          "consistent": 1388,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1202,
+          "distinctStates": 1202,
+          "consistent": 1202,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 2023,
+          "distinctStates": 241,
+          "consistent": 2023,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "coupled-update",
+      "description": "update v1 -> v2: new package and new metadata in one commit",
+      "mutatingOperations": 78,
+      "crashPoints": 79,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 79,
+          "distinctStates": 79,
+          "consistent": 79,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 1627,
+          "distinctStates": 48,
+          "consistent": 1627,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1332,
+          "distinctStates": 1332,
+          "consistent": 1332,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 2336,
+          "distinctStates": 258,
+          "consistent": 2336,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "coupled-update-root-rotation",
+      "description": "update v1 -> v2 with root v2 rotating timestamp and snapshot keys, all in one commit",
+      "mutatingOperations": 79,
+      "crashPoints": 80,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 80,
+          "distinctStates": 80,
+          "consistent": 80,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 1712,
+          "distinctStates": 51,
+          "consistent": 1712,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 1388,
+          "distinctStates": 1388,
+          "consistent": 1388,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 2469,
+          "distinctStates": 278,
+          "consistent": 2469,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "coupled-metadata-refresh",
+      "description": "newer timestamp/snapshot for the installed v2: bindings change, the package does not",
+      "mutatingOperations": 52,
+      "crashPoints": 53,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 53,
+          "distinctStates": 53,
+          "consistent": 53,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 671,
+          "distinctStates": 28,
+          "consistent": 671,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 786,
+          "distinctStates": 786,
+          "consistent": 786,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 1038,
+          "distinctStates": 138,
+          "consistent": 1038,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "coupled-rollback",
+      "description": "local rollback v2 -> v1: the package moves back, metadata and rollback floors stay",
+      "mutatingOperations": 24,
+      "crashPoints": 25,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 25,
+          "distinctStates": 25,
+          "consistent": 25,
+          "violationCount": 0,
+          "examples": []
+        },
+        "ordered-prefix": {
+          "crashCases": 102,
+          "distinctStates": 9,
+          "consistent": 102,
+          "violationCount": 0,
+          "examples": []
+        },
+        "recovery-crash": {
+          "crashCases": 322,
+          "distinctStates": 322,
+          "consistent": 322,
+          "violationCount": 0,
+          "examples": []
+        },
+        "post-recovery-power-loss/ordered-prefix": {
+          "crashCases": 229,
+          "distinctStates": 32,
+          "consistent": 229,
+          "violationCount": 0,
+          "examples": []
+        }
+      }
+    }
+  ],
+  "negativeControl": [
+    {
+      "variant": "directory-sync",
+      "scenario": "two-commit-update",
+      "description": "negative control: the coupled-update plan, but metadata and package in separate commits",
+      "mutatingOperations": 99,
+      "crashPoints": 100,
+      "durablePoint": 97,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 100,
+          "distinctStates": 100,
+          "consistent": 47,
+          "violationCount": 53,
+          "examples": [
+            {
+              "crashAt": 44,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 45,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 46,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 48,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            }
+          ]
+        },
+        "posix-strict": {
+          "crashCases": 5220,
+          "distinctStates": 1059,
+          "consistent": 1778,
+          "violationCount": 3442,
+          "examples": [
+            {
+              "crashAt": 44,
+              "model": "posix-strict",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 44,
+              "model": "posix-strict",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 44,
+              "model": "posix-strict",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 44,
+              "model": "posix-strict",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 44,
+              "model": "posix-strict",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            }
+          ]
+        },
+        "ordered-prefix": {
+          "crashCases": 617,
+          "distinctStates": 56,
+          "consistent": 306,
+          "violationCount": 311,
+          "examples": [
+            {
+              "crashAt": 44,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 45,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 46,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "variant": "no-directory-sync",
+      "scenario": "two-commit-update",
+      "description": "negative control: the coupled-update plan, but metadata and package in separate commits",
+      "mutatingOperations": 99,
+      "crashPoints": 100,
+      "durablePoint": 96,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 100,
+          "distinctStates": 100,
+          "consistent": 47,
+          "violationCount": 53,
+          "examples": [
+            {
+              "crashAt": 44,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 45,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 46,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 48,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            }
+          ]
+        },
+        "ordered-prefix": {
+          "crashCases": 282,
+          "distinctStates": 56,
+          "consistent": 119,
+          "violationCount": 163,
+          "examples": [
+            {
+              "crashAt": 44,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 45,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 46,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "variant": "no-barrier",
+      "scenario": "two-commit-update",
+      "description": "negative control: the coupled-update plan, but metadata and package in separate commits",
+      "mutatingOperations": 99,
+      "crashPoints": 100,
+      "durablePoint": null,
+      "durabilityViolations": 0,
+      "models": {
+        "process-crash": {
+          "crashCases": 100,
+          "distinctStates": 100,
+          "consistent": 47,
+          "violationCount": 53,
+          "examples": [
+            {
+              "crashAt": 44,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 45,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 46,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 48,
+              "model": "process-crash",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            }
+          ]
+        },
+        "ordered-prefix": {
+          "crashCases": 2473,
+          "distinctStates": 56,
+          "consistent": 1589,
+          "violationCount": 884,
+          "examples": [
+            {
+              "crashAt": 44,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 45,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 46,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            },
+            {
+              "crashAt": 47,
+              "model": "ordered-prefix",
+              "violations": [
+                "state-not-old-or-new"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
