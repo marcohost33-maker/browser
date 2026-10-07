@@ -188,7 +188,10 @@ option: [`spike/update-activation/`](../../spike/update-activation/README.md).
 
 This is spike evidence for the deliverable "atomic metadata/package activation
 interruption matrix", not its acceptance. A real power-loss drill, wiring the stateful
-CLI onto this model, delegations and independent review remain open.
+CLI onto this model, delegations and independent review remain open. The specification
+delta to v1.0.36 is reviewed in
+[`docs/research/2026-10-07_TUF_SPEC_1.0.35_TO_1.0.36_DELTA.md`](../research/2026-10-07_TUF_SPEC_1.0.35_TO_1.0.36_DELTA.md).
+It is editorial only, and the pin stays a separate profile decision.
 
 ## Evaluation deliverables
 

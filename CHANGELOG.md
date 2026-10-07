@@ -83,6 +83,11 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Delegationen, unabhaengiges Review; der Start-Check kann einen lokalen Rollback nicht
   von "Metadaten vor Paket" unterscheiden (vom gekoppelten Protokoll nie erzeugt,
   per Test dokumentiert).
+- TUF-Spezifikations-Delta v1.0.35 -> v1.0.36 geprueft
+  (`docs/research/2026-10-07_TUF_SPEC_1.0.35_TO_1.0.36_DELTA.md`): 11 Hunks, alle
+  redaktionell (THRESHOLD-Definition verschoben, KEYID-Verweise auf root gescoped,
+  Kopfdaten, Linkformat), keine normative Aenderung. Der Pin bleibt 1.0.35; der Bump
+  ist eine eigene Profilentscheidung (#49), nie Teil eines Sicherheitsfixes.
 
 ### Security
 
