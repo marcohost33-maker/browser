@@ -1,5 +1,10 @@
 # docs-ci — deterministic Markdown lint + link checks for APP-01 documentation.
-# Tool versions and their full transitive graph are committed in package-lock.json.
+# markdownlint and its full transitive graph are committed in package-lock.json;
+# the lychee link checker is a version- and SHA-256-pinned release binary.
+#
+# Both job names are kept verbatim from the previous tools (markdownlint-cli2,
+# markdown-link-check): protect-main requires these checks by name, and renaming
+# a required check is a ruleset change that belongs to the repository owner.
 name: docs-ci
 
 on:
@@ -9,6 +14,10 @@ on:
     branches: ["main"]
 
 permissions: {}
+
+concurrency:
+  group: docs-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   markdown-lint:
@@ -52,31 +61,32 @@ jobs:
   link-check:
     name: link-check (markdown-link-check)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      LYCHEE_VERSION: "0.24.2"
+      LYCHEE_SHA256: "1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
-        with:
-          node-version: "22.23.1"
-          cache: npm
-      - name: verify exact toolchain, registry and lockfile
-        run: |
-          npm run toolchain:check
-          npm run lockfile:check
-      - name: deterministic install with lifecycle scripts disabled
-        run: npm ci --ignore-scripts --audit=false --fund=false
-      - name: check links in all tracked Markdown without package downloads
+      - name: install lychee (version- and SHA-256-pinned release binary)
         run: |
           set -euo pipefail
-          rc=0
-          while IFS= read -r f; do
-            echo "::group::$f"
-            ./node_modules/.bin/markdown-link-check --quiet \
-              --config .markdown-link-check.json "$f" || rc=1
-            echo "::endgroup::"
-          done < <(git ls-files '*.md')
-          exit "$rc"
+          archive="$RUNNER_TEMP/lychee.tar.gz"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --output "$archive" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${LYCHEE_SHA256}  ${archive}" | sha256sum --check --strict -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/lychee-x86_64-unknown-linux-gnu/lychee" --version
+      # Offline: only repository-internal links and their fragments, so the
+      # result depends on the commit alone. External links are checked by the
+      # scheduled, advisory docs-external-links workflow.
+      - name: check internal links and fragments in all tracked Markdown
+        run: |
+          set -euo pipefail
+          git ls-files -z '*.md' \
+            | xargs -0 "$RUNNER_TEMP/lychee-x86_64-unknown-linux-gnu/lychee" \
+              --config lychee.toml --offline

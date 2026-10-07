@@ -1,0 +1,30 @@
+# lychee link-checker configuration for APP-01 `browser` documentation.
+#
+# Two jobs read this file:
+# - docs-ci `link-check` (required): `--offline`, so only repository-internal
+#   links and their fragments are checked. The result depends on the commit
+#   alone, never on a third-party server being reachable.
+# - docs-external-links (scheduled, advisory): the same files online. Cited
+#   sources that block bots (403) or rate-limit (429) count as reachable so the
+#   job does not flake on anti-bot defenses; genuine 404s and dead hosts still
+#   fail it.
+#
+# The binary is pinned by version and SHA-256 in both workflows. It replaced
+# markdown-link-check, whose proxy-agent -> get-uri -> basic-ftp chain carried
+# high-severity advisories into the development dependency tree.
+
+include_fragments = "full"
+no_progress = true
+
+# Redirects are followed; the accepted codes apply to the final response.
+accept = ["200..=299", "401", "403", "429"]
+max_retries = 3
+retry_wait_time = 30
+timeout = 20
+user_agent = "Mozilla/5.0 (compatible; lychee; +ci)"
+
+exclude = [
+  '^https?://localhost',
+  '^https?://127\.0\.0\.1',
+  '^https?://\[::1\]',
+]
