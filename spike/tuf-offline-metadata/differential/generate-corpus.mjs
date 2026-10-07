@@ -371,6 +371,21 @@ cases.push(makeCase({
   }));
 }
 
+// #56: a role signed by ANOTHER top-level role's key. Every key below is in
+// root.keys, so only the keyid-to-role binding (role.keyids) can reject it.
+for (const [role, signer] of [
+  ['timestamp', 'snapshotA'],
+  ['snapshot', 'targetsA'],
+  ['targets', 'timestampA'],
+]) {
+  cases.push(makeCase({
+    name: `reject-${role}-signed-by-${signer}-key`,
+    expected: 'reject',
+    chain: buildChain({ [`${role}Signer`]: signer }),
+    note: `${role} carries a valid signature by a key that root authorizes only for another role (#56).`,
+  }));
+}
+
 {
   const badRotatedRoot = rootMetadata({
     version: 2,

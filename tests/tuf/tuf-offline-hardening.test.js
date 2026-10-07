@@ -84,6 +84,8 @@ function rootMetadata({ version = 1, snapshot = KEY.snapshotA } = {}) {
 function bundle({
   roots = [],
   snapshotSigner = KEY.snapshotA,
+  timestampSigner = KEY.timestamp,
+  targetsSigner = KEY.targets,
   timestampVersion = 2,
   snapshotVersion = 2,
   targetsVersion = 2,
@@ -109,7 +111,7 @@ function bundle({
       },
       ...extraTargets,
     },
-  }, [KEY.targets]);
+  }, [targetsSigner]);
 
   const snapshot = envelope({
     _type: 'snapshot',
@@ -125,7 +127,7 @@ function bundle({
     version: timestampVersion,
     expires: timestampExpires,
     meta: { 'snapshot.json': descriptor(snapshot) },
-  }, [KEY.timestamp]);
+  }, [timestampSigner]);
 
   return {
     roots,
@@ -213,6 +215,40 @@ test('snapshot-key rotation resets the trusted targets floor for fast-forward re
 
   assert.equal(result.status, 'update-verified');
   assert.equal(result.nextState.versions.targets, 2);
+});
+
+// #56: every signer below is a key the trusted root lists in root.keys, so the
+// signature itself verifies. Only the keyid-to-role binding (role.keyids) can
+// tell that root authorized the key for a DIFFERENT role.
+for (const [role, signerName, options] of [
+  ['timestamp', 'snapshotA', { timestampSigner: KEY.snapshotA }],
+  ['snapshot', 'targets', { snapshotSigner: KEY.targets }],
+  ['targets', 'timestamp', { targetsSigner: KEY.timestamp }],
+]) {
+  test(`${role} signed by the ${signerName} key fails the ${role} threshold (#56)`, () => {
+    assert.throws(() => verifyOfflineBundle({
+      trustedState: state(),
+      bundle: bundle(options),
+      targetPath: TARGET_PATH,
+      now: NOW,
+    }), (error) => {
+      assert.ok(error instanceof TufSpikeError);
+      assert.equal(error.code, 'SIGNATURE_THRESHOLD');
+      assert.equal(error.details.role, role);
+      assert.equal(error.details.valid, 0);
+      return true;
+    });
+  });
+}
+
+test('the same bundle with each role signed by its own key verifies (#56 control)', () => {
+  const result = verifyOfflineBundle({
+    trustedState: state(),
+    bundle: bundle(),
+    targetPath: TARGET_PATH,
+    now: NOW,
+  });
+  assert.equal(result.status, 'update-verified');
 });
 
 test('an app version cannot be reused with different capabilities', () => {
