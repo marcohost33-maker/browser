@@ -1,7 +1,7 @@
 # OPEN DECISIONS — `browser`
 
 - Status: ACTIVE REGISTER
-- Updated: 2026-07-28
+- Updated: 2026-10-07
 - Source of execution truth: GitHub issues and accepted ADRs in `marcohost33-maker/browser`
 
 ## State vocabulary
@@ -74,6 +74,12 @@ Evaluate TUF v1.0.35 with a project-specific POUF and explicit offline profile.
 Manual offline sideload remains mandatory; automatic update is optional and fully
 disableable. The decision must cover key thresholds, delegation, rollback, freeze,
 mix-and-match, revocation, capability expansion and key-loss recovery.
+
+Persistence-model evidence (2026-10-07): a single compare-and-swap generation that
+binds all trusted metadata and the active package in one atomic commit is measured in
+`spike/update-activation/`. A torn metadata/package state is not reachable in the
+crash matrix, and the two-commit alternative is detected as mixed state. Proposed, not
+accepted: wiring of the CLI, a real power-loss drill and independent review are open.
 
 ## D6 — Runtime selection — PROPOSED / P0
 

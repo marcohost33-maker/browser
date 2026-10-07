@@ -1,0 +1,47 @@
+# docs-external-links — scheduled, advisory check of external links in tracked
+# Markdown. The required docs-ci link-check runs offline, so third-party outages
+# and anti-bot defenses can never block a pull request; dead external sources
+# still surface here every week. Same pinned lychee binary and lychee.toml.
+name: docs-external-links
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"  # Mondays 05:41 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: docs-external-links
+  cancel-in-progress: true
+
+jobs:
+  external-links:
+    name: external links (advisory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      LYCHEE_VERSION: "0.24.2"
+      LYCHEE_SHA256: "1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: install lychee (version- and SHA-256-pinned release binary)
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/lychee.tar.gz"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --output "$archive" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${LYCHEE_SHA256}  ${archive}" | sha256sum --check --strict -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/lychee-x86_64-unknown-linux-gnu/lychee" --version
+      - name: check all links in all tracked Markdown
+        run: |
+          set -euo pipefail
+          git ls-files -z '*.md' \
+            | xargs -0 "$RUNNER_TEMP/lychee-x86_64-unknown-linux-gnu/lychee" \
+              --config lychee.toml

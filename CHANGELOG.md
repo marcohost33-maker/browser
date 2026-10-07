@@ -57,8 +57,73 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   **Offen:** Stromausfall-Evidenz auf Windows/macOS (NTFS-Journal-Hypothese ist
   modelliert, nicht gemessen), realer Stromausfall-Drill, Messung auf Zielhardware
   statt Hosted-Runnern, Installer-Anbindung nach dem D4-Containerentscheid.
+- Gekoppelte Update-Transaktion als Spike (`spike/update-activation/`, ADR-009
+  "atomic metadata/package activation"): ein Offline-Update-Buendel wird als **ein**
+  Commit des Activation-Stores angewandt. Derselbe atomare Rename von `state/CURRENT`
+  benennt die neue Paketversion (ein opakes, content-adressiertes Objekt, kein
+  Containerformat gewaehlt) und bindet die exakten Bytes von root, timestamp, snapshot
+  und targets sowie einen App-Trust-State (Identitaet, Version, Digest, genehmigte
+  Capabilities, Entscheid). Compare-and-swap auf die verifizierte Generation; Laden
+  verifiziert die gebundene Kette bei jedem Start neu (Signaturen, Schwellen,
+  Versions-/Laengen-/Hash-Pins), aber **nie die Frische**, damit eine installierte App
+  offline weiterlaeuft; ein nicht verifizierender Zustand schlaegt fail-closed fehl
+  statt zurueckgesetzt zu werden. Die beiden Reparaturpfade des rollenweisen Clients
+  (Rotation-Reset nach TUF 5.3.11 beim Laden, Resume ab vertrautem Timestamp) entfallen
+  konstruktiv. Lokaler Rollback bewegt nur das Paket; Metadaten und Rollback-Floors
+  bleiben gebunden. Activation-Store um die Leseseite der Bindings ergaenzt
+  (`readCommitBindings()`, `readVersionBindings()`); Commit-Protokoll unveraendert, sein
+  Crash-Matrix-Report aendert sich nur im Quell-Digest.
+  **Evidenz:** Modell-Crash-Matrix ueber sechs Szenarien inkl. Root-Rotation der
+  Online-Schluessel: 64'931/64'931 Faelle konsistent, 0 Durability-Verletzungen;
+  329/329 reale Prozess-Crashes (ext4); Negativkontrolle (dieselbe Verifikation, aber
+  Metadaten und Paket in zwei Commits) in jeder Variante als `state-not-old-or-new`
+  erkannt (u. a. 53/100 Prozess-Crash-Punkte); 11/11 Kontroll-Mutationen getoetet;
+  16 Unit-Tests. Windows/macOS ueber `activation-store-ci`.
+  **Offen:** Anbindung des zustandsbehafteten CLI, realer Stromausfall-Drill,
+  Delegationen, unabhaengiges Review; der Start-Check kann einen lokalen Rollback nicht
+  von "Metadaten vor Paket" unterscheiden (vom gekoppelten Protokoll nie erzeugt,
+  per Test dokumentiert).
+- TUF-Spezifikations-Delta v1.0.35 -> v1.0.36 geprueft
+  (`docs/research/2026-10-07_TUF_SPEC_1.0.35_TO_1.0.36_DELTA.md`): 11 Hunks, alle
+  redaktionell (THRESHOLD-Definition verschoben, KEYID-Verweise auf root gescoped,
+  Kopfdaten, Linkformat), keine normative Aenderung. Der Pin bleibt 1.0.35; der Bump
+  ist eine eigene Profilentscheidung (#49), nie Teil eines Sicherheitsfixes.
 
 ### Security
+
+- Supply-Chain / `audit:ci`-Gate wieder gruen, diesmal durch **Entfernen** statt
+  Flicken der verwundbaren Dev-Tool-Ketten (Befund: `npm audit` auf `main` meldete
+  19 Advisories, davon 11 high; `security-ci` waere auf jedem neuen Lauf rot und
+  blockierte u. a. PR #58). Zwei Ursachen, beide im reinen Doku-Tooling:
+  1. `markdownlint-cli2` -> globby -> fast-glob -> micromatch -> `braces` <= 3.0.3
+     (GHSA-vfj7-8cjw-p6xm, Stack-Exhaustion-DoS). **Es gibt keine gepatchte
+     `braces`-Version**; auch `markdownlint-cli2` 0.23.3 haengt weiter daran.
+     Ersetzt durch die Regel-Bibliothek `markdownlint` 0.41.1 selbst plus
+     eigenen Runner `scripts/markdownlint.js` (Dateisuche per Verzeichnis-Walk,
+     dieselben Regeln, dieselbe Konfiguration, jetzt `.markdownlint.jsonc`).
+     **Paritaet belegt:** identische Dateiliste (61/61) gegen globby mit den
+     alten Optionen und identische Befunde (11/11) auf einem gesaeten
+     Fehlerkorpus inkl. Inline-Disable, Dotfiles und `node_modules` in jeder
+     Tiefe; Positiv-/Negativkontrollen in
+     `tests/governance/markdownlint-runner.test.js`.
+  2. `markdown-link-check` -> proxy-agent -> pac-proxy-agent -> get-uri ->
+     `basic-ftp` (GHSA-c475-qrg2-pj4r, high) sowie `ip-address`/`socks`.
+     Ersetzt durch [lychee](https://github.com/lycheeverse/lychee) 0.24.2 als
+     version- und SHA-256-gepinntes Release-Binary (keine npm-Abhaengigkeit).
+     Der Pflicht-Check `link-check` laeuft jetzt `--offline` (nur interne Links
+     und Fragmente, Ergebnis haengt nur vom Commit ab); externe Links prueft der
+     neue, woechentliche und **advisory** Workflow `docs-external-links`.
+     Negativkontrolle: fehlende Datei und unbekanntes Fragment werden erkannt.
+  Der Weg folgt der Vorgabe aus dem Cross-Family-Review R2 (2026-10-03):
+  lychee statt markdown-link-check, kein `basic-ftp`-Major-Sprung per Override.
+  Ergebnis: Dev-Abhaengigkeiten 156 -> 49 Pakete, alle `overrides` entfallen,
+  `npm audit` 0 high/critical (3 low: `katex` ueber `micromark-extension-math`,
+  nur fuer Mathe-Syntax in eigener Doku, ohne Fix ausser Downgrade). Die
+  Check-Namen `markdown-lint (markdownlint-cli2)` und
+  `link-check (markdown-link-check)` bleiben **absichtlich** unveraendert, weil
+  `protect-main` sie per Name verlangt; eine Umbenennung ist ein Ruleset-Schritt
+  des Owners. `zizmor` 1.26.1 (regular und auditor): 0 Befunde; beide
+  Doku-Workflows haben jetzt `concurrency`-Grenzen.
 
 - Subresource-Integrity-Zwang (`docs/security/csp-baseline.json` -> 0.4.0):
   `Integrity-Policy: blocked-destinations=(script style)` ergaenzt.

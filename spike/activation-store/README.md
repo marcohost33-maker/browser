@@ -127,8 +127,12 @@ there is no pre-existing target that could wedge a retry.
 `commitBindings()` and `activate(…, { bindings })` commit named content-addressed blobs
 in the same atomic rename that names the active version. This is the primitive ADR-009
 lists as missing ("atomic metadata/package recovery"): trusted update metadata and the
-activated package can move together or not at all. This spike does not modify the TUF
-client work in pull requests #43, #46, #48 and #50, which is not yet wired to it.
+activated package can move together or not at all. `readCommitBindings()` reads them
+back from exactly one commit, each re-hashed, and `readVersionBindings()` does the same
+for the bindings of an immutable version record. The coupled update transaction in
+[`spike/update-activation/`](../update-activation/) commits TUF metadata and the package
+through these primitives and runs its own scenarios through this crash matrix; the
+role-by-role TUF client of pull requests #43, #48 and #50 is not wired to it.
 
 ### Locking
 

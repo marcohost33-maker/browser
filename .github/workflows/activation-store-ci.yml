@@ -7,8 +7,11 @@
 # directory fsync, no O_NOFOLLOW, MoveFileExW rename) and macOS (APFS, F_FULLFSYNC),
 # records what each platform's adapter actually offers (platform probe) and measures
 # p50/p95 latency and peak memory by package size (ADR-007a section 9); the benchmark
-# report is kept as an artifact. It needs no npm dependencies: the store and its
-# harness use the Node.js standard library only.
+# report is kept as an artifact. The coupled update transaction
+# (spike/update-activation/), which commits TUF metadata and the active package through
+# this store, runs its tests and real-filesystem crash matrix on the same three
+# platforms. It needs no npm dependencies: the store, the TUF verifier and their
+# harnesses use the Node.js standard library only.
 #
 # ADVISORY (not a required check) while #24 is an owner-gated spike: both triggers are
 # path-filtered to the spike tree, so this posts no status on unrelated PRs and must
@@ -23,12 +26,16 @@ on:
     paths:
       - "spike/activation-store/**"
       - "tests/activation/**"
+      - "spike/update-activation/**"
+      - "tests/update-activation/**"
       - ".github/workflows/activation-store-ci.yml"
   pull_request:
     branches: ["main"]
     paths:
       - "spike/activation-store/**"
       - "tests/activation/**"
+      - "spike/update-activation/**"
+      - "tests/update-activation/**"
       - ".github/workflows/activation-store-ci.yml"
 
 permissions: {}
@@ -61,6 +68,10 @@ jobs:
         run: node --test "tests/activation/*.test.js"
       - name: real-filesystem process crashes for every scenario
         run: node spike/activation-store/crash-matrix.mjs --real-fs-only
+      - name: coupled update transaction tests (TUF metadata + package in one commit)
+        run: node --test "tests/update-activation/*.test.js"
+      - name: real-filesystem process crashes for every coupled update scenario
+        run: node spike/update-activation/crash-matrix.mjs --real-fs-only
       - name: latency and peak memory by package size (ADR-007a section 9)
         run: node spike/activation-store/bench.mjs --ci --json activation-bench.json
       - name: keep the benchmark report

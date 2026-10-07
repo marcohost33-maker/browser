@@ -25,6 +25,8 @@ The repository currently contains:
 - a promoted canonical-manifest core for ADR-007 Track B
   (`CWAP-Strict-JSON v0.1.2`);
 - an initial dependency-free TUF v1.0.35 offline metadata verification spike;
+- a format-neutral activation store and a coupled update transaction that commits TUF
+  metadata and the package in one atomic step (spikes with crash-matrix evidence);
 - runtime, package, update and product-discovery spike protocols.
 
 No application installer, package verifier, updater, runtime host, browser shell or
@@ -121,6 +123,7 @@ local toolchain-version check is advisory; CI owns exact-version enforcement.
 - [`spike/cwap-canonical-json/`](spike/cwap-canonical-json/) — accepted Track-B manifest core
 - [`spike/tuf-offline-metadata/`](spike/tuf-offline-metadata/) — initial ADR-009 offline update verifier spike
 - [`spike/activation-store/`](spike/activation-store/) — format-neutral ADR-007a §6 activation store spike with crash matrix
+- [`spike/update-activation/`](spike/update-activation/) — coupled update transaction: TUF metadata and package activation in one commit, with crash matrix
 - [`src/security/`](src/security/) and [`tests/security/`](tests/security/) — current executable policy foundation
 - [`scripts/check-doc-governance.js`](scripts/check-doc-governance.js) — ADR identity/link consistency gate
 

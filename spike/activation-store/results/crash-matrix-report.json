@@ -1,7 +1,7 @@
 {
   "schema": "browser-activation/crash-matrix-report/v1",
   "sources": {
-    "activation-store.js": "5ddc618532040bf4d09bf2e4fc4a755ab28d1cf8f48983f53d6fe7b35c066ae6",
+    "activation-store.js": "423b50e99645dc37f612011af7be00e6d1392ba11ad8b51268f4aaa87385f7e8",
     "node-io.js": "e42803159cfc91e4286a315ebeb1411f187e30369077d758e3d245776a8c9cba",
     "harness/crash-matrix.js": "8bb9230acf609b846589ca347bb00a0aa827dca0b4978fc71e4f37f0e432a02a",
     "harness/fault-injection.js": "a1707221d531786b7f078d755081031df086442a2510307a2da6681f80e9cc8d",
