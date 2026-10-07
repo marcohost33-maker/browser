@@ -18,6 +18,7 @@ import {
   TufSpikeError,
   validateTargetPath,
   verifyBootstrapRoot,
+  verifyRetainedMetadataDescriptor,
   verifyRetainedRoleMetadata,
   verifyTargetBytes,
 } from '../tuf-offline.js';
@@ -224,6 +225,16 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
   const rollbackStateReset = rotatedOut.length > 0;
   const timestamp = rollbackStateReset ? null : parsedTimestamp;
   const snapshot = rollbackStateReset ? null : parsedSnapshot;
+  // The targets rollback floor is the version the trusted snapshot recorded
+  // (5.5.5). A retained targets.json counts only while that snapshot pins its
+  // exact bytes; otherwise it is a cache miss (#55). This also carries the
+  // 5.3.11 reset across a crash after root.json: with the snapshot rotated out,
+  // a fast-forwarded targets.json can no longer resurrect its floor (#57).
+  const retainedTargets = targets !== null
+    && snapshot !== null
+    && retainedTargetsPinned(targets, targetsBytes, snapshot, limits)
+    ? targets
+    : null;
 
   return {
     trustedState: {
@@ -231,7 +242,7 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
       versions: {
         timestamp: timestamp?.signed.version ?? 0,
         snapshot: snapshot?.signed.version ?? 0,
-        targets: targets?.signed.version ?? 0,
+        targets: retainedTargets?.signed.version ?? 0,
       },
       snapshotMeta: snapshot?.signed.meta ?? {},
     },
@@ -239,11 +250,27 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
       root: rootBytes,
       timestamp: rollbackStateReset ? null : timestampBytes,
       snapshot: rollbackStateReset ? null : snapshotBytes,
+      // Raw bytes stay available as bundle input: every use re-verifies them
+      // against the snapshot descriptor, so an unpinned file fails there and
+      // triggers the resume path instead of a second round of requests.
       targets: targetsBytes,
     },
-    parsed: { root, timestamp, snapshot, targets },
+    parsed: { root, timestamp, snapshot, targets: retainedTargets },
     rollbackStateReset: rollbackStateReset ? { rotatedOut } : null,
+    targetsUnpinned: targets !== null && retainedTargets === null,
   };
+}
+
+function retainedTargetsPinned(targets, targetsBytes, snapshot, limits) {
+  const descriptor = snapshot.signed.meta?.['targets.json'];
+  if (descriptor === undefined) return false;
+  try {
+    verifyRetainedMetadataDescriptor(targets, targetsBytes, descriptor, 'targets', limits);
+    return true;
+  } catch (error) {
+    if (error instanceof TufSpikeError) return false;
+    throw error;
+  }
 }
 
 function baseUrl(value, label) {
