@@ -60,6 +60,40 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- Supply-Chain / `audit:ci`-Gate wieder gruen, diesmal durch **Entfernen** statt
+  Flicken der verwundbaren Dev-Tool-Ketten (Befund: `npm audit` auf `main` meldete
+  19 Advisories, davon 11 high; `security-ci` waere auf jedem neuen Lauf rot und
+  blockierte u. a. PR #58). Zwei Ursachen, beide im reinen Doku-Tooling:
+  1. `markdownlint-cli2` -> globby -> fast-glob -> micromatch -> `braces` <= 3.0.3
+     (GHSA-vfj7-8cjw-p6xm, Stack-Exhaustion-DoS). **Es gibt keine gepatchte
+     `braces`-Version**; auch `markdownlint-cli2` 0.23.3 haengt weiter daran.
+     Ersetzt durch die Regel-Bibliothek `markdownlint` 0.41.1 selbst plus
+     eigenen Runner `scripts/markdownlint.js` (Dateisuche per Verzeichnis-Walk,
+     dieselben Regeln, dieselbe Konfiguration, jetzt `.markdownlint.jsonc`).
+     **Paritaet belegt:** identische Dateiliste (61/61) gegen globby mit den
+     alten Optionen und identische Befunde (11/11) auf einem gesaeten
+     Fehlerkorpus inkl. Inline-Disable, Dotfiles und `node_modules` in jeder
+     Tiefe; Positiv-/Negativkontrollen in
+     `tests/governance/markdownlint-runner.test.js`.
+  2. `markdown-link-check` -> proxy-agent -> pac-proxy-agent -> get-uri ->
+     `basic-ftp` (GHSA-c475-qrg2-pj4r, high) sowie `ip-address`/`socks`.
+     Ersetzt durch [lychee](https://github.com/lycheeverse/lychee) 0.24.2 als
+     version- und SHA-256-gepinntes Release-Binary (keine npm-Abhaengigkeit).
+     Der Pflicht-Check `link-check` laeuft jetzt `--offline` (nur interne Links
+     und Fragmente, Ergebnis haengt nur vom Commit ab); externe Links prueft der
+     neue, woechentliche und **advisory** Workflow `docs-external-links`.
+     Negativkontrolle: fehlende Datei und unbekanntes Fragment werden erkannt.
+  Der Weg folgt der Vorgabe aus dem Cross-Family-Review R2 (2026-10-03):
+  lychee statt markdown-link-check, kein `basic-ftp`-Major-Sprung per Override.
+  Ergebnis: Dev-Abhaengigkeiten 156 -> 49 Pakete, alle `overrides` entfallen,
+  `npm audit` 0 high/critical (3 low: `katex` ueber `micromark-extension-math`,
+  nur fuer Mathe-Syntax in eigener Doku, ohne Fix ausser Downgrade). Die
+  Check-Namen `markdown-lint (markdownlint-cli2)` und
+  `link-check (markdown-link-check)` bleiben **absichtlich** unveraendert, weil
+  `protect-main` sie per Name verlangt; eine Umbenennung ist ein Ruleset-Schritt
+  des Owners. `zizmor` 1.26.1 (regular und auditor): 0 Befunde; beide
+  Doku-Workflows haben jetzt `concurrency`-Grenzen.
+
 - Subresource-Integrity-Zwang (`docs/security/csp-baseline.json` -> 0.4.0):
   `Integrity-Policy: blocked-destinations=(script style)` ergaenzt.
   `script-src 'self'` beantwortet, WELCHE Herkunft ein Skript liefern darf --

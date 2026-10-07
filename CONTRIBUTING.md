@@ -52,8 +52,20 @@ The individual gates, if you need to run one in isolation:
 | `npm run docs:governance` | ADR identity, numbering and link consistency |
 | `npm run csp:check` | emitted CSP against the exact policy contract |
 | `npm test` | security, policy and regression tests |
-| `npm run docs:lint` | markdown structure |
+| `npm run docs:lint` | markdown structure (`markdownlint` over every `*.md`, rules in `.markdownlint.jsonc`) |
 | `npm run audit:ci` | vulnerability evidence snapshot |
+
+Internal links and heading fragments are checked in CI by the `link-check` job with
+a version- and SHA-256-pinned [lychee](https://github.com/lycheeverse/lychee) binary
+in `--offline` mode (configuration: `lychee.toml`). With lychee installed locally,
+the same check is:
+
+```bash
+git ls-files -z '*.md' | xargs -0 lychee --config lychee.toml --offline
+```
+
+External links are checked weekly by the advisory `docs-external-links` workflow,
+so an unreachable third-party site never blocks a pull request.
 
 ## Pull request expectations
 
