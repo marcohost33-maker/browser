@@ -56,6 +56,16 @@ files cannot wedge or weaken the client:
   metadata files"); `loadTrustedState()` reports this as `rollbackStateReset`.
   Without it, a fast-forwarded old-key timestamp would keep its rollback floor and
   freeze the client (`TIMESTAMP_ROLLBACK`) until the new-key timestamp overtook it.
+- **Retained `targets.json` counts only while the trusted snapshot pins it (#55,
+  #57).** The targets rollback floor is the version the trusted snapshot recorded
+  (5.5.5). A retained `targets.json` is used as floor and as authorization source
+  only if its exact bytes (length, SHA-256) and version match that snapshot's
+  `targets.json` descriptor; otherwise it is a cache miss (`targetsUnpinned: true`,
+  `parsed.targets: null`). With the snapshot rotated out, nothing pins it, so a
+  fast-forwarded old-key `targets.json` cannot resurrect its floor after a crash and
+  block the recovery chain with `TARGETS_ROLLBACK`. Rollback protection is not
+  weakened: the snapshot-recorded floor stays, and in normal persistence order a
+  retained `targets.json` is never newer than the one its snapshot pins.
 - **Interrupted update resumes from the trusted timestamp (5.4.3.1).** If the
   repository timestamp equals the trusted one but the retained snapshot/targets are
   not the files that timestamp pins (crash after `timestamp.json`, or after
@@ -66,7 +76,7 @@ files cannot wedge or weaken the client:
   retained metadata still fails closed, because re-downloading pinned bytes cannot
   change them.
 
-Both paths are covered by crash simulations that abort the real write sequence after
+All three are covered by crash simulations that abort the real write sequence after
 file N (`tests/tuf/tuf-client-cli.test.js`). A real process kill or power loss has not
 been measured.
 
