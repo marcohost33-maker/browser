@@ -878,6 +878,28 @@ test('a validly signed targets.json the trusted snapshot does not pin is neither
   assert.equal((await loadTrustedState(metadataDir)).targetsUnpinned, false);
 });
 
+test('a retained targets.json whose bytes the snapshot pins but whose version it does not is not trusted (#55)', async () => {
+  const fx = await fixture();
+  // Exact bytes and length pinned, version disagrees: only the version
+  // comparison in verifyRetainedMetadataDescriptor can refuse this file.
+  const chain = rebuildChain(fx, {
+    mutateSnapshot(metadata) {
+      metadata.signed.meta['targets.json'].version += 1;
+    },
+  });
+  const pinned = parseTufMetadataBytes(chain.snapshot).signed.meta['targets.json'];
+  assert.equal(pinned.length, Buffer.byteLength(chain.targets));
+  assert.notEqual(pinned.version, parseTufMetadataBytes(chain.targets).signed.version);
+  const metadataDir = join(fx.dir, 'metadata');
+  await writeTrustedState(metadataDir, { root: fx.root, ...chain });
+
+  const loaded = await loadTrustedState(metadataDir);
+  assert.equal(loaded.targetsUnpinned, true);
+  assert.equal(loaded.parsed.targets, null);
+  assert.equal(loaded.trustedState.versions.targets, 0);
+  assert.equal(loaded.trustedState.snapshotMeta['targets.json'].version, pinned.version);
+});
+
 test('after a rotation reset, the old-key chain served again is still refused', async () => {
   const fx = await fixture();
   const rotation = fx.corpus.cases.find(
