@@ -58,12 +58,22 @@ for (const testCase of corpus.cases) {
 
 // #56: keyids recomputed by the oracle independently of the code under test.
 // A missing check is a failure too, so the gate cannot pass by omission.
+// The checked totals must equal what the corpus holds, recomputed here, so an
+// oracle that checks fewer roots or keys (or none) cannot report success.
+const corpusRoots = corpus.cases.flatMap(
+  (testCase) => [testCase.trusted_root_b64, ...testCase.roots_b64],
+);
+const expectedRoots = corpusRoots.length;
+const expectedKeys = corpusRoots.reduce((sum, raw) => sum + Object.keys(
+  JSON.parse(Buffer.from(raw, 'base64').toString('utf8')).signed.keys,
+).length, 0);
 const keyidCheck = python.keyid_check;
 const keyidCheckPassed = Boolean(keyidCheck)
   && Array.isArray(keyidCheck.mismatches)
   && keyidCheck.mismatches.length === 0
-  && Number.isSafeInteger(keyidCheck.roots_checked)
-  && keyidCheck.roots_checked > 0;
+  && expectedRoots > 0
+  && keyidCheck.roots_checked === expectedRoots
+  && keyidCheck.keys_checked === expectedKeys;
 if (!keyidCheckPassed) failures += 1;
 
 const report = {
@@ -91,7 +101,8 @@ for (const row of rows) {
 }
 console.log(
   `${keyidCheckPassed ? 'PASS' : 'FAIL'} independent keyid check: `
-  + `${keyidCheck?.roots_checked ?? 0} roots, `
+  + `${keyidCheck?.roots_checked ?? 0}/${expectedRoots} roots, `
+  + `${keyidCheck?.keys_checked ?? 0}/${expectedKeys} keys, `
   + `${keyidCheck?.mismatches?.length ?? 'missing'} mismatches`,
 );
 console.log(JSON.stringify(report.summary));

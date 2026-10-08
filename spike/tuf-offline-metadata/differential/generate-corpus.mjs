@@ -387,6 +387,23 @@ for (const [role, signer] of [
 }
 
 {
+  // #56 for the root role: a new root signed to threshold (2) by two keys that
+  // both the trusted and the new root list in root.keys, but authorize only for
+  // timestamp and snapshot. Only the keyid-to-role binding can reject it.
+  const crossRoleRoot = rootMetadata({
+    version: 2,
+    signerNames: ['timestampA', 'snapshotA'],
+  });
+  cases.push(makeCase({
+    name: 'reject-root-signed-by-timestampA-snapshotA-keys',
+    expected: 'reject',
+    roots: [rawMetadata(crossRoleRoot)],
+    chain: buildChain(),
+    note: 'root v2 carries two valid signatures by keys that root authorizes only for other roles (#56).',
+  }));
+}
+
+{
   const badRotatedRoot = rootMetadata({
     version: 2,
     rootNames: ['rootB', 'rootC'],

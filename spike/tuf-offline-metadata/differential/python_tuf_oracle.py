@@ -31,9 +31,12 @@ def keyid_mismatches(case: dict) -> list:
     """
     mismatches = []
     roots = [case["trusted_root_b64"], *case["roots_b64"]]
+    roots_checked = keys_checked = 0
     for index, raw in enumerate(roots):
         signed = json.loads(decode(raw))["signed"]
+        roots_checked += 1
         for keyid, key in signed["keys"].items():
+            keys_checked += 1
             expected = hashlib.sha256(encode_canonical(key).encode("utf-8")).hexdigest()
             if expected != keyid:
                 mismatches.append({
@@ -42,7 +45,7 @@ def keyid_mismatches(case: dict) -> list:
                     "keyid": keyid,
                     "independent_keyid": expected,
                 })
-    return mismatches
+    return roots_checked, keys_checked, mismatches
 
 
 def decide(case: dict) -> dict:
@@ -88,14 +91,24 @@ def main() -> int:
 
     corpus = json.loads(Path(args.corpus).read_text(encoding="utf-8"))
     results = [decide(case) for case in corpus["cases"]]
-    mismatches = [m for case in corpus["cases"] for m in keyid_mismatches(case)]
+    # Counted inside the loop that recomputes the keyids, so the totals say what
+    # was checked, not how large the corpus is; compare-results recomputes the
+    # expected totals from the corpus and requires equality.
+    roots_checked = keys_checked = 0
+    mismatches = []
+    for case in corpus["cases"]:
+        roots, keys, found = keyid_mismatches(case)
+        roots_checked += roots
+        keys_checked += keys
+        mismatches.extend(found)
 
     payload = {
         "oracle": "python-tuf",
         "version": tuf.__version__,
         "keyid_check": {
             "method": "sha256(securesystemslib.formats.encode_canonical(key))",
-            "roots_checked": sum(1 + len(case["roots_b64"]) for case in corpus["cases"]),
+            "roots_checked": roots_checked,
+            "keys_checked": keys_checked,
             "mismatches": mismatches,
         },
         "results": results,
