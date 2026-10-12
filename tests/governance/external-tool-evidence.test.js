@@ -146,9 +146,14 @@ test('queryOsv refuses malformed, incomplete or non-terminating answers', async 
     queryOsv(packages, async () => json({ results: [{ next_page_token: 'same' }] })),
     /repeated a page token/,
   );
+  // Ends on its own after 500 pages, so a missing round cap shows up as an
+  // accepted answer rather than as a hang.
   let page = 0;
   await assert.rejects(
-    queryOsv(packages, async () => json({ results: [{ next_page_token: `p${page += 1}` }] })),
+    queryOsv(packages, async () => {
+      page += 1;
+      return json({ results: [page < 500 ? { next_page_token: `p${page}` } : {}] });
+    }),
     /still paginating/,
   );
 });
