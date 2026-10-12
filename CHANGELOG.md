@@ -70,11 +70,18 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
      Ersetzt durch die Regel-Bibliothek `markdownlint` 0.41.1 selbst plus
      eigenen Runner `scripts/markdownlint.js` (Dateisuche per Verzeichnis-Walk,
      dieselben Regeln, dieselbe Konfiguration, jetzt `.markdownlint.jsonc`).
-     **Paritaet belegt:** identische Dateiliste (61/61) gegen globby mit den
-     alten Optionen und identische Befunde (11/11) auf einem gesaeten
-     Fehlerkorpus inkl. Inline-Disable, Dotfiles und `node_modules` in jeder
-     Tiefe; Positiv-/Negativkontrollen in
-     `tests/governance/markdownlint-runner.test.js`.
+     Ein einmaliger Vergleich gegen globby mit den alten Optionen am
+     2026-10-07 ist nicht reproduzierbar (globby ist entfernt) und wird darum
+     nicht als Zahl gefuehrt. Dauerhaft gebunden in
+     `tests/governance/markdownlint-runner.test.js`: jede von git getrackte
+     `*.md` wird gelintet (gegen `git ls-files`), Dotfiles und `node_modules`/
+     `.git` in jeder Tiefe, Inline-Disable, abgeschaltete Regeln, und ein
+     Regelverstoss beendet die CLI mit Exit 1. **Symbolische Links** werden
+     nicht verfolgt und nicht still uebergangen, sondern brechen die Suche mit
+     `SYMLINK_IN_MARKDOWN_DISCOVERY` (CLI-Exit 2) ab (Owner-Entscheid
+     2026-10-10); `node_modules`/`.git` bleiben unabhaengig vom Typ
+     ausgeschlossen. Das alte globby folgte Links -- das ist eine bewusste
+     Abweichung, keine Paritaet.
   2. `markdown-link-check` -> proxy-agent -> pac-proxy-agent -> get-uri ->
      `basic-ftp` (GHSA-c475-qrg2-pj4r, high) sowie `ip-address`/`socks`.
      Ersetzt durch [lychee](https://github.com/lycheeverse/lychee) 0.24.2 als
@@ -85,7 +92,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
      Negativkontrolle: fehlende Datei und unbekanntes Fragment werden erkannt.
   Der Weg folgt der Vorgabe aus dem Cross-Family-Review R2 (2026-10-03):
   lychee statt markdown-link-check, kein `basic-ftp`-Major-Sprung per Override.
-  Ergebnis: Dev-Abhaengigkeiten 156 -> 49 Pakete, alle `overrides` entfallen,
+  Ergebnis: Dev-Abhaengigkeiten 154 -> 49 Pakete (Eintraege in
+  `package-lock.json` `packages` ohne den Wurzel-Eintrag `""`, dieselbe Zaehlung
+  wie `npm run lockfile:check`; Eltern-Commit 8bcf6ac gegen diesen Stand),
+  alle `overrides` entfallen,
   `npm audit` 0 high/critical (3 low: `katex` ueber `micromark-extension-math`,
   nur fuer Mathe-Syntax in eigener Doku, ohne Fix ausser Downgrade). Die
   Check-Namen `markdown-lint (markdownlint-cli2)` und

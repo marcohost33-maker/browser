@@ -62,17 +62,46 @@ export async function readLintConfig(repositoryRoot) {
   return config;
 }
 
-/** Every `*.md` file below `repositoryRoot`, as sorted POSIX-style relative paths. */
+/**
+ * A discovery entry the runner refuses instead of silently skipping it. `code`
+ * is stable: SYMLINK_IN_MARKDOWN_DISCOVERY for a symbolic link (on Windows also
+ * a junction), UNSUPPORTED_ENTRY_IN_MARKDOWN_DISCOVERY for any other entry that
+ * is neither a regular file nor a directory but is named `*.md`.
+ */
+export class MarkdownDiscoveryError extends Error {
+  constructor(code, entryPath) {
+    super(`${code}: ${entryPath} (markdown discovery neither follows nor skips it)`);
+    this.name = 'MarkdownDiscoveryError';
+    this.code = code;
+    this.path = entryPath;
+  }
+}
+
+/**
+ * Every `*.md` file below `repositoryRoot`, as sorted POSIX-style relative paths.
+ *
+ * Symbolic links are refused, not followed (owner decision 2026-10-10): the
+ * previous globby discovery followed them, a plain directory walk would skip
+ * them silently, and following a link can leave the checkout or loop. Any
+ * symlink outside the ignored directories therefore fails discovery with
+ * MarkdownDiscoveryError. `node_modules` and `.git` are skipped by name whatever
+ * their type, as before.
+ */
 export async function findMarkdownFiles(repositoryRoot) {
   const found = [];
   async function walk(relative) {
     const entries = await readdir(path.join(repositoryRoot, relative), { withFileTypes: true });
     for (const entry of entries) {
       const child = relative === '' ? entry.name : `${relative}/${entry.name}`;
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) await walk(child);
-      } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        found.push(child);
+      if (IGNORED_DIRECTORIES.has(entry.name)) continue;
+      if (entry.isSymbolicLink()) {
+        throw new MarkdownDiscoveryError('SYMLINK_IN_MARKDOWN_DISCOVERY', child);
+      } else if (entry.isDirectory()) {
+        await walk(child);
+      } else if (entry.isFile()) {
+        if (entry.name.endsWith('.md')) found.push(child);
+      } else if (entry.name.endsWith('.md')) {
+        throw new MarkdownDiscoveryError('UNSUPPORTED_ENTRY_IN_MARKDOWN_DISCOVERY', child);
       }
     }
   }
@@ -113,7 +142,8 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
   try {
     process.exitCode = await main(process.argv[2] ?? process.cwd());
   } catch (error) {
-    process.stderr.write(`markdownlint: ${error?.stack ?? error}\n`);
+    const detail = error instanceof MarkdownDiscoveryError ? error.message : (error?.stack ?? error);
+    process.stderr.write(`markdownlint: ${detail}\n`);
     process.exitCode = 2;
   }
 }
