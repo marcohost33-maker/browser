@@ -61,10 +61,17 @@ export function checkWorkflowPins(manifest, root = REPO) {
     const upper = tool.name.toUpperCase();
     for (const workflow of tool.workflows) {
       const text = readFileSync(path.join(root, workflow), 'utf8');
-      const version = new RegExp(`^\\s*${upper}_VERSION:\\s*"([^"]*)"`, 'm').exec(text)?.[1];
-      const digest = new RegExp(`^\\s*${upper}_SHA256:\\s*"([^"]*)"`, 'm').exec(text)?.[1];
-      if (version !== tool.version) errors.push(`${workflow}: ${upper}_VERSION ${version} != ${tool.version}`);
-      if (digest !== tool.asset.sha256) errors.push(`${workflow}: ${upper}_SHA256 ${digest} != ${tool.asset.sha256}`);
+      // Every occurrence, not the first: a second job with its own pin must not
+      // escape the check.
+      const all = (key) => [...text.matchAll(new RegExp(`^\\s*${upper}_${key}:\\s*"([^"]*)"`, 'gm'))]
+        .map((match) => match[1]);
+      for (const [key, expected] of [['VERSION', tool.version], ['SHA256', tool.asset.sha256]]) {
+        const found = all(key);
+        if (found.length === 0) errors.push(`${workflow}: no ${upper}_${key} pin`);
+        for (const value of found) {
+          if (value !== expected) errors.push(`${workflow}: ${upper}_${key} ${value} != ${expected}`);
+        }
+      }
       if (!text.includes(tool.asset.name)) errors.push(`${workflow}: does not download ${tool.asset.name}`);
     }
   }

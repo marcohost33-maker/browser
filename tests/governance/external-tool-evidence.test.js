@@ -56,6 +56,19 @@ test('a workflow whose SHA-256 drifts from the manifest is reported', async () =
   assert.match(errors[0], /LYCHEE_SHA256 0{64} != /);
 });
 
+test('a second, drifting pin in the same workflow is reported too', async () => {
+  const manifest = readManifest();
+  const root = await mkdtemp(path.join(tmpdir(), 'browser-tool-pins-'));
+  for (const workflow of manifest.tools[0].workflows) {
+    const text = await readFile(path.join(repositoryRoot, workflow), 'utf8');
+    await mkdir(path.dirname(path.join(root, workflow)), { recursive: true });
+    await writeFile(path.join(root, workflow), `${text}\n  second:\n    env:\n      LYCHEE_VERSION: "0.0.1"\n`);
+  }
+  const errors = checkWorkflowPins(manifest, root);
+  assert.equal(errors.length, manifest.tools[0].workflows.length);
+  assert.match(errors[0], /LYCHEE_VERSION 0\.0\.1 != 0\.24\.2/);
+});
+
 test('parseCargoLock reads every package and refuses an empty lock', () => {
   assert.deepEqual(parseCargoLock(LOCK), [
     { name: 'lychee', version: '0.24.2', source: null },
