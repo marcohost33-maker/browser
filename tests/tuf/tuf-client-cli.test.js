@@ -1015,6 +1015,29 @@ test('a crash after the new timestamp.json keeps the reset of a timestamp-only r
   assert.deepEqual(await readRoleFiles(metadataDir), { root: rotatedRoot, ...recovery });
   assert.equal(await markerPresent(metadataDir), false);
   assert.equal((await loadTrustedState(metadataDir)).rollbackStateReset, null);
+
+  // Every other crash point of the same sequence recovers too.
+  for (const crashPoint of ['rollback-reset.json', 'root.json', 'timestamp.json', 'targets.json']) {
+    const dir = await fastForwardedClient(`metadata-c4-${crashPoint}`);
+    await assert.rejects(crashBeforeReplacing(crashPoint, () => refreshClient({
+      metadataDir: dir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(recoveryRoutes(), []),
+    })), isSimulatedCrash);
+    let again;
+    await assert.doesNotReject(async () => {
+      again = await refreshClient({
+        metadataDir: dir,
+        metadataUrl: METADATA_URL,
+        now: NOW,
+        fetchImpl: fakeFetch(recoveryRoutes(), []),
+      });
+    }, `crash point ${crashPoint}`);
+    assert.equal(again.status, 'metadata-verified', `crash point ${crashPoint}`);
+    assert.deepEqual(await readRoleFiles(dir), { root: rotatedRoot, ...recovery });
+    assert.equal(await markerPresent(dir), false, `crash point ${crashPoint}`);
+  }
 });
 
 test('the rollback reset marker resets on load and fails closed when malformed (#59 review)', async () => {
