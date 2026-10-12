@@ -89,7 +89,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
      Der Pflicht-Check `link-check` laeuft jetzt `--offline` (nur interne Links
      und Fragmente, Ergebnis haengt nur vom Commit ab); externe Links prueft der
      neue, woechentliche und **advisory** Workflow `docs-external-links`.
-     Negativkontrolle: fehlende Datei und unbekanntes Fragment werden erkannt.
+     Negativkontrolle: fehlende Datei und unbekanntes Fragment werden erkannt
+     -- als eigener Schritt im `link-check`-Job mit demselben Binary, derselben
+     `lychee.toml` und `--offline` (`scripts/check-lychee-fragments.mjs`,
+     Fixtures `tests/fixtures/lychee-fragments/`); eine Positivkontrolle
+     (gueltiges Fragment) laeuft mit, ein Exit ohne Nennung des kaputten Links
+     zaehlt nicht als Erkennung.
   Der Weg folgt der Vorgabe aus dem Cross-Family-Review R2 (2026-10-03):
   lychee statt markdown-link-check, kein `basic-ftp`-Major-Sprung per Override.
   Ergebnis: Dev-Abhaengigkeiten 154 -> 49 Pakete (Eintraege in
