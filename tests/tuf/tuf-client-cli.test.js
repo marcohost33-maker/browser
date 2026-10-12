@@ -1047,7 +1047,8 @@ test('the rollback reset marker resets on load and fails closed when malformed (
   for (const bad of [
     '', 'not json', '[]', 'null', '{}', '{"root_version":0}', '{"root_version":-1}',
     '{"root_version":1.5}', '{"root_version":"1"}', '{"root_version":1,"x":1}',
-    `{"root_version":1,"pad":"${'a'.repeat(300)}"}`,
+    // Well-formed except for its size: only the byte ceiling can reject it.
+    `{"root_version":1}${' '.repeat(300)}`,
   ]) {
     await writeFile(markerPath, bad);
     await assert.rejects(
