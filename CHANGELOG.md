@@ -108,6 +108,13 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
      `rustls-webpki`, `quinn-proto`, `hickory-*`). Die Policy steht vorerst
      auf `report` (aufzeichnen, nicht blockieren), bis der Owner zwischen
      `block` mit begruendeten Ausnahmen und reinem Bericht entscheidet.
+     OSV-Identitaet: nur crates.io-Registry-Eintraege werden per Name/Version
+     abgefragt, Git-Quellen per gesperrtem Commit; Workspace-/Pfad-Mitglieder
+     (11 der 553) und fremde Registries stehen als `unqueried` im Bericht
+     (unter `block` sperren die fremden). Paginierte Batch-Antworten laufen
+     ueber `/v1/querybatch` weiter. Ein Policy-Block endet mit Exit 3 und
+     geschriebenen Belegen; `security-ci` laedt sie hoch und setzt die Policy
+     erst danach durch.
   Der Weg folgt der Vorgabe aus dem Cross-Family-Review R2 (2026-10-03):
   lychee statt markdown-link-check, kein `basic-ftp`-Major-Sprung per Override.
   Ergebnis: Dev-Abhaengigkeiten 154 -> 49 Pakete (Eintraege in

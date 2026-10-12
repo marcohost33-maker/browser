@@ -23,8 +23,13 @@
 // in `accepted_advisories` ({id, reason}). Evidence errors (pin drift, lock hash
 // mismatch, OSV unreachable or malformed) fail under either policy.
 //
+// OSV identity: only crates.io registry entries are queried by name/version, a
+// git source by its locked commit; workspace/path members and other registries
+// are listed as "unqueried" (under "block" the non-workspace ones block).
+//
 // Usage: node scripts/external-tool-evidence.mjs --spdx <out.json> --audit <out.json>
-// Exit 0 ok, 1 blocked by policy or evidence error, 2 usage error.
+// Exit 0 ok, 3 blocked by policy (both evidence files written), 1 evidence
+// error (no complete evidence), 2 usage error.
 
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -152,31 +157,103 @@ async function postJson(fetchImpl, url, body) {
   return response.json();
 }
 
-/** OSV ids per crate version; follows per-query pagination. */
+// The crates.io index in both spellings Cargo writes into a lock file.
+const CRATES_IO_SOURCES = new Set([
+  'registry+https://github.com/rust-lang/crates.io-index',
+  'sparse+https://index.crates.io/',
+]);
+const GIT_COMMIT = /#([0-9a-f]{40})$/;
+// Upper bound on querybatch continuation rounds per chunk; OSV paginates only
+// past 1,000 ids per query or 3,000 per batch, so this is far above real use.
+const OSV_MAX_PAGES = 100;
+
+/**
+ * The OSV identity of one Cargo.lock package, or why it has none (#60 review).
+ * OSV identifies a package by ecosystem and name; a crates.io name/version query
+ * is right only for a crates.io registry entry. A workspace/path member
+ * (`source` absent) or a crate from another registry merely SHARES a name with
+ * whatever crates.io holds, so querying crates.io would attach that crate's
+ * advisories (or miss the real ones). A git source is queried by its locked
+ * commit, which OSV supports without a package.
+ */
+export function osvQueryFor(entry) {
+  if (entry.source !== null && CRATES_IO_SOURCES.has(entry.source)) {
+    return { query: { package: { ecosystem: 'crates.io', name: entry.name }, version: entry.version } };
+  }
+  if (entry.source === null) {
+    return { unqueried: 'workspace or path member: no registry identity' };
+  }
+  if (entry.source.startsWith('git+')) {
+    const commit = GIT_COMMIT.exec(entry.source)?.[1];
+    return commit
+      ? { query: { commit } }
+      : { unqueried: 'git source without a locked 40-hex commit' };
+  }
+  return { unqueried: 'source is not the crates.io registry' };
+}
+
+function vulnIds(result, where) {
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+    throw new Error(`OSV ${where} returned a malformed result`);
+  }
+  const vulns = result.vulns ?? [];
+  if (!Array.isArray(vulns) || vulns.some((vuln) => typeof vuln?.id !== 'string' || vuln.id === '')) {
+    throw new Error(`OSV ${where} returned malformed vulnerability entries`);
+  }
+  const token = result.next_page_token;
+  if (token !== undefined && token !== null && typeof token !== 'string') {
+    throw new Error(`OSV ${where} returned a malformed next_page_token`);
+  }
+  return { ids: vulns.map((vuln) => vuln.id), token: token || null };
+}
+
+/**
+ * OSV ids per Cargo.lock package. Pagination follows the batch contract: a
+ * result with `next_page_token` is continued by ANOTHER /v1/querybatch request
+ * that carries only the queries still open, each with its own token (#60
+ * review: the token was sent to /v1/query before). Packages without an OSV
+ * identity are returned in `unqueried`, never silently dropped.
+ */
 export async function queryOsv(packages, fetchImpl = fetch) {
   const findings = [];
-  for (let start = 0; start < packages.length; start += OSV_BATCH) {
-    const chunk = packages.slice(start, start + OSV_BATCH);
-    const queries = chunk.map((entry) => ({
-      package: { ecosystem: 'crates.io', name: entry.name },
-      version: entry.version,
-    }));
-    const body = await postJson(fetchImpl, `${OSV}/querybatch`, { queries });
-    if (!Array.isArray(body?.results) || body.results.length !== chunk.length) {
-      throw new Error('OSV querybatch returned a malformed or incomplete result list');
-    }
-    for (const [index, result] of body.results.entries()) {
-      const ids = (result.vulns ?? []).map((vuln) => vuln.id);
-      let token = result.next_page_token;
-      while (token) {
-        const page = await postJson(fetchImpl, `${OSV}/query`, { ...queries[index], page_token: token });
-        ids.push(...(page.vulns ?? []).map((vuln) => vuln.id));
-        token = page.next_page_token;
+  const unqueried = [];
+  const queryable = [];
+  for (const entry of packages) {
+    const identity = osvQueryFor(entry);
+    if (identity.query) queryable.push({ entry, query: identity.query });
+    else unqueried.push({ package: entry.name, version: entry.version, source: entry.source, reason: identity.unqueried });
+  }
+  for (let start = 0; start < queryable.length; start += OSV_BATCH) {
+    const chunk = queryable.slice(start, start + OSV_BATCH);
+    const ids = chunk.map(() => []);
+    let open = chunk.map((item, index) => ({ index, query: item.query, token: null }));
+    for (let round = 0; open.length > 0; round += 1) {
+      if (round >= OSV_MAX_PAGES) throw new Error(`OSV querybatch still paginating after ${OSV_MAX_PAGES} rounds`);
+      const queries = open.map(({ query, token }) => (token === null ? query : { ...query, page_token: token }));
+      const body = await postJson(fetchImpl, `${OSV}/querybatch`, { queries });
+      if (!Array.isArray(body?.results) || body.results.length !== open.length) {
+        throw new Error('OSV querybatch returned a malformed or incomplete result list');
       }
-      if (ids.length > 0) findings.push({ package: chunk[index].name, version: chunk[index].version, ids });
+      const next = [];
+      for (const [position, result] of body.results.entries()) {
+        const page = vulnIds(result, 'querybatch');
+        const item = open[position];
+        ids[item.index].push(...page.ids);
+        if (page.token !== null) {
+          if (page.token === item.token) throw new Error('OSV querybatch repeated a page token');
+          next.push({ ...item, token: page.token });
+        }
+      }
+      open = next;
+    }
+    for (const [index, { entry }] of chunk.entries()) {
+      const unique = [...new Set(ids[index])];
+      if (unique.length > 0) {
+        findings.push({ package: entry.name, version: entry.version, source: entry.source, ids: unique });
+      }
     }
   }
-  return findings;
+  return { findings, unqueried };
 }
 
 async function describe(findings, fetchImpl) {
@@ -218,14 +295,29 @@ function parseArgs(argv) {
   return options.spdx && options.audit ? options : null;
 }
 
-export async function main(argv = process.argv.slice(2), fetchImpl = fetch) {
+/**
+ * Packages the lookup could not query block under "block": no OSV identity
+ * means no evidence that they are free of advisories. Workspace/path members
+ * (no `source`) are the tool's own crates, built from the pinned source commit;
+ * they are recorded but do not block (their advisories would be the tool's).
+ */
+export function evaluateUnqueried(unqueried, manifest) {
+  return manifest.advisory_policy === 'block' ? unqueried.filter((entry) => entry.source !== null) : [];
+}
+
+export const EXIT_BLOCKED = 3;
+
+export async function main(argv = process.argv.slice(2), fetchImpl = fetch, {
+  manifest: manifestOverride = null,
+  root = REPO,
+} = {}) {
   const options = parseArgs(argv);
   if (!options) {
     process.stderr.write('usage: node scripts/external-tool-evidence.mjs --spdx <out.json> --audit <out.json>\n');
     return 2;
   }
-  const manifest = readManifest();
-  const pinErrors = checkWorkflowPins(manifest);
+  const manifest = manifestOverride ?? readManifest();
+  const pinErrors = checkWorkflowPins(manifest, root);
   if (pinErrors.length > 0) {
     for (const error of pinErrors) process.stderr.write(`pin drift: ${error}\n`);
     return 1;
@@ -242,9 +334,10 @@ export async function main(argv = process.argv.slice(2), fetchImpl = fetch) {
     }
     const packages = parseCargoLock(lock.toString('utf8'));
     spdx.push(buildSpdx(tool, packages));
-    const findings = await queryOsv(packages, fetchImpl);
+    const { findings, unqueried } = await queryOsv(packages, fetchImpl);
     const { rows, blocking } = evaluateAdvisories(findings, await describe(findings, fetchImpl), manifest);
-    blocked += blocking.length;
+    const unqueriedBlocking = evaluateUnqueried(unqueried, manifest);
+    blocked += blocking.length + unqueriedBlocking.length;
     tools.push({
       name: tool.name,
       version: tool.version,
@@ -253,13 +346,18 @@ export async function main(argv = process.argv.slice(2), fetchImpl = fetch) {
       packages: packages.length,
       packages_with_advisories: findings.length,
       advisories: rows,
-      blocking: blocking.map((row) => `${row.package}@${row.version} ${row.id}`),
+      unqueried,
+      blocking: [
+        ...blocking.map((row) => `${row.package}@${row.version} ${row.id}`),
+        ...unqueriedBlocking.map((entry) => `${entry.package}@${entry.version} not queried: ${entry.reason}`),
+      ],
       scope: 'Cargo.lock superset of the binary; reachability in the binary not assessed',
     });
     process.stdout.write(
       `${tool.name} ${tool.version}: ${packages.length} Cargo.lock packages, `
       + `${findings.length} with OSV advisories (${rows.length} advisory rows), `
-      + `${blocking.length} blocking under policy ${manifest.advisory_policy}\n`,
+      + `${unqueried.length} without an OSV identity (not queried), `
+      + `${blocking.length + unqueriedBlocking.length} blocking under policy ${manifest.advisory_policy}\n`,
     );
   }
   writeFileSync(options.spdx, `${JSON.stringify(spdx.length === 1 ? spdx[0] : spdx, null, 2)}\n`);
@@ -270,7 +368,9 @@ export async function main(argv = process.argv.slice(2), fetchImpl = fetch) {
     advisory_policy: manifest.advisory_policy,
     tools,
   }, null, 2)}\n`);
-  return blocked === 0 ? 0 : 1;
+  // 3, not 1: both evidence files are written, so CI can upload them before it
+  // enforces the policy (#60 review); 1 stays "no complete evidence".
+  return blocked === 0 ? 0 : EXIT_BLOCKED;
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
