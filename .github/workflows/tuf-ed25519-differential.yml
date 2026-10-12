@@ -91,6 +91,13 @@ jobs:
             artifacts/tuf-differential/python-tuf-results.json \
             artifacts/tuf-differential/comparison.json
 
+      - name: Run mutation study
+        run: |
+          node spike/tuf-offline-metadata/differential/mutation-study.mjs \
+            artifacts/tuf-differential/mutations.json \
+            --python "$(command -v python)" \
+            --require-all
+
       - name: Upload differential evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -12,11 +12,49 @@ const corpus = JSON.parse(readFileSync(corpusPath, 'utf8'));
 const browser = JSON.parse(readFileSync(browserPath, 'utf8'));
 const python = JSON.parse(readFileSync(pythonPath, 'utf8'));
 
-const byName = (result) => new Map(
-  result.results.map((item) => [item.name, item]),
-);
-const browserByName = byName(browser);
-const pythonByName = byName(python);
+// Evidence completeness: exactly one decision per corpus case and oracle, from
+// the expected oracle. A Map built from the raw list would let a later
+// duplicate overwrite an earlier verdict and would ignore extra rows.
+const DECISIONS = new Set(['accept', 'reject']);
+const KEYID_METHOD = 'sha256(securesystemslib.formats.encode_canonical(key))';
+const pinnedTuf = /^tuf==(\S+)/m.exec(readFileSync(
+  new URL('./requirements-oracle.txt', import.meta.url),
+  'utf8',
+))?.[1];
+if (!pinnedTuf) throw new Error('requirements-oracle.txt does not pin tuf==<version>');
+
+if (!Array.isArray(corpus.cases) || corpus.cases.length === 0) {
+  throw new Error('corpus holds no cases');
+}
+const caseNames = new Set();
+for (const testCase of corpus.cases) {
+  if (typeof testCase.name !== 'string' || caseNames.has(testCase.name)) {
+    throw new Error(`corpus case name missing or repeated: ${testCase.name}`);
+  }
+  caseNames.add(testCase.name);
+}
+
+function byName(result, oracle) {
+  if (result?.oracle !== oracle) {
+    throw new Error(`expected oracle ${oracle}, got ${JSON.stringify(result?.oracle)}`);
+  }
+  if (!Array.isArray(result.results)) throw new Error(`${oracle} results missing`);
+  const map = new Map();
+  for (const item of result.results) {
+    if (map.has(item?.name)) throw new Error(`${oracle} repeats a decision for ${item.name}`);
+    if (!caseNames.has(item?.name)) throw new Error(`${oracle} decided an unknown case ${item?.name}`);
+    if (!DECISIONS.has(item.decision)) {
+      throw new Error(`${oracle} decision for ${item.name} is ${JSON.stringify(item.decision)}`);
+    }
+    map.set(item.name, item);
+  }
+  return map;
+}
+const browserByName = byName(browser, 'browser-tuf-spike');
+const pythonByName = byName(python, 'python-tuf');
+if (python.version !== pinnedTuf) {
+  throw new Error(`python-tuf ${python.version} is not the pinned ${pinnedTuf}`);
+}
 
 let failures = 0;
 const rows = [];
@@ -69,6 +107,7 @@ const expectedKeys = corpusRoots.reduce((sum, raw) => sum + Object.keys(
 ).length, 0);
 const keyidCheck = python.keyid_check;
 const keyidCheckPassed = Boolean(keyidCheck)
+  && keyidCheck.method === KEYID_METHOD
   && Array.isArray(keyidCheck.mismatches)
   && keyidCheck.mismatches.length === 0
   && expectedRoots > 0
