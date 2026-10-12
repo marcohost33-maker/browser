@@ -149,6 +149,20 @@ test('a symlinked directory fails discovery and the CLI exits 2 naming it', asyn
   assert.match(cli.stderr, /SYMLINK_IN_MARKDOWN_DISCOVERY: linked/);
 });
 
+test('a FIFO named *.md fails discovery instead of being skipped', async (t) => {
+  // Windows has no FIFOs; an MSYS `mkfifo` there emulates one with a regular file.
+  if (process.platform === 'win32') {
+    t.skip('no FIFOs on Windows; covered on Linux CI');
+    return;
+  }
+  const root = await fixture({ 'README.md': '# Root\n' });
+  const made = spawnSync('mkfifo', [path.join(root, 'pipe.md')]);
+  assert.equal(made.status, 0, `mkfifo failed: ${made.error?.message ?? made.stderr}`);
+  await assert.rejects(findMarkdownFiles(root), (error) => error instanceof MarkdownDiscoveryError
+    && error.code === 'UNSUPPORTED_ENTRY_IN_MARKDOWN_DISCOVERY'
+    && error.path === 'pipe.md');
+});
+
 test('a symlinked node_modules or .git is still skipped by name', async () => {
   const root = await fixture({ 'README.md': '# Root\n', 'vendor/pkg/README.md': '#bad\n' });
   assert.ok(await link('vendor', path.join(root, 'node_modules'), 'dir'));
