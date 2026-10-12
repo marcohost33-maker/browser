@@ -878,27 +878,37 @@ test('a validly signed targets.json the trusted snapshot does not pin is neither
   assert.equal((await loadTrustedState(metadataDir)).targetsUnpinned, false);
 });
 
-test('a retained targets.json whose bytes the snapshot pins but whose version it does not is not trusted (#55)', async () => {
-  const fx = await fixture();
-  // Exact bytes and length pinned, version disagrees: only the version
-  // comparison in verifyRetainedMetadataDescriptor can refuse this file.
-  const chain = rebuildChain(fx, {
-    mutateSnapshot(metadata) {
-      metadata.signed.meta['targets.json'].version += 1;
-    },
-  });
-  const pinned = parseTufMetadataBytes(chain.snapshot).signed.meta['targets.json'];
-  assert.equal(pinned.length, Buffer.byteLength(chain.targets));
-  assert.notEqual(pinned.version, parseTufMetadataBytes(chain.targets).signed.version);
-  const metadataDir = join(fx.dir, 'metadata');
-  await writeTrustedState(metadataDir, { root: fx.root, ...chain });
+for (const [label, pinVersion] of [
+  ['one above', (version) => version + 1],
+  ['far above (99999)', () => 99999],
+]) {
+  test(`a retained targets.json whose bytes the snapshot pins but whose version it does not (${label}) is not trusted (#55)`, async () => {
+    const fx = await fixture();
+    // Exact bytes (length AND SHA-256) pinned, version disagrees: only the
+    // version comparison in verifyRetainedMetadataDescriptor can refuse this file.
+    const chain = rebuildChain(fx, {
+      mutateSnapshot(metadata) {
+        const descriptor = metadata.signed.meta['targets.json'];
+        descriptor.version = pinVersion(descriptor.version);
+      },
+    });
+    const pinned = parseTufMetadataBytes(chain.snapshot).signed.meta['targets.json'];
+    const targetsVersion = parseTufMetadataBytes(chain.targets).signed.version;
+    assert.equal(pinned.length, Buffer.byteLength(chain.targets));
+    assert.equal(pinned.hashes.sha256, sha256(chain.targets));
+    assert.notEqual(pinned.version, targetsVersion);
+    const metadataDir = join(fx.dir, 'metadata');
+    await writeTrustedState(metadataDir, { root: fx.root, ...chain });
 
-  const loaded = await loadTrustedState(metadataDir);
-  assert.equal(loaded.targetsUnpinned, true);
-  assert.equal(loaded.parsed.targets, null);
-  assert.equal(loaded.trustedState.versions.targets, 0);
-  assert.equal(loaded.trustedState.snapshotMeta['targets.json'].version, pinned.version);
-});
+    const loaded = await loadTrustedState(metadataDir);
+    assert.equal(loaded.targetsUnpinned, true);
+    assert.equal(loaded.parsed.targets, null);
+    // Neither the file's own version nor the descriptor's becomes a trusted
+    // targets version; the signed snapshot still carries the descriptor floor.
+    assert.equal(loaded.trustedState.versions.targets, 0);
+    assert.equal(loaded.trustedState.snapshotMeta['targets.json'].version, pinned.version);
+  });
+}
 
 test('after a rotation reset, the old-key chain served again is still refused', async () => {
   const fx = await fixture();

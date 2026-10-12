@@ -401,6 +401,21 @@ for (const [role, signer] of [
     chain: buildChain(),
     note: 'root v2 carries two valid signatures by keys that root authorizes only for other roles (#56).',
   }));
+
+  // Partial authorization: one genuine root key plus one key root lists in
+  // root.keys but authorizes only for targets. Counting every key in root.keys
+  // would reach the threshold of 2; the role binding counts only one.
+  const partlyAuthorizedRoot = rootMetadata({
+    version: 2,
+    signerNames: ['rootA', 'targetsA'],
+  });
+  cases.push(makeCase({
+    name: 'reject-root-signed-by-rootA-and-targetsA-keys',
+    expected: 'reject',
+    roots: [rawMetadata(partlyAuthorizedRoot)],
+    chain: buildChain(),
+    note: 'root v2 reaches threshold 2 only if the targets-only key is counted for root (#56).',
+  }));
 }
 
 {
