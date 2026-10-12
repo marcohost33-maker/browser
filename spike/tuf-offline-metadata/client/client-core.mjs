@@ -18,6 +18,7 @@ import {
   TufSpikeError,
   validateTargetPath,
   verifyBootstrapRoot,
+  verifyRetainedMetadataDescriptor,
   verifyRetainedRoleMetadata,
   verifyTargetBytes,
 } from '../tuf-offline.js';
@@ -184,6 +185,58 @@ function retainedRollbackFloorValid(metadata, root, role, limits) {
   }
 }
 
+/**
+ * Durable 5.3.11 reset marker (#59 review). The signature check above cannot
+ * carry the reset past the timestamp write: once the NEW timestamp is on disk it
+ * verifies, and with only the timestamp keys rotated the OLD snapshot still
+ * verifies under the unchanged snapshot keys, so a fast-forwarded snapshot floor
+ * would come back (SNAPSHOT_ROLLBACK on the recovery chain). It also cannot see a
+ * rotation whose old signatures still meet the new threshold, while the core
+ * decides "rotated" by key set (sameRoleKeys).
+ *
+ * The marker is written atomically BEFORE root.json whenever a refresh persists
+ * under a reset, and removed only after timestamp, snapshot AND targets are all
+ * in place. While present it resets timestamp and snapshot (and with them the
+ * targets floor) on every load. A marker naming a NEWER root than the one on disk
+ * is from a crash before root.json and is ignored: that refresh never committed,
+ * the old files are still the floors of the old root, and the next refresh
+ * re-detects the rotation. Anything malformed fails closed.
+ */
+const ROLLBACK_RESET_MARKER = 'rollback-reset';
+const ROLLBACK_RESET_MARKER_MAX_BYTES = 256;
+
+async function readRollbackResetMarker(metadataDir) {
+  const bytes = await readMaybe(rolePath(metadataDir, ROLLBACK_RESET_MARKER));
+  if (bytes === null) return null;
+  let parsed;
+  try {
+    if (bytes.length > ROLLBACK_RESET_MARKER_MAX_BYTES) throw new Error('oversized');
+    parsed = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    fail('INVALID_LOCAL_STATE', `${ROLLBACK_RESET_MARKER}.json is not a valid reset marker`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)
+      || Object.keys(parsed).length !== 1
+      || !Number.isSafeInteger(parsed.root_version) || parsed.root_version < 1) {
+    fail('INVALID_LOCAL_STATE', `${ROLLBACK_RESET_MARKER}.json is not a valid reset marker`);
+  }
+  return { rootVersion: parsed.root_version };
+}
+
+async function removeRollbackResetMarker(metadataDir) {
+  try {
+    await unlink(rolePath(metadataDir, ROLLBACK_RESET_MARKER));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+  return {
+    path: resolve(metadataDir),
+    removed: `${ROLLBACK_RESET_MARKER}.json`,
+    directorySynced: await syncDirectory(metadataDir),
+  };
+}
+
 export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
   const rootBytes = await readMaybe(rolePath(metadataDir, 'root'));
   if (rootBytes === null) {
@@ -221,9 +274,23 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
   ].filter(([role, metadata]) => (
     metadata !== null && !retainedRollbackFloorValid(metadata, root, role, limits)
   )).map(([role]) => role);
-  const rollbackStateReset = rotatedOut.length > 0;
+  const marker = await readRollbackResetMarker(metadataDir);
+  const resetPendingSinceRoot = marker !== null && marker.rootVersion <= root.signed.version
+    ? marker.rootVersion
+    : null;
+  const rollbackStateReset = rotatedOut.length > 0 || resetPendingSinceRoot !== null;
   const timestamp = rollbackStateReset ? null : parsedTimestamp;
   const snapshot = rollbackStateReset ? null : parsedSnapshot;
+  // The targets rollback floor is the version the trusted snapshot recorded
+  // (5.5.5). A retained targets.json counts only while that snapshot pins its
+  // exact bytes; otherwise it is a cache miss (#55). This also carries the
+  // 5.3.11 reset across a crash after root.json: with the snapshot rotated out,
+  // a fast-forwarded targets.json can no longer resurrect its floor (#57).
+  const retainedTargets = targets !== null
+    && snapshot !== null
+    && retainedTargetsPinned(targets, targetsBytes, snapshot, limits)
+    ? targets
+    : null;
 
   return {
     trustedState: {
@@ -231,7 +298,7 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
       versions: {
         timestamp: timestamp?.signed.version ?? 0,
         snapshot: snapshot?.signed.version ?? 0,
-        targets: targets?.signed.version ?? 0,
+        targets: retainedTargets?.signed.version ?? 0,
       },
       snapshotMeta: snapshot?.signed.meta ?? {},
     },
@@ -239,11 +306,27 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
       root: rootBytes,
       timestamp: rollbackStateReset ? null : timestampBytes,
       snapshot: rollbackStateReset ? null : snapshotBytes,
+      // Raw bytes stay available as bundle input: every use re-verifies them
+      // against the snapshot descriptor, so an unpinned file fails there and
+      // triggers the resume path instead of a second round of requests.
       targets: targetsBytes,
     },
-    parsed: { root, timestamp, snapshot, targets },
-    rollbackStateReset: rollbackStateReset ? { rotatedOut } : null,
+    parsed: { root, timestamp, snapshot, targets: retainedTargets },
+    rollbackStateReset: rollbackStateReset ? { rotatedOut, resetPendingSinceRoot } : null,
+    targetsUnpinned: targets !== null && retainedTargets === null,
   };
+}
+
+function retainedTargetsPinned(targets, targetsBytes, snapshot, limits) {
+  const descriptor = snapshot.signed.meta?.['targets.json'];
+  if (descriptor === undefined) return false;
+  try {
+    verifyRetainedMetadataDescriptor(targets, targetsBytes, descriptor, 'targets', limits);
+    return true;
+  } catch (error) {
+    if (error instanceof TufSpikeError) return false;
+    throw error;
+  }
 }
 
 function baseUrl(value, label) {
@@ -368,22 +451,51 @@ function metadataFilename(role, version, consistentSnapshot) {
   return `${version}.${role}.json`;
 }
 
-async function persistVerifiedMetadata(metadataDir, verified, bundle) {
+/**
+ * `rollbackReset`: this refresh verified with the timestamp/snapshot floors
+ * cleared, either because its root chain rotated their keys or because the
+ * loaded state was already under a reset. Then the reset marker goes down
+ * before root.json and comes off only after the last role file (see
+ * readRollbackResetMarker). A complete write without a reset also clears a stale
+ * marker first, so a marker from a refresh that never committed its root cannot
+ * apply to a later, unrelated root.
+ */
+async function persistVerifiedMetadata(metadataDir, verified, bundle, { rollbackReset = false } = {}) {
   const writes = [];
+  const complete = verified.status === 'metadata-verified';
+
+  if (complete && rollbackReset) {
+    const rootVersion = verified.trustedRoot.signed.version;
+    writes.push(await atomicWriteFile(
+      rolePath(metadataDir, ROLLBACK_RESET_MARKER),
+      Buffer.from(`${JSON.stringify({ root_version: rootVersion })}\n`, 'utf8'),
+    ));
+  } else if (complete) {
+    const removed = await removeRollbackResetMarker(metadataDir);
+    if (removed !== null) writes.push(removed);
+  }
 
   if (bundle.roots.length > 0) {
     writes.push(await atomicWriteFile(rolePath(metadataDir, 'root'), bundle.roots.at(-1)));
   }
 
-  if (verified.status === 'metadata-verified') {
+  if (complete) {
     // Each role replacement is atomic. Cross-role transactionality is intentionally
     // not claimed yet; ordering preserves the normal TUF progression.
     writes.push(await atomicWriteFile(rolePath(metadataDir, 'timestamp'), bundle.timestamp));
     writes.push(await atomicWriteFile(rolePath(metadataDir, 'snapshot'), bundle.snapshot));
     writes.push(await atomicWriteFile(rolePath(metadataDir, 'targets'), bundle.targets));
+    if (rollbackReset) {
+      const removed = await removeRollbackResetMarker(metadataDir);
+      if (removed !== null) writes.push(removed);
+    }
   }
 
   return writes;
+}
+
+function underRollbackReset(verified, local) {
+  return verified.metadataRollbackStateReset === true || local.rollbackStateReset !== null;
 }
 
 /**
@@ -422,7 +534,9 @@ function assertRetainedMetadataFinal({ verified, local, now, limits }) {
   });
 }
 
-const TRUSTED_METADATA_ROLES = Object.freeze(['root', 'timestamp', 'snapshot', 'targets']);
+const TRUSTED_METADATA_ROLES = Object.freeze([
+  'root', 'timestamp', 'snapshot', 'targets', ROLLBACK_RESET_MARKER,
+]);
 
 async function existingTrustedMetadata(metadataDir) {
   const present = [];
@@ -566,7 +680,9 @@ async function finishNoUpdate({
     now,
     limits,
   });
-  const writes = await persistVerifiedMetadata(metadataDir, resumed, bundle);
+  const writes = await persistVerifiedMetadata(metadataDir, resumed, bundle, {
+    rollbackReset: underRollbackReset(resumed, local),
+  });
   return { verified: resumed, writes };
 }
 
@@ -629,7 +745,9 @@ export async function refreshClient({
       now,
       limits,
     });
-    const writes = await persistVerifiedMetadata(metadataDir, verified, bundle);
+    const writes = await persistVerifiedMetadata(metadataDir, verified, bundle, {
+      rollbackReset: underRollbackReset(verified, local),
+    });
     return completeRefresh({ verified, writes, finish, consistentSnapshot });
   }
   const { snapshot, targets } = await fetchSnapshotAndTargets({
@@ -650,7 +768,9 @@ export async function refreshClient({
 
   // Root progress is already persisted (5.3.8) before the retained
   // snapshot/targets are checked against that root in finishNoUpdate().
-  const writes = await persistVerifiedMetadata(metadataDir, verified, bundle);
+  const writes = await persistVerifiedMetadata(metadataDir, verified, bundle, {
+    rollbackReset: underRollbackReset(verified, local),
+  });
   return completeRefresh({ verified, writes, finish, consistentSnapshot });
 }
 
