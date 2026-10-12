@@ -76,7 +76,10 @@ capability approval, secure updates, safe extraction or runtime isolation.
   timestamp/snapshot on their key rotation (TUF 5.3.11, fast-forward recovery;
   #57 supersedes the earlier #33 preservation invariant); the reset also survives a
   crash after `root.json`, because a retained `targets.json` counts only while the
-  trusted snapshot pins its exact bytes (#55);
+  trusted snapshot pins its exact bytes (#55), and a crash after the new
+  `timestamp.json`, because a durable `rollback-reset.json` marker goes down before
+  `root.json` and comes off only after `targets.json` (#59 review: with only the
+  timestamp keys rotated, the old snapshot still verifies);
 - rollback, freeze, mix-and-match, target-integrity and capability-expansion checks;
 - canonical JSON depth/node bounds, cycle rejection, canonical UTC expiry and full
   signed-target path validation;
