@@ -95,6 +95,19 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
      Fixtures `tests/fixtures/lychee-fragments/`); eine Positivkontrolle
      (gueltiges Fragment) laeuft mit, ein Exit ohne Nennung des kaputten Links
      zaehlt nicht als Erkennung.
+     Der SHA-256-Pin belegt nur, WELCHES Archiv lief, nicht was es enthaelt:
+     `security-ci` inventarisiert das Binary darum zusaetzlich
+     (`scripts/external-tool-evidence.mjs`, Manifest
+     `scripts/external-tools.json`): Workflow-Pins gegen das Manifest,
+     `Cargo.lock` am gepinnten Quell-Commit per SHA-256 geprueft, SPDX-2.3-
+     Inventar und OSV-Abfrage je Crate, beide als Artefakt. Grenzen: die
+     `Cargo.lock` ist eine Obermenge des gelinkten Binarys (alle Features,
+     Targets, Dev-Abhaengigkeiten), und keine Build-Provenienz bindet das
+     Binary an sie. Stand der OSV-Abfrage am 2026-10-12 (lokal): 553 Pakete,
+     17 davon mit Advisories, darunter GitHub-Schwere HIGH (u. a. `aws-lc-sys`,
+     `rustls-webpki`, `quinn-proto`, `hickory-*`). Die Policy steht vorerst
+     auf `report` (aufzeichnen, nicht blockieren), bis der Owner zwischen
+     `block` mit begruendeten Ausnahmen und reinem Bericht entscheidet.
   Der Weg folgt der Vorgabe aus dem Cross-Family-Review R2 (2026-10-03):
   lychee statt markdown-link-check, kein `basic-ftp`-Major-Sprung per Override.
   Ergebnis: Dev-Abhaengigkeiten 154 -> 49 Pakete (Eintraege in

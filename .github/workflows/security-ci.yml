@@ -156,6 +156,14 @@ jobs:
           }
           writeFileSync('security-evidence.json', `${JSON.stringify(evidence, null, 2)}\n`);
           NODE
+      # CI tooling outside the npm graph (the pinned lychee binary): SPDX
+      # inventory of its Cargo.lock and OSV advisory lookup. Policy and limits:
+      # scripts/external-tools.json and scripts/external-tool-evidence.mjs.
+      - name: inventory and advisories of external CI tooling
+        run: |
+          node scripts/external-tool-evidence.mjs \
+            --spdx external-tools.spdx.json \
+            --audit external-tools-advisories.json
       - name: upload immutable security evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
@@ -164,5 +172,7 @@ jobs:
             npm-audit.json
             sbom.spdx.json
             security-evidence.json
+            external-tools.spdx.json
+            external-tools-advisories.json
           if-no-files-found: error
           retention-days: 90
