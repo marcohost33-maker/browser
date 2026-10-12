@@ -168,7 +168,9 @@ test('a symlinked node_modules or .git is still skipped by name', async () => {
   assert.ok(await link('vendor', path.join(root, 'node_modules'), 'dir'));
   await mkdir(path.join(root, 'sub'));
   assert.ok(await link(path.join('..', 'vendor'), path.join(root, 'sub', '.git'), 'dir'));
-  assert.deepEqual(await findMarkdownFiles(root), ['README.md', 'vendor/pkg/README.md']);
+  const found = await findMarkdownFiles(root).catch((error) => error);
+  assert.ok(Array.isArray(found), `discovery refused an ignored directory: ${found?.message}`);
+  assert.deepEqual(found, ['README.md', 'vendor/pkg/README.md']);
 });
 
 // Binds the "every *.md" coverage claim to the repository itself instead of a
