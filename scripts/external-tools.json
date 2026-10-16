@@ -1,0 +1,28 @@
+{
+  "//": "Executable CI tooling outside the npm dependency graph. scripts/external-tool-evidence.mjs inventories it (SPDX 2.3) and looks up advisories (OSV); tests/governance/external-tool-evidence.test.js keeps the workflow pins equal to this file.",
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "lychee",
+      "version": "0.24.2",
+      "repository": "https://github.com/lycheeverse/lychee",
+      "release_tag": "lychee-v0.24.2",
+      "source_commit": "2bba271688c1abb1503097a064e6c3bc1d1b6a9b",
+      "asset": {
+        "name": "lychee-x86_64-unknown-linux-gnu.tar.gz",
+        "size": 7626970,
+        "sha256": "1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a"
+      },
+      "cargo_lock": {
+        "url": "https://raw.githubusercontent.com/lycheeverse/lychee/2bba271688c1abb1503097a064e6c3bc1d1b6a9b/Cargo.lock",
+        "sha256": "bc72eb2b1959bc7262beb489e42feaa3d440565c3185208418fca8e7bcfed1df"
+      },
+      "workflows": [
+        ".github/workflows/docs-ci.yml",
+        ".github/workflows/docs-external-links.yml"
+      ]
+    }
+  ],
+  "advisory_policy": "report",
+  "accepted_advisories": []
+}

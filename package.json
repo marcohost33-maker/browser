@@ -17,23 +17,12 @@
     "csp:json": "node src/security/serialize-cli.js --json",
     "csp:check": "node src/security/serialize-cli.js --check",
     "docs:governance": "node scripts/check-doc-governance.js",
-    "docs:lint": "markdownlint-cli2",
+    "docs:lint": "node scripts/markdownlint.js",
     "audit:ci": "node scripts/run-audit.js",
     "verify:local": "node scripts/verify-local.js"
   },
   "devDependencies": {
-    "markdown-link-check": "3.14.2",
-    "markdownlint-cli2": "0.23.2"
-  },
-  "overrides": {
-    "ip-address": "10.4.0",
-    "undici": "7.29.1",
-    "xmlbuilder2": {
-      "js-yaml": "4.3.2"
-    },
-    "markdownlint-cli2": {
-      "smol-toml": "1.7.1"
-    }
+    "markdownlint": "0.41.1"
   },
   "license": "MIT"
 }
