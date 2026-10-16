@@ -1,5 +1,10 @@
 # `browser`
 
+[![security-ci](https://github.com/marcohost33-maker/browser/actions/workflows/security-ci.yml/badge.svg?branch=main)](https://github.com/marcohost33-maker/browser/actions/workflows/security-ci.yml)
+[![docs-ci](https://github.com/marcohost33-maker/browser/actions/workflows/docs-ci.yml/badge.svg?branch=main)](https://github.com/marcohost33-maker/browser/actions/workflows/docs-ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node 22.23.1](https://img.shields.io/badge/node-22.23.1-blue.svg)](package.json)
+
 `browser` is the standalone repository for a native, offline-capable runtime that
 installs and executes web applications locally. Delivery is staged by trust class:
 
