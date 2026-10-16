@@ -60,6 +60,75 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- Supply-Chain / `audit:ci`-Gate wieder gruen, diesmal durch **Entfernen** statt
+  Flicken der verwundbaren Dev-Tool-Ketten (Befund: `npm audit` auf `main` meldete
+  19 Advisories, davon 11 high; `security-ci` waere auf jedem neuen Lauf rot und
+  blockierte u. a. PR #58). Zwei Ursachen, beide im reinen Doku-Tooling:
+  1. `markdownlint-cli2` -> globby -> fast-glob -> micromatch -> `braces` <= 3.0.3
+     (GHSA-vfj7-8cjw-p6xm, Stack-Exhaustion-DoS). **Es gibt keine gepatchte
+     `braces`-Version**; auch `markdownlint-cli2` 0.23.3 haengt weiter daran.
+     Ersetzt durch die Regel-Bibliothek `markdownlint` 0.41.1 selbst plus
+     eigenen Runner `scripts/markdownlint.js` (Dateisuche per Verzeichnis-Walk,
+     dieselben Regeln, dieselbe Konfiguration, jetzt `.markdownlint.jsonc`).
+     Ein einmaliger Vergleich gegen globby mit den alten Optionen am
+     2026-10-07 ist nicht reproduzierbar (globby ist entfernt) und wird darum
+     nicht als Zahl gefuehrt. Dauerhaft gebunden in
+     `tests/governance/markdownlint-runner.test.js`: jede von git getrackte
+     `*.md` wird gelintet (gegen `git ls-files`), Dotfiles und `node_modules`/
+     `.git` in jeder Tiefe, Inline-Disable, abgeschaltete Regeln, und ein
+     Regelverstoss beendet die CLI mit Exit 1. **Symbolische Links** werden
+     nicht verfolgt und nicht still uebergangen, sondern brechen die Suche mit
+     `SYMLINK_IN_MARKDOWN_DISCOVERY` (CLI-Exit 2) ab (Owner-Entscheid
+     2026-10-10); `node_modules`/`.git` bleiben unabhaengig vom Typ
+     ausgeschlossen. Das alte globby folgte Links -- das ist eine bewusste
+     Abweichung, keine Paritaet.
+  2. `markdown-link-check` -> proxy-agent -> pac-proxy-agent -> get-uri ->
+     `basic-ftp` (GHSA-c475-qrg2-pj4r, high) sowie `ip-address`/`socks`.
+     Ersetzt durch [lychee](https://github.com/lycheeverse/lychee) 0.24.2 als
+     version- und SHA-256-gepinntes Release-Binary (keine npm-Abhaengigkeit).
+     Der Pflicht-Check `link-check` laeuft jetzt `--offline` (nur interne Links
+     und Fragmente, Ergebnis haengt nur vom Commit ab); externe Links prueft der
+     neue, woechentliche und **advisory** Workflow `docs-external-links`.
+     Negativkontrolle: fehlende Datei und unbekanntes Fragment werden erkannt
+     -- als eigener Schritt im `link-check`-Job mit demselben Binary, derselben
+     `lychee.toml` und `--offline` (`scripts/check-lychee-fragments.mjs`,
+     Fixtures `tests/fixtures/lychee-fragments/`); eine Positivkontrolle
+     (gueltiges Fragment) laeuft mit, ein Exit ohne Nennung des kaputten Links
+     zaehlt nicht als Erkennung.
+     Der SHA-256-Pin belegt nur, WELCHES Archiv lief, nicht was es enthaelt:
+     `security-ci` inventarisiert das Binary darum zusaetzlich
+     (`scripts/external-tool-evidence.mjs`, Manifest
+     `scripts/external-tools.json`): Workflow-Pins gegen das Manifest,
+     `Cargo.lock` am gepinnten Quell-Commit per SHA-256 geprueft, SPDX-2.3-
+     Inventar und OSV-Abfrage je Crate, beide als Artefakt. Grenzen: die
+     `Cargo.lock` ist eine Obermenge des gelinkten Binarys (alle Features,
+     Targets, Dev-Abhaengigkeiten), und keine Build-Provenienz bindet das
+     Binary an sie. Stand der OSV-Abfrage am 2026-10-12 (lokal): 553 Pakete,
+     17 davon mit Advisories, darunter GitHub-Schwere HIGH (u. a. `aws-lc-sys`,
+     `rustls-webpki`, `quinn-proto`, `hickory-*`). Die Policy steht vorerst
+     auf `report` (aufzeichnen, nicht blockieren), bis der Owner zwischen
+     `block` mit begruendeten Ausnahmen und reinem Bericht entscheidet.
+     OSV-Identitaet: nur crates.io-Registry-Eintraege werden per Name/Version
+     abgefragt, Git-Quellen per gesperrtem Commit; Workspace-/Pfad-Mitglieder
+     (11 der 553) und fremde Registries stehen als `unqueried` im Bericht
+     (unter `block` sperren die fremden). Paginierte Batch-Antworten laufen
+     ueber `/v1/querybatch` weiter. Ein Policy-Block endet mit Exit 3 und
+     geschriebenen Belegen; `security-ci` laedt sie hoch und setzt die Policy
+     erst danach durch.
+  Der Weg folgt der Vorgabe aus dem Cross-Family-Review R2 (2026-10-03):
+  lychee statt markdown-link-check, kein `basic-ftp`-Major-Sprung per Override.
+  Ergebnis: Dev-Abhaengigkeiten 154 -> 49 Pakete (Eintraege in
+  `package-lock.json` `packages` ohne den Wurzel-Eintrag `""`, dieselbe Zaehlung
+  wie `npm run lockfile:check`; Eltern-Commit 8bcf6ac gegen diesen Stand),
+  alle `overrides` entfallen,
+  `npm audit` 0 high/critical (3 low: `katex` ueber `micromark-extension-math`,
+  nur fuer Mathe-Syntax in eigener Doku, ohne Fix ausser Downgrade). Die
+  Check-Namen `markdown-lint (markdownlint-cli2)` und
+  `link-check (markdown-link-check)` bleiben **absichtlich** unveraendert, weil
+  `protect-main` sie per Name verlangt; eine Umbenennung ist ein Ruleset-Schritt
+  des Owners. `zizmor` 1.26.1 (regular und auditor): 0 Befunde; beide
+  Doku-Workflows haben jetzt `concurrency`-Grenzen.
+
 - Subresource-Integrity-Zwang (`docs/security/csp-baseline.json` -> 0.4.0):
   `Integrity-Policy: blocked-destinations=(script style)` ergaenzt.
   `script-src 'self'` beantwortet, WELCHE Herkunft ein Skript liefern darf --
