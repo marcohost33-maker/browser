@@ -124,6 +124,22 @@ local toolchain-version check is advisory; CI owns exact-version enforcement.
 - [`src/security/`](src/security/) and [`tests/security/`](tests/security/) — current executable policy foundation
 - [`scripts/check-doc-governance.js`](scripts/check-doc-governance.js) — ADR identity/link consistency gate
 
+### Process folders
+
+The repository was created from the owner's repository template (Copier, see
+[`.copier-answers.yml`](.copier-answers.yml)). The template adds a few process
+folders at the top level. They hold project bookkeeping, not product code, and
+several are still empty or contain only the template text:
+
+- [`00_landkarte/`](00_landkarte/README.md) — short project map in German: project code `APP-01`, purpose, related repositories, pointers to key decisions.
+- `007acc/` — exchange folder for external cross-model review material; currently empty.
+- [`pr_nr/`](pr_nr/README.md) — register of positive results (what worked and why) and negative results (what failed, with root cause).
+- [`todo/`](todo/README.md) — dated list of open threads.
+- `messungen/` — measurement records; currently empty.
+- [`inventar/`](inventar/README.md) — inventory of components with their maturity.
+- [`archiv/`](archiv/README.md) — superseded artefacts kept for provenance instead of being deleted.
+- `.repostandard14/` — machine-readable repository-structure standard (`standard.yaml`) and an existence detector (`detektor.py`), run as an advisory pre-push hook via [`lefthook.yml`](lefthook.yml); it checks that elements exist, not their quality.
+
 ## Release claim
 
 The repository is **public** and MIT-licensed (see [`LICENSE`](LICENSE)).
@@ -162,3 +178,6 @@ expectations are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 Please do **not** open a public issue for a suspected vulnerability — the
 private reporting path is described in [`SECURITY.md`](SECURITY.md).
+
+Participation in this project is governed by the
+[Code of Conduct](CODE_OF_CONDUCT.md) (Contributor Covenant 2.1).
