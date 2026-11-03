@@ -116,7 +116,9 @@ export async function atomicWriteFile(path, bytes) {
   const data = Buffer.from(bytes);
   const parent = dirname(path);
   const ancestorsToSync = await parentsOfMissingDirectories(parent);
-  await mkdir(parent, { recursive: true });
+  // Private from the start (P2-BR59-01): a group-writable umask must not
+  // produce a trusted-state directory that the next load refuses.
+  await mkdir(parent, { recursive: true, mode: 0o700 });
   const directorySyncs = [];
   for (const directory of ancestorsToSync) {
     directorySyncs.push({ path: directory, synced: await syncDirectory(directory) });
@@ -237,7 +239,71 @@ async function removeRollbackResetMarker(metadataDir) {
   };
 }
 
+/**
+ * Account boundary of the trusted state (P2-BR59-01, cross-family review
+ * 2026-10-13).
+ *
+ * The rollback floors are only as strong as the files that hold them. Whoever
+ * can write this directory can delete timestamp/snapshot/targets.json or write
+ * a reset marker, and either one clears the floors. TUF has no defence against
+ * an attacker with local control of the trusted metadata store (specification
+ * issue #107, open since 2020), and this client has none either. What it CAN
+ * enforce is that no OTHER account has that control: the directory and every
+ * trusted file must belong to the running account, must not be writable by
+ * group or others, and must be a real directory or regular file, not a link.
+ * Anything else is INSECURE_LOCAL_STATE before a byte is read. The running
+ * account itself (and any administrator) stays inside the boundary; protecting
+ * the floors against it needs an externally anchored monotonic backstop, which
+ * this spike does not have.
+ *
+ * Windows has no POSIX uid or mode bits: there only the link/type rule applies,
+ * and ACLs are not inspected (a documented gap).
+ */
+export function trustedStateEntryProblem(stat, { directory, uid, posix }) {
+  if (directory ? !stat.isDirectory() : !stat.isFile()) {
+    return directory ? 'is not a real directory' : 'is not a regular file';
+  }
+  if (uid !== null && stat.uid !== uid) return 'is owned by another account';
+  if (posix && (stat.mode & 0o022) !== 0) return 'is writable by group or others';
+  return null;
+}
+
+async function assertPrivateTrustedState(metadataDir) {
+  const boundary = {
+    uid: typeof process.getuid === 'function' ? process.getuid() : null,
+    posix: process.platform !== 'win32',
+  };
+  const entries = [
+    { path: metadataDir, label: 'metadata directory', directory: true },
+    ...TRUSTED_METADATA_ROLES.map((role) => ({
+      path: rolePath(metadataDir, role),
+      label: `${role}.json`,
+      directory: false,
+    })),
+  ];
+  for (const { path, label, directory } of entries) {
+    let stat;
+    try {
+      stat = await lstat(path);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      // No directory: nothing to protect yet (load then reports the missing root).
+      if (directory) return;
+      continue;
+    }
+    const problem = trustedStateEntryProblem(stat, { directory, ...boundary });
+    if (problem !== null) {
+      fail('INSECURE_LOCAL_STATE', `${label} ${problem}`, {
+        path: resolve(path),
+        uid: stat.uid,
+        mode: stat.mode & 0o7777,
+      });
+    }
+  }
+}
+
 export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
+  await assertPrivateTrustedState(metadataDir);
   const rootBytes = await readMaybe(rolePath(metadataDir, 'root'));
   if (rootBytes === null) {
     fail('MISSING_TRUSTED_ROOT', 'metadata directory has no root.json');
@@ -585,6 +651,7 @@ async function existingTrustedMetadata(metadataDir) {
  */
 export async function initClient(metadataDir, trustedRootPath, limits = DEFAULT_LIMITS) {
   const trustedRootBytes = await readFile(trustedRootPath);
+  await assertPrivateTrustedState(metadataDir);
   const present = await existingTrustedMetadata(metadataDir);
   if (present.length > 0) {
     fail('METADATA_DIR_INITIALIZED', 'metadata directory already holds trusted state', {

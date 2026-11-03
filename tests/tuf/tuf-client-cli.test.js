@@ -132,10 +132,16 @@ function rebuildChain(fx, {
   return { timestamp: timestampRaw, snapshot: snapshotRaw, targets: targetsRaw };
 }
 
+// Trusted state must be private to this account (P2-BR59-01): fixtures that
+// place files by hand create them like the client does, whatever the umask.
+async function writePrivate(path, bytes) {
+  await writeFile(path, bytes, { mode: 0o600 });
+}
+
 async function writeTrustedState(metadataDir, files) {
-  await mkdir(metadataDir, { recursive: true });
+  await mkdir(metadataDir, { recursive: true, mode: 0o700 });
   for (const [role, bytes] of Object.entries(files)) {
-    await writeFile(join(metadataDir, `${role}.json`), bytes);
+    await writePrivate(join(metadataDir, `${role}.json`), bytes);
   }
 }
 
@@ -1140,7 +1146,7 @@ test('the rollback reset marker resets on load and fails closed when malformed (
 
   // A valid marker for the loaded root resets both floors although every
   // retained file still verifies.
-  await writeFile(markerPath, '{"root_version":1}\n');
+  await writePrivate(markerPath, '{"root_version":1}\n');
   const reset = await loadTrustedState(metadataDir);
   assert.deepEqual(reset.rollbackStateReset, { rotatedOut: [], resetPendingSinceRoot: 1 });
   assert.equal(reset.trustedState.versions.timestamp, 0);
@@ -1148,7 +1154,7 @@ test('the rollback reset marker resets on load and fails closed when malformed (
   assert.equal(reset.trustedState.versions.targets, 0);
 
   // A marker for a newer, never-committed root is ignored.
-  await writeFile(markerPath, '{"root_version":2}\n');
+  await writePrivate(markerPath, '{"root_version":2}\n');
   assert.equal((await loadTrustedState(metadataDir)).rollbackStateReset, null);
 
   for (const bad of [
@@ -1157,7 +1163,7 @@ test('the rollback reset marker resets on load and fails closed when malformed (
     // Well-formed except for its size: only the byte ceiling can reject it.
     `{"root_version":1}${' '.repeat(300)}`,
   ]) {
-    await writeFile(markerPath, bad);
+    await writePrivate(markerPath, bad);
     await assert.rejects(
       loadTrustedState(metadataDir),
       (error) => error?.code === 'INVALID_LOCAL_STATE',
@@ -1172,7 +1178,7 @@ test('a complete refresh without a reset clears a stale marker for an uncommitte
   const sourceRoot = join(fx.dir, 'source-root.json');
   await writeFile(sourceRoot, fx.root);
   await initClient(metadataDir, sourceRoot);
-  await writeFile(join(metadataDir, 'rollback-reset.json'), '{"root_version":7}\n');
+  await writePrivate(join(metadataDir, 'rollback-reset.json'), '{"root_version":7}\n');
   const result = await refreshClient({
     metadataDir,
     metadataUrl: METADATA_URL,
