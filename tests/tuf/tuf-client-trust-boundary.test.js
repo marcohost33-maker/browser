@@ -3,7 +3,10 @@
 //
 // 1. Another account cannot plant or alter trusted state at all: the client
 //    refuses a metadata directory or trusted file that is a link, owned by
-//    another account, or writable by group/others (INSECURE_LOCAL_STATE).
+//    another account, or writable by group/others, and any directory above it
+//    that another account can rename entries in (SEI CERT FIO15-C "secure
+//    directory"); after the check all IO uses the canonical path
+//    (INSECURE_LOCAL_STATE).
 // 2. For the running account, a forged marker grants nothing beyond what
 //    deleting timestamp/snapshot/targets.json already grants: over the whole
 //    differential corpus both tamperings give the same outcome, the same
@@ -19,6 +22,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  realpath,
   symlink,
   unlink,
   writeFile,
@@ -27,6 +31,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import {
+  ancestorDirectoryProblem,
   initClient,
   loadTrustedState,
   refreshClient,
@@ -78,6 +83,27 @@ test('the trusted-state boundary rule: owner, group/other write bit and real fil
   const windows = { directory: false, uid: null, posix: false };
   assert.equal(trustedStateEntryProblem(fakeStat({ uid: 0, mode: 0o666 }), windows), null);
   assert.equal(trustedStateEntryProblem(fakeStat({ kind: 'link' }), windows), 'is not a regular file');
+});
+
+test('the ancestor rule: owner account or superuser, no foreign rename without the sticky bit', () => {
+  const posix = { uid: 1000, posix: true };
+  const dir = (mode, uid = 1000) => ancestorDirectoryProblem(fakeStat({ kind: 'dir', mode, uid }), posix);
+
+  assert.equal(dir(0o755), null);
+  assert.equal(dir(0o755, 0), null, 'the superuser may own an ancestor');
+  assert.equal(dir(0o700), null);
+  assert.equal(dir(0o755, 4242), 'is owned by another account');
+  assert.equal(dir(0o775), 'is writable by group or others without the sticky bit');
+  assert.equal(dir(0o757, 0), 'is writable by group or others without the sticky bit');
+  assert.equal(dir(0o777, 0), 'is writable by group or others without the sticky bit');
+  assert.equal(dir(0o1777, 0), null, 'a sticky /tmp only lets owners rename their entries');
+  assert.equal(dir(0o1775), null);
+  assert.equal(dir(0o1777, 4242), 'is owned by another account', 'sticky does not excuse a foreign owner');
+  assert.equal(ancestorDirectoryProblem(fakeStat({ kind: 'file' }), posix), 'is not a directory');
+  assert.equal(ancestorDirectoryProblem(fakeStat({ kind: 'link' }), posix), 'is not a directory');
+
+  const windows = { uid: null, posix: false };
+  assert.equal(ancestorDirectoryProblem(fakeStat({ kind: 'dir', mode: 0o777, uid: 4242 }), windows), null);
 });
 
 async function initializedClient(fx, name) {
@@ -187,6 +213,81 @@ test('another account cannot plant or reach trusted state (INSECURE_LOCAL_STATE)
     await writeFile(sourceRoot, fx.root);
     await assert.rejects(initClient(metadataDir, sourceRoot), isInsecure);
     await assert.rejects(lstat(join(metadataDir, 'root.json')), (error) => error?.code === 'ENOENT');
+  }
+});
+
+test('a directory above the trusted state that others can rename in is refused; IO uses the canonical path', { skip: !POSIX }, async () => {
+  const fx = await corpusFixture('browser-tuf-boundary-ancestor-');
+
+  async function refused(metadataDir, label) {
+    await assert.rejects(loadTrustedState(metadataDir), isInsecure, `${label}: load`);
+    const requests = [];
+    await assert.rejects(refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: bundleMirror(fx, requests),
+    }), isInsecure, `${label}: refresh`);
+    assert.deepEqual(requests, [], `${label}: refused before any request`);
+  }
+
+  // A shared parent: group members could rename metadata/ away and put their
+  // own directory in its place between check and use.
+  for (const mode of [0o770, 0o777, 0o707]) {
+    const shared = join(fx.dir, `shared-${mode.toString(8)}`);
+    await mkdir(shared, { mode: 0o700 });
+    const metadataDir = await initializedClient({ ...fx, dir: shared }, 'metadata');
+    await chmod(shared, mode);
+    await refused(metadataDir, `parent mode ${mode.toString(8)}`);
+    // The same parent with the sticky bit, as on /tmp: accepted.
+    await chmod(shared, mode | 0o1000);
+    await assert.doesNotReject(loadTrustedState(metadataDir), `parent mode ${(mode | 0o1000).toString(8)}`);
+  }
+
+  // Further up the chain counts as well, and init refuses to create the trusted
+  // state (or any missing directory) below an insecure ancestor.
+  {
+    const shared = join(fx.dir, 'shared-grandparent');
+    await mkdir(shared, { mode: 0o700 });
+    await chmod(shared, 0o777);
+    const metadataDir = join(shared, 'a', 'b', 'metadata');
+    const sourceRoot = join(fx.dir, 'grandparent-source-root.json');
+    await writeFile(sourceRoot, fx.root);
+    await assert.rejects(initClient(metadataDir, sourceRoot), isInsecure);
+    await assert.rejects(lstat(join(shared, 'a')), (error) => error?.code === 'ENOENT');
+
+    await chmod(shared, 0o700);
+    await initClient(metadataDir, sourceRoot);
+    await chmod(shared, 0o777);
+    await refused(metadataDir, 'grandparent mode 777');
+  }
+
+  // A link among the ancestors is resolved once, checked, and then every read
+  // and write goes through the canonical directory.
+  {
+    const real = join(fx.dir, 'real-parent');
+    await mkdir(real, { mode: 0o700 });
+    const linked = join(fx.dir, 'linked-parent');
+    await symlink(real, linked);
+    const metadataDir = join(linked, 'metadata');
+    const sourceRoot = join(fx.dir, 'linked-source-root.json');
+    await writeFile(sourceRoot, fx.root);
+    const init = await initClient(metadataDir, sourceRoot);
+    const canonical = join(await realpath(real), 'metadata');
+    assert.equal(init.path, join(canonical, 'root.json'));
+
+    const result = await refreshClient({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: bundleMirror(fx),
+    });
+    assert.equal(result.status, 'metadata-verified');
+    assert.ok(result.writes.length > 0);
+    for (const write of result.writes) {
+      assert.ok(write.path.startsWith(`${canonical}/`), `write outside the canonical directory: ${write.path}`);
+    }
+    assert.equal((await loadTrustedState(metadataDir)).metadataDir, canonical);
   }
 });
 

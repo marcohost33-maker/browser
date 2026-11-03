@@ -3,6 +3,7 @@ import {
   mkdir,
   open,
   readFile,
+  realpath,
   rename,
   unlink,
 } from 'node:fs/promises';
@@ -245,19 +246,32 @@ async function removeRollbackResetMarker(metadataDir) {
  *
  * The rollback floors are only as strong as the files that hold them. Whoever
  * can write this directory can delete timestamp/snapshot/targets.json or write
- * a reset marker, and either one clears the floors. TUF has no defence against
- * an attacker with local control of the trusted metadata store (specification
- * issue #107, open since 2020), and this client has none either. What it CAN
- * enforce is that no OTHER account has that control: the directory and every
- * trusted file must belong to the running account, must not be writable by
- * group or others, and must be a real directory or regular file, not a link.
+ * a reset marker, and either one clears the floors. Whoever can write a
+ * directory ABOVE it can rename it away and put another one in its place. TUF
+ * has no defence against an attacker with local control of the trusted
+ * metadata store (specification issue #107, open since 2020), and this client
+ * has none either. What it CAN enforce is that no OTHER account has that
+ * control, following the "secure directory" rule of SEI CERT FIO15-C (the same
+ * idea as OpenSSH StrictModes):
+ *
+ * - the metadata directory and every trusted file belong to the running
+ *   (effective) account, are not writable by group or others, and are a real
+ *   directory or regular file, not a link;
+ * - every directory above it, up to the file-system root, belongs to that
+ *   account or to the superuser, and nobody else can rename or replace entries
+ *   in it: group/other write is accepted only together with the sticky bit (as
+ *   on /tmp), which limits renaming and deleting an entry to its owner;
+ * - after the check, all IO goes through the canonical (realpath) directory,
+ *   so a link among the ancestors cannot be re-pointed between check and use.
+ *
  * Anything else is INSECURE_LOCAL_STATE before a byte is read. The running
  * account itself (and any administrator) stays inside the boundary; protecting
  * the floors against it needs an externally anchored monotonic backstop, which
  * this spike does not have.
  *
- * Windows has no POSIX uid or mode bits: there only the link/type rule applies,
- * and ACLs are not inspected (a documented gap).
+ * Windows has no POSIX uid or mode bits: there only the link/type rule for the
+ * metadata directory and its files applies, the path is not canonicalised, and
+ * ACLs are not inspected (a documented gap).
  */
 export function trustedStateEntryProblem(stat, { directory, uid, posix }) {
   if (directory ? !stat.isDirectory() : !stat.isFile()) {
@@ -268,42 +282,98 @@ export function trustedStateEntryProblem(stat, { directory, uid, posix }) {
   return null;
 }
 
-async function assertPrivateTrustedState(metadataDir) {
-  const boundary = {
-    uid: typeof process.getuid === 'function' ? process.getuid() : null,
-    posix: process.platform !== 'win32',
-  };
-  const entries = [
-    { path: metadataDir, label: 'metadata directory', directory: true },
-    ...TRUSTED_METADATA_ROLES.map((role) => ({
-      path: rolePath(metadataDir, role),
-      label: `${role}.json`,
-      directory: false,
-    })),
-  ];
-  for (const { path, label, directory } of entries) {
-    let stat;
-    try {
-      stat = await lstat(path);
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
-      // No directory: nothing to protect yet (load then reports the missing root).
-      if (directory) return;
-      continue;
-    }
-    const problem = trustedStateEntryProblem(stat, { directory, ...boundary });
-    if (problem !== null) {
-      fail('INSECURE_LOCAL_STATE', `${label} ${problem}`, {
-        path: resolve(path),
-        uid: stat.uid,
-        mode: stat.mode & 0o7777,
-      });
-    }
+const STICKY_BIT = 0o1000;
+
+/** The rule for a directory above the metadata directory (see above). */
+export function ancestorDirectoryProblem(stat, { uid, posix }) {
+  if (!stat.isDirectory()) return 'is not a directory';
+  if (!posix) return null;
+  if (uid !== null && stat.uid !== uid && stat.uid !== 0) return 'is owned by another account';
+  if ((stat.mode & 0o022) !== 0 && (stat.mode & STICKY_BIT) === 0) {
+    return 'is writable by group or others without the sticky bit';
+  }
+  return null;
+}
+
+function accountBoundary() {
+  let uid = null;
+  // Files this process creates belong to its EFFECTIVE uid.
+  if (typeof process.geteuid === 'function') uid = process.geteuid();
+  else if (typeof process.getuid === 'function') uid = process.getuid();
+  return { uid, posix: process.platform !== 'win32' };
+}
+
+async function lstatMaybe(path) {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
   }
 }
 
-export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
-  await assertPrivateTrustedState(metadataDir);
+function insecure(label, problem, path, stat) {
+  fail('INSECURE_LOCAL_STATE', `${label} ${problem}`, {
+    path,
+    uid: stat.uid,
+    mode: stat.mode & 0o7777,
+  });
+}
+
+/**
+ * Checks the location of the trusted state and returns the directory path that
+ * ALL further IO must use. A metadata directory that does not exist yet (init)
+ * is checked through its nearest existing ancestor; atomicWriteFile() creates
+ * the missing tail with mode 0700.
+ */
+async function secureMetadataDir(metadataDir) {
+  const boundary = accountBoundary();
+  const absolute = resolve(metadataDir);
+  const leaf = await lstatMaybe(absolute);
+  if (leaf !== null) {
+    const problem = trustedStateEntryProblem(leaf, { directory: true, ...boundary });
+    if (problem !== null) insecure('metadata directory', problem, absolute, leaf);
+  }
+
+  let directory = absolute;
+  if (boundary.posix) {
+    let existing = absolute;
+    const missing = [];
+    while ((await lstatMaybe(existing)) === null) {
+      const up = dirname(existing);
+      if (up === existing) break;
+      missing.unshift(basename(existing));
+      existing = up;
+    }
+    // The leaf itself is not a link (checked above), so realpath() only
+    // resolves links among the ancestors.
+    const canonicalExisting = await realpath(existing);
+    let ancestor = leaf === null ? canonicalExisting : dirname(canonicalExisting);
+    while (true) {
+      const stat = await lstat(ancestor);
+      const problem = ancestorDirectoryProblem(stat, boundary);
+      if (problem !== null) insecure(`ancestor directory ${ancestor}`, problem, ancestor, stat);
+      const up = dirname(ancestor);
+      if (up === ancestor) break;
+      ancestor = up;
+    }
+    directory = join(canonicalExisting, ...missing);
+  }
+
+  if (leaf !== null) {
+    for (const role of TRUSTED_METADATA_ROLES) {
+      const path = rolePath(directory, role);
+      const stat = await lstatMaybe(path);
+      if (stat === null) continue;
+      const problem = trustedStateEntryProblem(stat, { directory: false, ...boundary });
+      if (problem !== null) insecure(`${role}.json`, problem, path, stat);
+    }
+  }
+  return directory;
+}
+
+export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {
+  const metadataDir = await secureMetadataDir(requestedDir);
   const rootBytes = await readMaybe(rolePath(metadataDir, 'root'));
   if (rootBytes === null) {
     fail('MISSING_TRUSTED_ROOT', 'metadata directory has no root.json');
@@ -359,6 +429,8 @@ export async function loadTrustedState(metadataDir, limits = DEFAULT_LIMITS) {
     : null;
 
   return {
+    // The checked, canonical directory: callers persist through this path only.
+    metadataDir,
     trustedState: {
       root,
       versions: {
@@ -649,9 +721,9 @@ async function existingTrustedMetadata(metadataDir) {
  * Re-initialisation is therefore refused rather than silently merged; the
  * operator removes the old state explicitly.
  */
-export async function initClient(metadataDir, trustedRootPath, limits = DEFAULT_LIMITS) {
+export async function initClient(requestedDir, trustedRootPath, limits = DEFAULT_LIMITS) {
   const trustedRootBytes = await readFile(trustedRootPath);
-  await assertPrivateTrustedState(metadataDir);
+  const metadataDir = await secureMetadataDir(requestedDir);
   const present = await existingTrustedMetadata(metadataDir);
   if (present.length > 0) {
     fail('METADATA_DIR_INITIALIZED', 'metadata directory already holds trusted state', {
@@ -777,13 +849,15 @@ async function finishNoUpdate({
 }
 
 export async function refreshClient({
-  metadataDir,
+  metadataDir: requestedDir,
   metadataUrl,
   now = new Date(),
   limits = DEFAULT_LIMITS,
   fetchImpl = globalThis.fetch,
 }) {
-  const local = await loadTrustedState(metadataDir, limits);
+  const local = await loadTrustedState(requestedDir, limits);
+  // Every write below goes to the directory the boundary check approved.
+  const { metadataDir } = local;
   const metadataBase = baseUrl(metadataUrl, 'metadata URL');
   const fetchBytes = (url, options) => fetchBounded(url, { ...options, fetchImpl });
 
