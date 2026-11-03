@@ -72,7 +72,9 @@ capability approval, secure updates, safe extraction or runtime isolation.
 - dependency-free Node.js verifier for a self-contained TUF v1.0.35 offline bundle;
 - top-level root, timestamp, snapshot and targets threshold verification;
 - old/new root dual-threshold rotation and correct timestamp/snapshot fast-forward reset;
-- preservation of separately trusted targets rollback state across key rotation;
+- targets rollback floor kept across root changes, but reset together with
+  timestamp/snapshot on their key rotation (TUF 5.3.11, fast-forward recovery;
+  #57 supersedes the earlier #33 preservation invariant);
 - rollback, freeze, mix-and-match, target-integrity and capability-expansion checks;
 - canonical JSON depth/node bounds, cycle rejection, canonical UTC expiry and full
   signed-target path validation;

@@ -185,7 +185,11 @@ test('snapshot-key rotation resets timestamp and snapshot fast-forward state', (
   assert.equal(result.nextState.versions.snapshot, 1);
 });
 
-test('snapshot-key rotation never resets the separately trusted targets version', () => {
+// #57 reverses the #33 invariant: TUF 5.3.11 discards the trusted snapshot on
+// snapshot-key rotation, and with it the targets rollback floor it recorded
+// (python-tuf test_new_targets_fast_forward_recovery). A root change WITHOUT
+// timestamp/snapshot key rotation still keeps the floor (tuf-offline.test.js).
+test('snapshot-key rotation resets the trusted targets floor for fast-forward recovery (#57)', () => {
   const oldRoot = rootMetadata();
   const newRoot = rootMetadata({ version: 2, snapshot: KEY.snapshotB });
   const trusted = state(oldRoot);
@@ -194,7 +198,7 @@ test('snapshot-key rotation never resets the separately trusted targets version'
   trusted.versions.targets = 3;
   trusted.snapshotMeta['targets.json'].version = 99;
 
-  expectCode('TARGETS_ROLLBACK', () => verifyOfflineBundle({
+  const result = verifyOfflineBundle({
     trustedState: trusted,
     bundle: bundle({
       roots: [newRoot],
@@ -205,7 +209,10 @@ test('snapshot-key rotation never resets the separately trusted targets version'
     }),
     targetPath: TARGET_PATH,
     now: NOW,
-  }));
+  });
+
+  assert.equal(result.status, 'update-verified');
+  assert.equal(result.nextState.versions.targets, 2);
 });
 
 test('an app version cannot be reused with different capabilities', () => {
