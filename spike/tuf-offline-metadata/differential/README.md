@@ -77,9 +77,17 @@ crashes. Counts are therefore read from that artifact; this README states none.
 | `role-binding-skipped-for-root` | unit suite, differential |
 | `keyid-non-canonical` (`keyIdFor` hashes `JSON.stringify(key)`) | python-tuf keyid check only |
 | `retained-version-binding-removed` (#55 version comparison removed) | unit suite only |
+| `client-*` (17 mutants of the stateful client: trusted-state boundary, ancestor rule, canonical IO path, private `mkdir`, 5.3.11 reset marker write/order/removal, C5) | unit suite only |
 
 `keyid-non-canonical` shows why the keyid check sits in the oracle: a
 self-consistent drift cannot be seen from inside the code under test.
+
+For each unit kill the report lists the top-level tests that failed
+(`detectors.unit.failed_tests`), so a claim that a named test catches a mutant can
+be read from the artifact. The two owner mutants (`client-entry-owner-ignored`,
+`client-ancestor-owner-ignored`) are caught end to end only where the suite runs as
+the superuser, which can create files owned by another account; unprivileged CI
+catches them through the boundary-rule tests on the decision functions.
 
 ## Outputs
 

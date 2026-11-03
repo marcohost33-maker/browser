@@ -668,7 +668,7 @@ function rollbackResetSinceRoot(verified, local) {
  * reuses local snapshot/targets that pass _check_final_snapshot() and the
  * targets signature/expiry checks. Without this, a repository or mirror that
  * keeps serving the same timestamp version past its expiry freezes the client
- * on stale targets (5.4.4/5.5.6/5.6.6 freeze protection).
+ * on stale targets (5.4.4/5.5.6/5.6.5 freeze protection).
  *
  * The retained files are re-run through the generic verifier with only the
  * timestamp rollback floor cleared, so no signature, hash, version or expiry

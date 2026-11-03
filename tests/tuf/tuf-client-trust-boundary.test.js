@@ -19,6 +19,7 @@
 import assert from 'node:assert/strict';
 import {
   chmod,
+  chown,
   lstat,
   mkdir,
   readFile,
@@ -288,6 +289,36 @@ test('a directory above the trusted state that others can rename in is refused; 
       assert.ok(write.path.startsWith(`${canonical}/`), `write outside the canonical directory: ${write.path}`);
     }
     assert.equal((await loadTrustedState(metadataDir)).metadataDir, canonical);
+  }
+});
+
+// Creating a file that belongs to ANOTHER account needs the superuser. Hosted CI
+// runs unprivileged, so there this end-to-end case is skipped visibly and the
+// owner rule rests on the decision-function tests above.
+const AS_ROOT = POSIX && typeof process.geteuid === 'function' && process.geteuid() === 0;
+const OTHER_UID = 65534; // conventionally "nobody"
+
+test('trusted state or an ancestor owned by another account is refused end to end', {
+  skip: !AS_ROOT && 'needs the superuser to create files owned by another account',
+}, async () => {
+  const fx = await corpusFixture('browser-tuf-boundary-owner-');
+  for (const target of ['metadata directory', 'timestamp.json', 'rollback-reset.json', 'ancestor']) {
+    const parent = join(fx.dir, `owner-${target.replace(/\W+/g, '-')}`);
+    await mkdir(parent, { mode: 0o700 });
+    const metadataDir = await initializedClient({ ...fx, dir: parent }, 'metadata');
+    await refreshClient({ metadataDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: bundleMirror(fx) });
+    await assert.doesNotReject(loadTrustedState(metadataDir), `${target}: control`);
+
+    if (target === 'metadata directory') await chown(metadataDir, OTHER_UID, OTHER_UID);
+    else if (target === 'ancestor') await chown(parent, OTHER_UID, OTHER_UID);
+    else {
+      const path = join(metadataDir, target);
+      if (target === 'rollback-reset.json') await writePrivate(path, '{"root_version":1}\n');
+      await chown(path, OTHER_UID, OTHER_UID);
+    }
+    await assert.rejects(loadTrustedState(metadataDir), (error) => (
+      isInsecure(error) && /owned by another account/.test(error.message)
+    ), target);
   }
 });
 

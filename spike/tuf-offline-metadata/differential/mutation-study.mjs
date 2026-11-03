@@ -42,6 +42,7 @@ import { fileURLToPath } from 'node:url';
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
 const SPIKE = 'spike/tuf-offline-metadata';
 const DIFF = `${SPIKE}/differential`;
+const CLIENT = `${SPIKE}/client/client-core.mjs`;
 const ALL_DETECTORS = ['unit', 'differential', 'python'];
 
 export const MUTANTS = Object.freeze([
@@ -77,6 +78,144 @@ export const MUTANTS = Object.freeze([
     file: `${SPIKE}/tuf-offline.js`,
     find: '  if (metadata.signed?.version !== descriptor.version) {',
     replace: '  if (false) { // MUTANT: version binding removed',
+    detectableBy: ['unit'],
+  },
+  // --- stateful client: trusted-state boundary (P2-BR59-01) ----------------
+  {
+    id: 'client-load-skips-secure-directory',
+    description: 'loadTrustedState() uses the requested path unchecked',
+    file: CLIENT,
+    find: 'export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {',
+    replace: 'export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) { const secureMetadataDir = async (dir) => resolve(dir); // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-init-skips-secure-directory',
+    description: 'initClient() bootstraps into the requested path unchecked',
+    file: CLIENT,
+    find: 'export async function initClient(requestedDir, trustedRootPath, limits = DEFAULT_LIMITS) {',
+    replace: 'export async function initClient(requestedDir, trustedRootPath, limits = DEFAULT_LIMITS) { const secureMetadataDir = async (dir) => resolve(dir); // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-entry-group-write-ignored',
+    description: 'trusted directory/files: only the world-write bit is refused',
+    file: CLIENT,
+    find: "  if (posix && (stat.mode & 0o022) !== 0) return 'is writable by group or others';",
+    replace: "  if (posix && (stat.mode & 0o002) !== 0) return 'is writable by group or others'; // MUTANT",
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-entry-owner-ignored',
+    description: 'trusted directory/files: a foreign owner is accepted',
+    file: CLIENT,
+    find: "  if (uid !== null && stat.uid !== uid) return 'is owned by another account';",
+    replace: '  // MUTANT: owner check removed',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-entry-type-ignored',
+    description: 'trusted directory/files: links and special files are accepted',
+    file: CLIENT,
+    find: '  if (directory ? !stat.isDirectory() : !stat.isFile()) {',
+    replace: '  if (false) { // MUTANT: type rule removed',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-ancestor-walk-removed',
+    description: 'directories above the trusted state are not checked',
+    file: CLIENT,
+    find: '      if (problem !== null) insecure(`ancestor directory ${ancestor}`, problem, ancestor, stat);',
+    replace: '      // MUTANT: ancestor problems ignored',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-ancestor-sticky-refused',
+    description: 'a sticky, world-writable ancestor such as /tmp is refused',
+    file: CLIENT,
+    find: '  if ((stat.mode & 0o022) !== 0 && (stat.mode & STICKY_BIT) === 0) {',
+    replace: '  if ((stat.mode & 0o022) !== 0) { // MUTANT: sticky exception removed',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-ancestor-write-ignored',
+    description: 'an ancestor that others can write without the sticky bit is accepted',
+    file: CLIENT,
+    find: '  if ((stat.mode & 0o022) !== 0 && (stat.mode & STICKY_BIT) === 0) {',
+    replace: '  if (false) { // MUTANT: ancestor write bits ignored',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-ancestor-owner-ignored',
+    description: 'an ancestor owned by another (non-superuser) account is accepted',
+    file: CLIENT,
+    find: "  if (uid !== null && stat.uid !== uid && stat.uid !== 0) return 'is owned by another account';",
+    replace: '  // MUTANT: ancestor owner check removed',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-io-through-requested-path',
+    description: 'IO keeps using the requested path instead of the checked canonical one',
+    file: CLIENT,
+    find: '    directory = join(canonicalExisting, ...missing);',
+    replace: '    directory = absolute; // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-mkdir-not-private',
+    description: 'missing directories are created with the default (umask) mode',
+    file: CLIENT,
+    find: '  await mkdir(parent, { recursive: true, mode: 0o700 });',
+    replace: '  await mkdir(parent, { recursive: true }); // MUTANT',
+    detectableBy: ['unit'],
+  },
+  // --- stateful client: 5.3.11 reset marker (#57/#59, C5, C6) ---------------
+  {
+    id: 'client-marker-keeps-targets-floor',
+    description: 'under a reset the retained targets.json still sets the targets floor',
+    file: CLIENT,
+    find: '        targets: retainedTargets?.signed.version ?? 0,',
+    replace: '        targets: rollbackStateReset && targets !== null ? targets.signed.version : (retainedTargets?.signed.version ?? 0), // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-marker-names-new-root',
+    description: 'C5 reverted: a pending reset is re-tied to the new root',
+    file: CLIENT,
+    find: '    return local.rollbackStateReset.resetPendingSinceRoot ?? local.parsed.root.signed.version;',
+    replace: '    return verified.trustedRoot.signed.version; // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-marker-never-written',
+    description: 'a refresh under a reset does not write the reset marker',
+    file: CLIENT,
+    find: '  if (complete && rollbackReset) {',
+    replace: '  if (false) { // MUTANT: marker never written',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-marker-never-removed',
+    description: 'the reset marker stays after a complete refresh',
+    file: CLIENT,
+    find: '    if (rollbackReset) {',
+    replace: '    if (false) { // MUTANT: marker never removed',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-marker-removed-before-targets',
+    description: 'the reset marker comes off before targets.json is down',
+    file: CLIENT,
+    find: "    writes.push(await atomicWriteFile(rolePath(metadataDir, 'targets'), bundle.targets));",
+    replace: "    if (rollbackReset) await removeRollbackResetMarker(metadataDir); writes.push(await atomicWriteFile(rolePath(metadataDir, 'targets'), bundle.targets)); // MUTANT",
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-marker-removed-before-snapshot',
+    description: 'the reset marker comes off before snapshot.json is down',
+    file: CLIENT,
+    find: "    writes.push(await atomicWriteFile(rolePath(metadataDir, 'snapshot'), bundle.snapshot));",
+    replace: "    if (rollbackReset) await removeRollbackResetMarker(metadataDir); writes.push(await atomicWriteFile(rolePath(metadataDir, 'snapshot'), bundle.snapshot)); // MUTANT",
     detectableBy: ['unit'],
   },
 ]);
@@ -181,6 +320,8 @@ function unitDetector(root) {
     exit: result.status,
     tests: tapCount(result.stdout, 'tests'),
     fail: tapCount(result.stdout, 'fail'),
+    // Top-level TAP lines only: the names of the tests that caught the mutant.
+    failed_tests: [...result.stdout.matchAll(/^not ok \d+ - (.+)$/gm)].map((match) => match[1]),
   };
 }
 

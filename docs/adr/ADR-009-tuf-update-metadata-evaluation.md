@@ -159,11 +159,14 @@ Upstream TUF v1.0.36 is current as of this amendment. This ADR deliberately rema
 pinned to v1.0.35 until a separate specification-delta review determines whether the
 project POUF should change.
 
-Amendment 2026-11-03: upstream released v1.0.37 on 2026-10-08. According to the
-upstream v1.0.36...v1.0.37 commit list, its only normative change (specification
-PR #327) narrows when a delegated targets role may be skipped:
-only if it already appears in the same delegation path, to avoid cycles, not in a
-global list of visited roles. The spike verifies top-level targets only, so this
+Amendment 2026-11-03: upstream released v1.0.37 on 2026-10-08. A diff of the
+specification sources (`tuf-spec.md` at tags v1.0.36 and v1.0.37) shows exactly one
+normative change, step 5.6.7.1 (specification PR #327): a delegated targets role is
+skipped only if it was already visited "in the delegation path used to reach this
+role", no longer if it was visited anywhere before. The diff from v1.0.35 to
+v1.0.36 is editorial (THRESHOLD definition moved, KEYID cross-references
+re-anchored, editor affiliation, link markup); steps 5.3.11, 5.4.3.1 and 5.5.5, which the client cites, are unchanged
+in all three versions. The spike verifies top-level targets only, so this
 delta does not change its behaviour today; it becomes binding as soon as delegated
 publishers are implemented. The pin update in draft PR #49 targets v1.0.36 and has
 to be re-based on v1.0.37 or record why not. Separately, specification issue #107

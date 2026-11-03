@@ -84,7 +84,11 @@ capability approval, secure updates, safe extraction or runtime isolation.
   `root.json` cannot bring the fast-forwarded floor back (C5);
 - trusted-state account boundary (P2-BR59-01): a metadata directory or trusted file
   that is a link, belongs to another account or is group/world-writable is refused
-  (`INSECURE_LOCAL_STATE`) before it is read; for the running account a forged reset
+  (`INSECURE_LOCAL_STATE`) before it is read, and so is any ancestor directory that
+  another account owns or can rename entries in (SEI CERT FIO15-C; sticky bit
+  accepted); all IO then uses the checked canonical path; crash simulations cover
+  every crash point of timestamp-only and snapshot-only key rotations, including
+  the reset marker's removal (C4, C6); for the running account a forged reset
   marker is proven equivalent to deleting the role files over the whole differential
   corpus; same-account tampering stays out of scope, as in TUF itself
   (specification issue #107), and needs an externally anchored monotonic backstop;
@@ -92,8 +96,11 @@ capability approval, secure updates, safe extraction or runtime isolation.
 - canonical JSON depth/node bounds, cycle rejection, canonical UTC expiry and full
   signed-target path validation;
 - immutable bytes/capability identity for a reused application version;
-- 102 deterministic TUF tests (verifier, strict JSON, client, differential gates,
-  trust boundary) plus four ADR-governance tests, all locally green (2026-11-03).
+- 106 deterministic TUF tests (verifier, strict JSON, client, differential gates,
+  trust boundary; one end-to-end foreign-owner case needs the superuser and is
+  skipped unprivileged) plus four ADR-governance tests, all locally green
+  (2026-11-03); 21 source-bound mutants in `differential/mutation-study.mjs`, run
+  in CI with every detector.
 
 ### Activation-store spike (ADR-007a section 6)
 

@@ -29,14 +29,17 @@ policy remain outside this layer.
 ## Policy: an unchanged timestamp whose trusted copy has expired (#55)
 
 When the repository serves the same timestamp version as the trusted one, the
-client discards the new file and keeps the trusted timestamp, as TUF 1.0.36
-section 5.4.3.2 requires ("discard the new timestamp metadata and abort the update
-cycle. This is normal and it shouldn't raise any error"). It then still rejects
+client discards the new file and keeps the trusted timestamp, as TUF section
+5.4.3.1 requires ("In case they are equal, discard the new timestamp metadata and
+abort the update cycle. This is normal and it shouldn't raise any error"; same
+text in v1.0.35, v1.0.36 and v1.0.37). It then still rejects
 the cycle if that retained timestamp, or the retained snapshot/targets it pins,
 has expired.
 
-This is a **project policy, not a literal spec duty**: 5.4.3.2 itself says only
-to abort without error. It is the same behaviour as the pinned independent oracle,
+This is a **project policy, not a literal spec duty**: 5.4.3.1 itself says only
+to abort without error. (Earlier revisions of this README and commit `8e1ec01`
+cited 5.4.3.2; that step is the snapshot-version check. Corrected on 2026-11-03
+against the specification source.) It is the same behaviour as the pinned independent oracle,
 python-tuf 7.0.1:
 
 - `Updater._load_timestamp()` catches `EqualVersionNumberError` and keeps the
@@ -121,8 +124,10 @@ files cannot wedge or weaken the client:
   change them.
 
 All of these are covered by crash simulations that abort the real write sequence
-after file N (`tests/tuf/tuf-client-cli.test.js`, cases C1 to C5). A real process
-kill or power loss has not been measured.
+before each rename and at the marker's removal (`tests/tuf/tuf-client-cli.test.js`,
+cases C1 to C6; C4 and C6 run every crash point of a timestamp-only and a
+snapshot-only key rotation). A real process kill or power loss has not been
+measured.
 
 ## Trusted-state boundary (P2-BR59-01)
 
@@ -131,13 +136,26 @@ write the metadata directory can delete `timestamp/snapshot/targets.json` or wri
 reset marker, and either one clears the floors. The cross-family review of #59
 (2026-10-13) held the PR on exactly this point. The position is now explicit:
 
-- **Other accounts are outside the boundary, and this is enforced.**
-  `loadTrustedState()` and `initClient()` refuse a metadata directory or trusted file
-  (`root`, `timestamp`, `snapshot`, `targets`, `rollback-reset`) that is a link or
-  special file, is owned by another account, or is writable by group or others. The
-  error is `INSECURE_LOCAL_STATE`, raised before a byte is read and before any request.
-  The client creates its directories with mode `0700` and its files with `0600`, so a
-  group-writable umask does not produce state the next load refuses.
+- **Other accounts are outside the boundary, and this is enforced** with the
+  "secure directory" rule of [SEI CERT FIO15-C](https://cmu-sei.github.io/secure-coding-standards/sei-cert-c-coding-standard/recommendations/input-output-fio/fio15-c)
+  (the same idea as OpenSSH `StrictModes`). `loadTrustedState()` and `initClient()`
+  raise `INSECURE_LOCAL_STATE`, before a byte is read and before any request, when:
+  - the metadata directory or a trusted file (`root`, `timestamp`, `snapshot`,
+    `targets`, `rollback-reset`) is a link or special file, belongs to another
+    account than the effective uid, or is writable by group or others;
+  - any directory above it, up to `/`, belongs to neither that account nor the
+    superuser, or lets group/others write without the sticky bit (a sticky `/tmp`
+    is fine: only an entry's owner may rename or delete it there). Without this
+    check, an account that can write a parent could rename the metadata directory
+    away and put its own in place between check and use.
+
+  The location is resolved once with `realpath()`, and every later read and write
+  goes through that checked path (`loadTrustedState().metadataDir`), so a link
+  among the ancestors cannot be re-pointed between check and use. `init` checks
+  the nearest existing ancestor of a directory it is about to create and creates
+  nothing below an insecure one. The client creates its directories with mode
+  `0700` and its files with `0600`, so a group-writable umask does not produce
+  state the next load refuses.
 - **The running account itself is inside the boundary, and this is stated, not
   hidden.** For that account a forged marker grants nothing beyond deleting the three
   role files. `tests/tuf/tuf-client-trust-boundary.test.js` proves the equivalence
@@ -152,8 +170,14 @@ reset marker, and either one clears the floors. The cross-family review of #59
   image, TPM NV counter or an OS-protected store) is the precondition for any claim
   against same-account tampering. This spike does not make that claim.
 
-On Windows there are no POSIX owner or mode bits: only the link/type rule applies,
-and ACLs are not inspected yet.
+On Windows there are no POSIX owner or mode bits: only the link/type rule for the
+metadata directory and its files applies, the path is not canonicalised, and ACLs
+are not inspected yet.
+
+The target output directory of `download` is **not** trusted state and is not
+checked: cached targets are re-verified against the trusted descriptor before
+reuse, but whoever consumes a downloaded file must verify it again at the point
+of use (the activation-store spike does).
 
 On Windows, directory fsync support must be measured separately. The function reports
 whether the parent directory was synced rather than silently claiming durability.

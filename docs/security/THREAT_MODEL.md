@@ -124,9 +124,12 @@ capability requires a fresh threat-model review against these classes.
 
 The TUF client spike keeps its rollback floors in local files. Its boundary is:
 
-- **Other local accounts:** in scope and enforced. A metadata directory or trusted
-  file that is a link, belongs to another account or is writable by group/others is
-  refused (`INSECURE_LOCAL_STATE`) before it is read.
+- **Other local accounts:** in scope and enforced (POSIX). A metadata directory or
+  trusted file that is a link, belongs to another account or is writable by
+  group/others is refused (`INSECURE_LOCAL_STATE`) before it is read, and so is any
+  directory above it that another account owns or can rename entries in (SEI CERT
+  FIO15-C "secure directory"; group/other write only with the sticky bit). All IO
+  then goes through the checked canonical path.
 - **The running account and administrators:** out of scope. They can delete the
   floor files or write a reset marker; the spike proves both have the same effect,
   and TUF itself has no defence here (specification issue #107). A claim against

@@ -85,10 +85,26 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
      Snapshot-Floor kehrte zurueck und jeder weitere Refresh scheiterte mit
      `SNAPSHOT_ROLLBACK` (vor dem Fix gemessen). Der Marker behaelt jetzt den
      Root, seit dem der Reset offen ist.
-  **Evidenz:** `npm test` 448 Tests, 443 pass, 0 fail, 5 skip; TUF-Teil 102/102,
-  auch unter `umask 002`; 8 Mutationsproben, jede von einem benannten Test
-  getoetet. **Offen:** externer monotoner Backstop, Windows-ACL-Pruefung,
-  realer Prozess-Kill/Stromausfall, unabhaengige Runde auf dem neuen Kopf.
+  4. **Selbstpruefung derselben Runde (2026-11-03):** die Kontogrenze pruefte nur
+     das Blattverzeichnis; wer einen Elternordner beschreiben konnte, haette das
+     Metadatenverzeichnis wegbenennen und ersetzen koennen. Jetzt gilt die Regel
+     "sicheres Verzeichnis" nach SEI CERT FIO15-C fuer alle Vorfahren bis `/`
+     (Besitzer Konto oder Superuser, Gruppen-/Weltschreibrecht nur mit
+     Sticky-Bit), danach laeuft jedes IO ueber den geprueften kanonischen Pfad;
+     Besitzerpruefung ueber die effektive uid. Neuer Absturztest C6
+     (Snapshot-only-Rotation, jeder Absturzpunkt inkl. Loeschen des Markers),
+     den die Cross-Family-Runde verlangt hatte. Zwei falsche Spec-Zitate gegen
+     den Spezifikations-Quelltext korrigiert (§5.4.3.1 statt §5.4.3.2;
+     Freeze-Pruefung Targets §5.6.5 statt §5.6.6).
+  **Evidenz:** `npm test` 452 Tests, 447 pass, 0 fail, 5 skip (als root
+  gemessen; unprivilegiert wird der Ende-zu-Ende-Test fuer fremden Besitz
+  sichtbar uebersprungen); TUF-Teil 106/106, auch unter `umask 002`. Die 17
+  Client-Mutanten stehen jetzt in `mutation-study.mjs` (verankerte Edits auf
+  einer Kopie, in CI mit `--require-all`, Report `mutations.json` mit den
+  Namen der fehlschlagenden Tests); lokaler Lauf: Basis 106/0, 17/17 getoetet.
+  **Offen:** externer monotoner Backstop,
+  Windows-ACL-Pruefung, realer Prozess-Kill/Stromausfall, unabhaengige Runde
+  auf dem neuen Kopf.
 
 - Supply-Chain / `audit:ci`-Gate wieder gruen, diesmal durch **Entfernen** statt
   Flicken der verwundbaren Dev-Tool-Ketten (Befund: `npm audit` auf `main` meldete
