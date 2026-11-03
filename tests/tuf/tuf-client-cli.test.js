@@ -114,6 +114,7 @@ function rebuildChain(fx, {
   mutateSnapshot = () => {},
   mutateTimestamp = () => {},
   timestampSigner = 'timestampA',
+  snapshotSigner = 'snapshotA',
 } = {}) {
   const targets = parseTufMetadataBytes(fx.targets);
   mutateTargets(targets);
@@ -122,7 +123,7 @@ function rebuildChain(fx, {
   const snapshot = parseTufMetadataBytes(fx.snapshot);
   snapshot.signed.meta['targets.json'] = fileDescriptor(targetsRaw, targets.signed.version);
   mutateSnapshot(snapshot);
-  const snapshotRaw = resignedRaw(snapshot, 'snapshotA');
+  const snapshotRaw = resignedRaw(snapshot, snapshotSigner);
 
   const timestamp = parseTufMetadataBytes(fx.timestamp);
   timestamp.signed.meta['snapshot.json'] = fileDescriptor(snapshotRaw, snapshot.signed.version);
@@ -560,6 +561,40 @@ async function crashBeforeReplacing(fileName, action) {
     syncBuiltinESMExports();
   }
 }
+
+// Simulated crash at the reset marker's removal: every rename succeeds, the
+// unlink of `fileName` dies. This is the last step of a refresh under a reset
+// (cross-family review 2026-10-13: "crash ... before/after marker-delete").
+async function crashBeforeUnlinking(fileName, action) {
+  const original = fsPromises.unlink;
+  fsPromises.unlink = async (...args) => {
+    if (basename(String(args[0])) === fileName) {
+      throw Object.assign(new Error('simulated crash'), { code: 'SIMULATED_CRASH' });
+    }
+    return original(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    return await action();
+  } finally {
+    fsPromises.unlink = original;
+    syncBuiltinESMExports();
+  }
+}
+
+// One crash point of a refresh: before a rename onto a file, or at the
+// removal of the reset marker.
+const MARKER_REMOVAL = 'unlink rollback-reset.json';
+function crashAt(point, action) {
+  return point === MARKER_REMOVAL
+    ? crashBeforeUnlinking('rollback-reset.json', action)
+    : crashBeforeReplacing(point, action);
+}
+
+const REFRESH_CRASH_POINTS = Object.freeze([
+  'rollback-reset.json', 'root.json', 'timestamp.json', 'snapshot.json', 'targets.json',
+  MARKER_REMOVAL,
+]);
 
 async function markerPresent(metadataDir) {
   try {
@@ -1022,10 +1057,11 @@ test('a crash after the new timestamp.json keeps the reset of a timestamp-only r
   assert.equal(await markerPresent(metadataDir), false);
   assert.equal((await loadTrustedState(metadataDir)).rollbackStateReset, null);
 
-  // Every other crash point of the same sequence recovers too.
-  for (const crashPoint of ['rollback-reset.json', 'root.json', 'timestamp.json', 'targets.json']) {
-    const dir = await fastForwardedClient(`metadata-c4-${crashPoint}`);
-    await assert.rejects(crashBeforeReplacing(crashPoint, () => refreshClient({
+  // Every other crash point of the same sequence recovers too, including a
+  // crash at the marker's removal after all role files are down.
+  for (const crashPoint of REFRESH_CRASH_POINTS.filter((point) => point !== 'snapshot.json')) {
+    const dir = await fastForwardedClient(`metadata-c4-${crashPoint.replace(/\W+/g, '-')}`);
+    await assert.rejects(crashAt(crashPoint, () => refreshClient({
       metadataDir: dir,
       metadataUrl: METADATA_URL,
       now: NOW,
@@ -1043,6 +1079,108 @@ test('a crash after the new timestamp.json keeps the reset of a timestamp-only r
     assert.equal(again.status, 'metadata-verified', `crash point ${crashPoint}`);
     assert.deepEqual(await readRoleFiles(dir), { root: rotatedRoot, ...recovery });
     assert.equal(await markerPresent(dir), false, `crash point ${crashPoint}`);
+  }
+});
+
+// Root v2 that rotates ONLY the snapshot keys (snapshotA -> snapshotB). 5.3.11
+// still deletes BOTH trusted files: "If the timestamp and / or snapshot keys
+// have been rotated". The old timestamp keeps verifying under root v2.
+function snapshotOnlyRotatedRoot(fx) {
+  const root = parseTufMetadataBytes(fx.root);
+  const snapshotB = corpusSigner('snapshotB');
+  root.signed.version = 2;
+  root.signed.keys[snapshotB.keyId] = {
+    keytype: 'ed25519',
+    scheme: 'ed25519',
+    keyval: { public: snapshotB.publicHex },
+  };
+  root.signed.roles.snapshot = { keyids: [snapshotB.keyId], threshold: 1 };
+  return multiSignedRaw(root, ['rootA', 'rootB']);
+}
+
+test('every crash point of a snapshot-only rotation recovers, including marker removal (C6)', async () => {
+  const fx = await fixture();
+  const rotatedRoot = snapshotOnlyRotatedRoot(fx);
+  // Fast-forward attack state under root v1: timestamp AND snapshot at 1000.
+  const fastForward = rebuildChain(fx, {
+    mutateSnapshot(metadata) { metadata.signed.version = 1000; },
+    mutateTimestamp(metadata) { metadata.signed.version = 1000; },
+  });
+  // Recovery chain: an honest snapshot signed by the new snapshot key, under a
+  // timestamp (unchanged keys) far below the fast-forwarded floor.
+  const recovery = rebuildChain(fx, {
+    mutateTimestamp(metadata) { metadata.signed.version = 3; },
+    snapshotSigner: 'snapshotB',
+  });
+  const snapshotVersion = parseTufMetadataBytes(recovery.snapshot).signed.version;
+  const targetsVersion = parseTufMetadataBytes(recovery.targets).signed.version;
+  assert.ok(snapshotVersion < 1000);
+  const recoveryRoutes = () => new Map([
+    [`${METADATA_URL}2.root.json`, rotatedRoot],
+    [`${METADATA_URL}3.root.json`, null],
+    [`${METADATA_URL}timestamp.json`, recovery.timestamp],
+    [`${METADATA_URL}${snapshotVersion}.snapshot.json`, recovery.snapshot],
+    [`${METADATA_URL}${targetsVersion}.targets.json`, recovery.targets],
+  ]);
+
+  async function fastForwardedClient(name) {
+    const metadataDir = join(fx.dir, name);
+    const sourceRoot = join(fx.dir, 'source-root.json');
+    await writeFile(sourceRoot, fx.root);
+    await initClient(metadataDir, sourceRoot);
+    const routes = metadataRoutes(fx);
+    routes.set(`${METADATA_URL}timestamp.json`, fastForward.timestamp);
+    routes.set(`${METADATA_URL}1000.snapshot.json`, fastForward.snapshot);
+    routes.set(`${METADATA_URL}${targetsVersion}.targets.json`, fastForward.targets);
+    await refreshClient({ metadataDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(routes, []) });
+    const { versions } = (await loadTrustedState(metadataDir)).trustedState;
+    assert.equal(versions.timestamp, 1000);
+    assert.equal(versions.snapshot, 1000);
+    return metadataDir;
+  }
+
+  // Control: the uninterrupted rotation resets both floors within one refresh.
+  const controlDir = await fastForwardedClient('metadata-c6-control');
+  const control = await refreshClient({
+    metadataDir: controlDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(recoveryRoutes(), []),
+  });
+  assert.equal(control.status, 'metadata-verified');
+  assert.equal(control.metadataRollbackStateReset, true);
+  assert.deepEqual(await readRoleFiles(controlDir), { root: rotatedRoot, ...recovery });
+
+  for (const crashPoint of REFRESH_CRASH_POINTS) {
+    const dir = await fastForwardedClient(`metadata-c6-${crashPoint.replace(/\W+/g, '-')}`);
+    await assert.rejects(crashAt(crashPoint, () => refreshClient({
+      metadataDir: dir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(recoveryRoutes(), []),
+    })), isSimulatedCrash, `crash point ${crashPoint} must be reached`);
+
+    const crashed = await loadTrustedState(dir);
+    if (crashPoint === 'rollback-reset.json' || crashPoint === 'root.json') {
+      // Root v2 never committed: the old root and its floors stand for now.
+      assert.equal(crashed.trustedState.root.signed.version, 1, `crash point ${crashPoint}`);
+    } else {
+      // Root v2 is down: whatever else is on disk, both floors are gone.
+      assert.equal(crashed.trustedState.root.signed.version, 2, `crash point ${crashPoint}`);
+      assert.notEqual(crashed.rollbackStateReset, null, `crash point ${crashPoint}`);
+      assert.equal(crashed.trustedState.versions.timestamp, 0, `crash point ${crashPoint}`);
+      assert.equal(crashed.trustedState.versions.snapshot, 0, `crash point ${crashPoint}`);
+    }
+    if (crashPoint === MARKER_REMOVAL) {
+      // Every role file is already the recovery chain; only the marker is left.
+      assert.deepEqual(await readRoleFiles(dir), { root: rotatedRoot, ...recovery });
+      assert.equal(await markerPresent(dir), true);
+    }
+
+    let recovered;
+    await assert.doesNotReject(async () => {
+      recovered = await refreshClient({
+        metadataDir: dir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(recoveryRoutes(), []),
+      });
+    }, `crash point ${crashPoint}: the snapshot-only rotation must recover`);
+    assert.equal(recovered.status, 'metadata-verified', `crash point ${crashPoint}`);
+    assert.deepEqual(await readRoleFiles(dir), { root: rotatedRoot, ...recovery }, `crash point ${crashPoint}`);
+    assert.equal(await markerPresent(dir), false, `crash point ${crashPoint}`);
+    assert.equal((await loadTrustedState(dir)).rollbackStateReset, null, `crash point ${crashPoint}`);
   }
 });
 
