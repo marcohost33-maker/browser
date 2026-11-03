@@ -120,6 +120,22 @@ exists yet.
 None of the above is closed by the M1 static header/CSP work. Adding any T2/T3
 capability requires a fresh threat-model review against these classes.
 
+## Update-metadata trusted state (ADR-009 spike)
+
+The TUF client spike keeps its rollback floors in local files. Its boundary is:
+
+- **Other local accounts:** in scope and enforced. A metadata directory or trusted
+  file that is a link, belongs to another account or is writable by group/others is
+  refused (`INSECURE_LOCAL_STATE`) before it is read.
+- **The running account and administrators:** out of scope. They can delete the
+  floor files or write a reset marker; the spike proves both have the same effect,
+  and TUF itself has no defence here (specification issue #107). A claim against
+  this attacker needs an externally anchored monotonic backstop (signed image, TPM
+  NV counter or OS-protected store).
+- **Windows:** ACLs are not inspected yet; only the link/type rule applies.
+
+Evidence and details: `spike/tuf-offline-metadata/client/README.md`.
+
 ## OWASP Top 10 for Agentic Applications (2026) mapping
 
 APP-01 is an MCP **client** for human-in-the-loop use, so agentic risk is

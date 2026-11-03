@@ -159,6 +159,18 @@ Upstream TUF v1.0.36 is current as of this amendment. This ADR deliberately rema
 pinned to v1.0.35 until a separate specification-delta review determines whether the
 project POUF should change.
 
+Amendment 2026-11-03: upstream released v1.0.37 on 2026-10-08. According to the
+upstream v1.0.36...v1.0.37 commit list, its only normative change (specification
+PR #327) narrows when a delegated targets role may be skipped:
+only if it already appears in the same delegation path, to avoid cycles, not in a
+global list of visited roles. The spike verifies top-level targets only, so this
+delta does not change its behaviour today; it becomes binding as soon as delegated
+publishers are implemented. The pin update in draft PR #49 targets v1.0.36 and has
+to be re-based on v1.0.37 or record why not. Separately, specification issue #107
+(open) confirms that TUF offers no protection against an attacker with local
+control of the client's trusted metadata store; the client's account boundary and
+its stated limit are recorded in `spike/tuf-offline-metadata/client/README.md`.
+
 ## Evaluation deliverables
 
 - [ ] exact v1.0.35 clauses mapped to implementation requirements;

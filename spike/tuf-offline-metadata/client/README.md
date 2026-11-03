@@ -84,6 +84,22 @@ files cannot wedge or weaken the client:
   metadata files"); `loadTrustedState()` reports this as `rollbackStateReset`.
   Without it, a fast-forwarded old-key timestamp would keep its rollback floor and
   freeze the client (`TIMESTAMP_ROLLBACK`) until the new-key timestamp overtook it.
+- **A durable reset marker carries the reset past the timestamp write (#59
+  review).** With only the timestamp keys rotated, the old snapshot still verifies
+  under the unchanged snapshot keys, so the signature check above cannot see the
+  reset once the new timestamp is on disk. A refresh under a reset therefore writes
+  `rollback-reset.json` (`{"root_version": N}`) before `root.json` and removes it
+  only after `targets.json`. While it names a root at or below the loaded one, every
+  load clears the timestamp/snapshot floors. A marker naming a newer root comes from
+  a crash before that `root.json`; it is ignored, and the next refresh detects the
+  rotation again.
+- **A pending reset keeps its root across a later root (C5).** If a refresh runs
+  under a reset that is already pending and the repository has published a newer
+  root meanwhile, the marker keeps the root since which the reset is pending
+  instead of naming the new root. Naming the new root made a crash between the
+  marker and the new `root.json` look like an uncommitted refresh: the marker was
+  ignored, the fast-forwarded snapshot floor came back, and every later refresh
+  failed with `SNAPSHOT_ROLLBACK` (measured before the fix).
 - **Retained `targets.json` counts only while the trusted snapshot pins it (#55,
   #57).** The targets rollback floor is the version the trusted snapshot recorded
   (5.5.5). A retained `targets.json` is used as floor and as authorization source
@@ -104,9 +120,40 @@ files cannot wedge or weaken the client:
   retained metadata still fails closed, because re-downloading pinned bytes cannot
   change them.
 
-All three are covered by crash simulations that abort the real write sequence after
-file N (`tests/tuf/tuf-client-cli.test.js`). A real process kill or power loss has not
-been measured.
+All of these are covered by crash simulations that abort the real write sequence
+after file N (`tests/tuf/tuf-client-cli.test.js`, cases C1 to C5). A real process
+kill or power loss has not been measured.
+
+## Trusted-state boundary (P2-BR59-01)
+
+The rollback floors are only as strong as the files that hold them. Whoever can
+write the metadata directory can delete `timestamp/snapshot/targets.json` or write a
+reset marker, and either one clears the floors. The cross-family review of #59
+(2026-10-13) held the PR on exactly this point. The position is now explicit:
+
+- **Other accounts are outside the boundary, and this is enforced.**
+  `loadTrustedState()` and `initClient()` refuse a metadata directory or trusted file
+  (`root`, `timestamp`, `snapshot`, `targets`, `rollback-reset`) that is a link or
+  special file, is owned by another account, or is writable by group or others. The
+  error is `INSECURE_LOCAL_STATE`, raised before a byte is read and before any request.
+  The client creates its directories with mode `0700` and its files with `0600`, so a
+  group-writable umask does not produce state the next load refuses.
+- **The running account itself is inside the boundary, and this is stated, not
+  hidden.** For that account a forged marker grants nothing beyond deleting the three
+  role files. `tests/tuf/tuf-client-trust-boundary.test.js` proves the equivalence
+  over all 18 differential-corpus cases (same result, same requests, same effective
+  trust state, root floor untouched). It also pins the three validly signed older
+  chains that both tamperings let through while the untouched floors refuse them.
+- **TUF has the same limit.** The specification offers no protection against an
+  attacker with local control of the trusted metadata store; specification issue
+  [#107](https://github.com/theupdateframework/specification/issues/107) (open since
+  2020) proposes a version backstop anchored outside mutable storage, such as
+  verified-boot images. A comparable externally anchored monotonic backstop (signed
+  image, TPM NV counter or an OS-protected store) is the precondition for any claim
+  against same-account tampering. This spike does not make that claim.
+
+On Windows there are no POSIX owner or mode bits: only the link/type rule applies,
+and ACLs are not inspected yet.
 
 On Windows, directory fsync support must be measured separately. The function reports
 whether the parent directory was synced rather than silently claiming durability.
@@ -132,6 +179,8 @@ whether the parent directory was synced rather than silently claiming durability
 - no cross-role atomic transaction;
 - no package activation/last-good recovery coupling;
 - Windows directory-fsync durability still needs platform evidence;
+- trusted state is protected against other accounts only; same-account tampering
+  needs an externally anchored monotonic backstop, and Windows ACLs are not checked;
 - official upstream `tuf-conformance` integration remains gated on the explicit
   algorithm/profile decision in issue #47.
 
