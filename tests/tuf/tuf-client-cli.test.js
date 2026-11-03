@@ -1040,6 +1040,90 @@ test('a crash after the new timestamp.json keeps the reset of a timestamp-only r
   }
 });
 
+// The same root with a higher version and no key change, re-signed by the
+// threshold of the root it follows (rootA + rootB).
+function bumpedRoot(rawRoot, version) {
+  const root = parseTufMetadataBytes(rawRoot);
+  root.signed.version = version;
+  return multiSignedRaw(root, ['rootA', 'rootB']);
+}
+
+test('a pending rotation reset survives a crash before the root.json of a later root (C5)', async () => {
+  const fx = await fixture();
+  const rotatedRoot = timestampOnlyRotatedRoot(fx);
+  // Root v3 rotates nothing: the reset that root v2 started is still pending.
+  const nextRoot = bumpedRoot(rotatedRoot, 3);
+  const fastForward = rebuildChain(fx, {
+    mutateSnapshot(metadata) { metadata.signed.version = 1000; },
+    mutateTimestamp(metadata) { metadata.signed.version = 1000; },
+  });
+  const recovery = rebuildChain(fx, {
+    mutateTimestamp(metadata) { metadata.signed.version = 3; },
+    timestampSigner: 'timestampB',
+  });
+  const snapshotVersion = parseTufMetadataBytes(recovery.snapshot).signed.version;
+  const targetsVersion = parseTufMetadataBytes(recovery.targets).signed.version;
+  const routesWith = (rootRoutes) => new Map([
+    ...rootRoutes,
+    [`${METADATA_URL}timestamp.json`, recovery.timestamp],
+    [`${METADATA_URL}${snapshotVersion}.snapshot.json`, recovery.snapshot],
+    [`${METADATA_URL}${targetsVersion}.targets.json`, recovery.targets],
+  ]);
+  // Repository state 1: root v2 published. Repository state 2: root v3 as well.
+  const firstRoutes = () => routesWith([
+    [`${METADATA_URL}2.root.json`, rotatedRoot],
+    [`${METADATA_URL}3.root.json`, null],
+  ]);
+  const secondRoutes = () => routesWith([
+    [`${METADATA_URL}2.root.json`, rotatedRoot],
+    [`${METADATA_URL}3.root.json`, nextRoot],
+    [`${METADATA_URL}4.root.json`, null],
+  ]);
+
+  const metadataDir = join(fx.dir, 'metadata-c5');
+  const sourceRoot = join(fx.dir, 'source-root.json');
+  await writeFile(sourceRoot, fx.root);
+  await initClient(metadataDir, sourceRoot);
+  const attack = metadataRoutes(fx);
+  attack.set(`${METADATA_URL}timestamp.json`, fastForward.timestamp);
+  attack.set(`${METADATA_URL}1000.snapshot.json`, fastForward.snapshot);
+  attack.set(`${METADATA_URL}${targetsVersion}.targets.json`, fastForward.targets);
+  await refreshClient({ metadataDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(attack, []) });
+  assert.equal((await loadTrustedState(metadataDir)).trustedState.versions.snapshot, 1000);
+
+  // Crash 1 (the C4 point): root v2 and the new-key timestamp are down, the
+  // fast-forwarded snapshot is not; only the marker carries the reset.
+  await assert.rejects(crashBeforeReplacing('snapshot.json', () => refreshClient({
+    metadataDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(firstRoutes(), []),
+  })), isSimulatedCrash);
+  assert.deepEqual((await loadTrustedState(metadataDir)).rollbackStateReset, {
+    rotatedOut: [],
+    resetPendingSinceRoot: 2,
+  });
+
+  // Crash 2: the repository has published root v3 meanwhile. The refresh under
+  // the pending reset rewrites the marker, then dies before root.json v3.
+  await assert.rejects(crashBeforeReplacing('root.json', () => refreshClient({
+    metadataDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(secondRoutes(), []),
+  })), isSimulatedCrash);
+  const crashed = await readRoleFiles(metadataDir);
+  assert.deepEqual(crashed.root, rotatedRoot);
+  assert.deepEqual(crashed.snapshot, fastForward.snapshot);
+  const loaded = await loadTrustedState(metadataDir);
+  assert.notEqual(loaded.rollbackStateReset, null, 'the reset pending since root v2 must not be lost');
+  assert.equal(loaded.trustedState.versions.snapshot, 0);
+
+  let recovered;
+  await assert.doesNotReject(async () => {
+    recovered = await refreshClient({
+      metadataDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(secondRoutes(), []),
+    });
+  }, 'a later root must not resurrect the fast-forwarded snapshot floor');
+  assert.equal(recovered.status, 'metadata-verified');
+  assert.deepEqual(await readRoleFiles(metadataDir), { root: nextRoot, ...recovery });
+  assert.equal(await markerPresent(metadataDir), false);
+});
+
 test('the rollback reset marker resets on load and fails closed when malformed (#59 review)', async () => {
   const fx = await fixture();
   const metadataDir = join(fx.dir, 'metadata-marker');

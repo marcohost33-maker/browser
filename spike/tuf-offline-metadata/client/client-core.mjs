@@ -452,23 +452,27 @@ function metadataFilename(role, version, consistentSnapshot) {
 }
 
 /**
- * `rollbackReset`: this refresh verified with the timestamp/snapshot floors
- * cleared, either because its root chain rotated their keys or because the
- * loaded state was already under a reset. Then the reset marker goes down
- * before root.json and comes off only after the last role file (see
+ * `rollbackResetSinceRoot`: this refresh verified with the timestamp/snapshot
+ * floors cleared (null: it did not). Then the reset marker goes down before
+ * root.json and comes off only after the last role file (see
  * readRollbackResetMarker). A complete write without a reset also clears a stale
  * marker first, so a marker from a refresh that never committed its root cannot
  * apply to a later, unrelated root.
  */
-async function persistVerifiedMetadata(metadataDir, verified, bundle, { rollbackReset = false } = {}) {
+async function persistVerifiedMetadata(
+  metadataDir,
+  verified,
+  bundle,
+  { rollbackResetSinceRoot = null } = {},
+) {
   const writes = [];
   const complete = verified.status === 'metadata-verified';
+  const rollbackReset = rollbackResetSinceRoot !== null;
 
   if (complete && rollbackReset) {
-    const rootVersion = verified.trustedRoot.signed.version;
     writes.push(await atomicWriteFile(
       rolePath(metadataDir, ROLLBACK_RESET_MARKER),
-      Buffer.from(`${JSON.stringify({ root_version: rootVersion })}\n`, 'utf8'),
+      Buffer.from(`${JSON.stringify({ root_version: rollbackResetSinceRoot })}\n`, 'utf8'),
     ));
   } else if (complete) {
     const removed = await removeRollbackResetMarker(metadataDir);
@@ -494,8 +498,27 @@ async function persistVerifiedMetadata(metadataDir, verified, bundle, { rollback
   return writes;
 }
 
-function underRollbackReset(verified, local) {
-  return verified.metadataRollbackStateReset === true || local.rollbackStateReset !== null;
+/**
+ * The root version a reset marker written by this refresh must name, or null
+ * when the refresh is not under a reset.
+ *
+ * A reset already in force on the LOADED state is pending since the root on disk
+ * (or since the earlier root its marker names). It must keep applying even if
+ * this refresh dies before its own root.json lands, so the marker keeps that
+ * older version. Naming the new root instead would make the marker look like an
+ * uncommitted refresh after such a crash; it would be ignored and the
+ * fast-forwarded floors would return (C5). Only a reset that THIS refresh found
+ * in its new root chain is tied to the new root: before that root.json is down
+ * the rotation has not committed, and the next refresh detects it again.
+ */
+function rollbackResetSinceRoot(verified, local) {
+  if (local.rollbackStateReset !== null) {
+    return local.rollbackStateReset.resetPendingSinceRoot ?? local.parsed.root.signed.version;
+  }
+  if (verified.metadataRollbackStateReset === true) {
+    return verified.trustedRoot.signed.version;
+  }
+  return null;
 }
 
 /**
@@ -681,7 +704,7 @@ async function finishNoUpdate({
     limits,
   });
   const writes = await persistVerifiedMetadata(metadataDir, resumed, bundle, {
-    rollbackReset: underRollbackReset(resumed, local),
+    rollbackResetSinceRoot: rollbackResetSinceRoot(resumed, local),
   });
   return { verified: resumed, writes };
 }
@@ -746,7 +769,7 @@ export async function refreshClient({
       limits,
     });
     const writes = await persistVerifiedMetadata(metadataDir, verified, bundle, {
-      rollbackReset: underRollbackReset(verified, local),
+      rollbackResetSinceRoot: rollbackResetSinceRoot(verified, local),
     });
     return completeRefresh({ verified, writes, finish, consistentSnapshot });
   }
@@ -769,7 +792,7 @@ export async function refreshClient({
   // Root progress is already persisted (5.3.8) before the retained
   // snapshot/targets are checked against that root in finishNoUpdate().
   const writes = await persistVerifiedMetadata(metadataDir, verified, bundle, {
-    rollbackReset: underRollbackReset(verified, local),
+    rollbackResetSinceRoot: rollbackResetSinceRoot(verified, local),
   });
   return completeRefresh({ verified, writes, finish, consistentSnapshot });
 }
