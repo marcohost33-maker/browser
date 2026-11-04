@@ -24,6 +24,7 @@ import { basename, join } from 'node:path';
 import test from 'node:test';
 
 import {
+  downloadTargets,
   loadTrustedState,
   readTrustedFileOnce,
   readTrustedRoleFiles,
@@ -317,6 +318,58 @@ test('a chain broken on disk after the run is refused, not reported as verified'
     ),
     hasCode('PERSISTED_STATE_UNVERIFIED'),
   );
+});
+
+// downloadTargets reads the state once more after its refresh. That read is the
+// last open of targets.json, counted on a control run rather than assumed.
+async function downloadOf(metadataDir, chain, beforeOpen) {
+  const realOpen = fsPromises.open;
+  let opens = 0;
+  fsPromises.open = async (...args) => {
+    if (basename(String(args[0])) === 'targets.json') {
+      opens += 1;
+      await beforeOpen?.(opens);
+    }
+    return realOpen(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    await downloadTargets({
+      metadataDir,
+      metadataUrl: METADATA_URL,
+      targetBaseUrl: 'https://mirror.example/targets/',
+      targetDir: join(metadataDir, '..', 'downloads'),
+      // Unknown on purpose: reaching this refusal means the state was authorised.
+      targetNames: ['not/listed.bin'],
+      now: NOW,
+      fetchImpl: bundleMirror(chain),
+    });
+    assert.fail('an unlisted target must be refused');
+  } catch (error) {
+    return { error, opens };
+  } finally {
+    fsPromises.open = realOpen;
+    syncBuiltinESMExports();
+  }
+}
+
+test('a download authorises only from a chain it verified in that same read', async () => {
+  const control = await freshClient('browser-tuf-download-control-');
+  const measured = await downloadOf(control.metadataDir, chainAtVersion(control.fx, 7));
+  assert.equal(measured.error.code, 'TARGET_NOT_FOUND');
+  assert.ok(measured.opens >= 2, 'the refresh read-back and the download each read the file');
+
+  const { fx, metadataDir } = await freshClient('browser-tuf-download-swapped-');
+  const foreign = chainAtVersion(fx, 8).targets;
+  let swapped = false;
+  const { error } = await downloadOf(metadataDir, chainAtVersion(fx, 7), async (open) => {
+    if (open === measured.opens && !swapped) {
+      swapped = true;
+      await writePrivate(join(metadataDir, 'targets.json'), foreign);
+    }
+  });
+  assert.equal(swapped, true, 'the swap must happen, or this test shows nothing');
+  assert.equal(error.code, 'PERSISTED_STATE_UNVERIFIED');
 });
 
 test('metadata expired on disk fails the read-back through the core verifier', async () => {

@@ -254,8 +254,8 @@ export const MUTANTS = Object.freeze([
     id: 'client-read-twice-by-path',
     description: 'the returned bytes come from a second read of the path',
     file: CLIENT,
-    find: '    return bytes;\n  } finally {\n    await handle.close();',
-    replace: '    return await readFile(path); // MUTANT\n  } finally {\n    await handle.close();',
+    find: '    return bytes;',
+    replace: '    return await readFile(path); // MUTANT',
     detectableBy: ['unit'],
   },
   {
@@ -276,10 +276,18 @@ export const MUTANTS = Object.freeze([
   },
   {
     id: 'client-readback-incomplete-accepted',
-    description: 'the read-back does not refuse an incomplete or unpinned state',
+    description: 'the read-back does not refuse a state under reset or with unpinned targets',
     file: CLIENT,
-    find: '  if (state.rollbackStateReset !== null || state.targetsUnpinned\n',
-    replace: '  if (false // MUTANT\n',
+    find: '  if (state.rollbackStateReset !== null || state.targetsUnpinned',
+    replace: '  if (false // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-download-from-unverified-state',
+    description: 'a download authorises from a state it read but did not verify',
+    file: CLIENT,
+    find: '  const { state: local } = await loadVerifiedChain(metadataDir, now, limits);',
+    replace: '  const local = await loadTrustedState(metadataDir, limits); // MUTANT',
     detectableBy: ['unit'],
   },
   {
