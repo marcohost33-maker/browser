@@ -13,6 +13,8 @@ Massgeblich fuer Entscheide bleiben GitHub-Issues und ADRs; diese Liste ordnet n
 | 2026-11-03 | Activation-Store an dieselbe Regel angleichen: heute nur Weltschreibrecht (`0o002`) am Store-Root, kein Gruppenbit, keine Vorfahren (CERT FIO15-C); Regel ggf. als gemeinsames Modul | P2 | offen |
 | 2026-11-03 | Extern verankerter monotoner Backstop fuer den TUF-Vertrauenszustand (Spec-Issue #107): Optionen signiertes Image, TPM-NV-Zaehler, OS-geschuetzter Speicher bewerten | P2 | offen |
 | 2026-11-03 | Windows: ACL-Pruefung des Metadatenverzeichnisses (heute nur Link/Typ-Regel) | P2 | offen |
+| 2026-11-04 | R46: POSIX-Zweige des Einmal-Lesens (Link, FIFO, Rechte am Deskriptor, Ersetzen nach dem Lesen) laufen nur im CI (ubuntu); Beleg dort nachtragen | P1 | offen |
+| 2026-11-04 | R46: `openat2` bewertet, nicht uebernommen (`client/THREAT-MODEL.md`); wieder aufnehmen, sobald eine native Laufzeit (#23) feststeht | P3 | offen |
 | 2026-11-03 | Realer Prozess-Kill und Stromausfall fuer den TUF-Client (heute nur simulierte Abstuerze C1 bis C6) | P2 | offen |
 | 2026-11-03 | #53/#54 Always-run Exact-Head-Merge-Gate: Draft seit 2026-09-30, gegen aktuellen `main` neu bewerten | P1 | offen |
 | 2026-11-03 | #61 Update-Activation-Kopplung: HOLD, bis T1-Umfang, Format, Publisher und Key-Trust entschieden sind (Audit 2026-10-16) | P1 | blockiert |

@@ -126,8 +126,14 @@ files cannot wedge or weaken the client:
 All of these are covered by crash simulations that abort the real write sequence
 before each rename and at the marker's removal (`tests/tuf/tuf-client-cli.test.js`,
 cases C1 to C6; C4 and C6 run every crash point of a timestamp-only and a
-snapshot-only key rotation). A real process kill or power loss has not been
-measured.
+snapshot-only key rotation). The rotations also run over several refreshes: every
+pair of crash points across a repository that publishes a later root in between,
+with a replay of the fast-forwarded chain between the crashes, and three crashes
+in a row. A real process kill or power loss has not been measured.
+
+After a refresh, and before `download` authorises a target, the state on disk is
+read again and verified as one chain from those bytes (`readBack` in the result; a
+mismatch is `PERSISTED_STATE_UNVERIFIED`).
 
 ## Trusted-state boundary (P2-BR59-01)
 
@@ -151,7 +157,11 @@ reset marker, and either one clears the floors. The cross-family review of #59
 
   The location is resolved once with `realpath()`, and every later read and write
   goes through that checked path (`loadTrustedState().metadataDir`), so a link
-  among the ancestors cannot be re-pointed between check and use. `init` checks
+  among the ancestors is not followed again after the check. Each file is opened
+  once and checked on the descriptor (`fstat` against `lstat`: `dev`, `ino`, type,
+  owner, mode), and only those bytes are verified. [THREAT-MODEL.md](THREAT-MODEL.md)
+  separates cross-account from same-account actors and states what remains open:
+  Node has no `openat()`, so resolving the directory path stays path-based. `init` checks
   the nearest existing ancestor of a directory it is about to create and creates
   nothing below an insecure one. The client creates its directories with mode
   `0700` and its files with `0600`, so a group-writable umask does not produce

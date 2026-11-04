@@ -1,3 +1,4 @@
+import { constants as fsConstants } from 'node:fs';
 import {
   lstat,
   mkdir,
@@ -16,6 +17,7 @@ import {
 
 import {
   DEFAULT_LIMITS,
+  sha256,
   TufSpikeError,
   validateTargetPath,
   verifyBootstrapRoot,
@@ -208,8 +210,13 @@ function retainedRollbackFloorValid(metadata, root, role, limits) {
 const ROLLBACK_RESET_MARKER = 'rollback-reset';
 const ROLLBACK_RESET_MARKER_MAX_BYTES = 256;
 
-async function readRollbackResetMarker(metadataDir) {
-  const bytes = await readMaybe(rolePath(metadataDir, ROLLBACK_RESET_MARKER));
+async function readRollbackResetMarker(metadataDir, boundary, probes = {}) {
+  const bytes = await readTrustedFileOnce(rolePath(metadataDir, ROLLBACK_RESET_MARKER), {
+    label: `${ROLLBACK_RESET_MARKER}.json`,
+    boundary,
+    maxBytes: ROLLBACK_RESET_MARKER_MAX_BYTES,
+    probes,
+  });
   if (bytes === null) return null;
   let parsed;
   try {
@@ -303,9 +310,9 @@ function accountBoundary() {
   return { uid, posix: process.platform !== 'win32' };
 }
 
-async function lstatMaybe(path) {
+async function lstatMaybe(path, options = undefined) {
   try {
-    return await lstat(path);
+    return await lstat(path, options);
   } catch (error) {
     if (error?.code === 'ENOENT') return null;
     throw error;
@@ -316,7 +323,7 @@ function insecure(label, problem, path, stat) {
   fail('INSECURE_LOCAL_STATE', `${label} ${problem}`, {
     path,
     uid: stat.uid,
-    mode: stat.mode & 0o7777,
+    mode: Number(stat.mode) & 0o7777,
   });
 }
 
@@ -372,9 +379,161 @@ async function secureMetadataDir(metadataDir) {
   return directory;
 }
 
+// O_NOFOLLOW refuses a link in the last path component; O_NONBLOCK keeps a FIFO
+// from blocking the open before its type can be checked on the descriptor.
+// Neither constant exists on Windows, where the checks below carry the rule alone.
+const TRUSTED_READ_FLAGS = fsConstants.O_RDONLY
+  | (fsConstants.O_NOFOLLOW ?? 0)
+  | (fsConstants.O_NONBLOCK ?? 0);
+
+// Errors with which O_NOFOLLOW reports a link (ELOOP; EMLINK on FreeBSD).
+const LINK_REFUSED_CODES = Object.freeze(new Set(['ELOOP', 'EMLINK']));
+
+function sameObject(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function contentStamp(stat) {
+  return `${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+}
+
+// trustedStateEntryProblem() compares numbers; the identity checks need bigint
+// stats, because an NTFS file id does not fit a double.
+function entryView(stat) {
+  return {
+    isFile: () => stat.isFile(),
+    isDirectory: () => stat.isDirectory(),
+    uid: Number(stat.uid),
+    mode: Number(stat.mode),
+  };
+}
+
+async function readAtMost(handle, maxBytes) {
+  const chunks = [];
+  let total = 0;
+  // One byte past the limit is enough for the caller's own size check to fire.
+  while (total <= maxBytes) {
+    const { bytesRead, buffer } = await handle.read({
+      buffer: Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes + 1 - total)),
+    });
+    if (bytesRead === 0) break;
+    chunks.push(buffer.subarray(0, bytesRead));
+    total += bytesRead;
+  }
+  return Buffer.concat(chunks, total);
+}
+
+/**
+ * The one way trusted state is read (R46, threat model in THREAT-MODEL.md): check
+ * the path, open once, check the DESCRIPTOR, read once from that descriptor, and
+ * hand back exactly those bytes. Whatever a later step verifies is what was read;
+ * there is no second open of the path.
+ *
+ * - dev/ino of the descriptor must equal the lstat() before the open, and type,
+ *   owner and mode are checked again on the descriptor, so an object swapped in
+ *   between the two is not read. A swapped-in object that breaks the rules is
+ *   INSECURE_LOCAL_STATE; one that merely is another object (a concurrent atomic
+ *   replacement looks the same) is LOCAL_STATE_CHANGED. Both fail closed, and
+ *   neither says who caused it.
+ * - size, mtime and ctime must be unchanged after the read, so a writer holding the
+ *   file open is noticed unless it restores all three. A same-account writer can;
+ *   see the threat model.
+ *
+ * `null` means no such file, including one removed between lstat and open: that is
+ * the state a deletion leaves, and deleting is already inside the account boundary
+ * (equivalence test in tuf-client-trust-boundary.test.js).
+ *
+ * `probes` are test seams at the two windows, never set in production.
+ */
+export async function readTrustedFileOnce(path, {
+  label,
+  boundary = accountBoundary(),
+  maxBytes = DEFAULT_LIMITS.metadataBytes,
+  probes = {},
+}) {
+  const before = await lstatMaybe(path, { bigint: true });
+  if (before === null) return null;
+  const checkEntry = (stat, when) => {
+    const problem = trustedStateEntryProblem(entryView(stat), { directory: false, ...boundary });
+    if (problem !== null) insecure(`${label} ${when}`, problem, path, entryView(stat));
+  };
+  checkEntry(before, 'before open');
+  await probes.afterLstat?.();
+
+  let handle;
+  try {
+    handle = await open(path, TRUSTED_READ_FLAGS);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    if (LINK_REFUSED_CODES.has(error?.code)) {
+      fail('INSECURE_LOCAL_STATE', `${label} became a link between check and open`, { path });
+    }
+    throw error;
+  }
+  try {
+    const opened = await handle.stat({ bigint: true });
+    checkEntry(opened, 'on the open descriptor');
+    if (!sameObject(before, opened)) {
+      fail('LOCAL_STATE_CHANGED', `${label} is another file than the one checked`, { path });
+    }
+    const bytes = await readAtMost(handle, maxBytes);
+    await probes.afterRead?.();
+    const after = await handle.stat({ bigint: true });
+    if (contentStamp(after) !== contentStamp(opened)) {
+      fail('LOCAL_STATE_CHANGED', `${label} changed while it was read`, { path });
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Every role file of one directory instance, each read once. The directory's own
+ * identity is compared across all reads: Node has no openat(), so a rename of the
+ * directory between two reads could otherwise mix the files of two instances. An
+ * account that may do this is either refused by the ancestor rule or inside the
+ * boundary already; the comparison makes the mix fail closed instead of being
+ * verified file by file. See "Linux openat2" in THREAT-MODEL.md for the option
+ * that would remove the window instead of detecting it.
+ */
+export async function readTrustedRoleFiles(metadataDir, limits, probes = {}) {
+  const boundary = accountBoundary();
+  const directoryBefore = await lstat(metadataDir, { bigint: true });
+  const maxBytes = limitValue(limits, 'metadataBytes');
+  const read = (role) => readTrustedFileOnce(rolePath(metadataDir, role), {
+    label: `${role}.json`,
+    boundary,
+    // One byte past the limit reaches parseTufMetadataBytes, which owns the error.
+    maxBytes,
+    probes: probes.file ?? {},
+  });
+  const files = {};
+  for (const role of ['root', 'timestamp', 'snapshot', 'targets']) {
+    files[role] = await read(role);
+    await probes.afterRole?.(role);
+  }
+  const marker = await readRollbackResetMarker(metadataDir, boundary, probes.file ?? {});
+  const directoryAfter = await lstatMaybe(metadataDir, { bigint: true });
+  if (directoryAfter === null || !sameObject(directoryBefore, directoryAfter)) {
+    fail('LOCAL_STATE_CHANGED', 'metadata directory was replaced while it was read', {
+      metadataDir,
+    });
+  }
+  return { files, marker };
+}
+
 export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {
   const metadataDir = await secureMetadataDir(requestedDir);
-  const rootBytes = await readMaybe(rolePath(metadataDir, 'root'));
+  const {
+    files: {
+      root: rootBytes,
+      timestamp: timestampBytes,
+      snapshot: snapshotBytes,
+      targets: targetsBytes,
+    },
+    marker,
+  } = await readTrustedRoleFiles(metadataDir, limits);
   if (rootBytes === null) {
     fail('MISSING_TRUSTED_ROOT', 'metadata directory has no root.json');
   }
@@ -382,10 +541,6 @@ export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {
     parseTufMetadataBytes(rootBytes, limits, 'trusted-root'),
     limits,
   );
-
-  const timestampBytes = await readMaybe(rolePath(metadataDir, 'timestamp'));
-  const snapshotBytes = await readMaybe(rolePath(metadataDir, 'snapshot'));
-  const targetsBytes = await readMaybe(rolePath(metadataDir, 'targets'));
 
   if (snapshotBytes !== null && timestampBytes === null) {
     fail('INCOMPLETE_LOCAL_STATE', 'snapshot.json exists without timestamp.json');
@@ -410,7 +565,6 @@ export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {
   ].filter(([role, metadata]) => (
     metadata !== null && !retainedRollbackFloorValid(metadata, root, role, limits)
   )).map(([role]) => role);
-  const marker = await readRollbackResetMarker(metadataDir);
   const resetPendingSinceRoot = marker !== null && marker.rootVersion <= root.signed.version
     ? marker.rootVersion
     : null;
@@ -845,7 +999,7 @@ async function finishNoUpdate({
   const writes = await persistVerifiedMetadata(metadataDir, resumed, bundle, {
     rollbackResetSinceRoot: rollbackResetSinceRoot(resumed, local),
   });
-  return { verified: resumed, writes };
+  return { verified: resumed, writes, bundle };
 }
 
 export async function refreshClient({
@@ -912,7 +1066,9 @@ export async function refreshClient({
     const writes = await persistVerifiedMetadata(metadataDir, verified, bundle, {
       rollbackResetSinceRoot: rollbackResetSinceRoot(verified, local),
     });
-    return completeRefresh({ verified, writes, finish, consistentSnapshot });
+    return completeRefresh({
+      verified, writes, finish, consistentSnapshot, bundle, metadataDir, now, limits,
+    });
   }
   const { snapshot, targets } = await fetchSnapshotAndTargets({
     metadataBase,
@@ -935,19 +1091,89 @@ export async function refreshClient({
   const writes = await persistVerifiedMetadata(metadataDir, verified, bundle, {
     rollbackResetSinceRoot: rollbackResetSinceRoot(verified, local),
   });
-  return completeRefresh({ verified, writes, finish, consistentSnapshot });
+  return completeRefresh({
+    verified, writes, finish, consistentSnapshot, bundle, metadataDir, now, limits,
+  });
 }
 
-async function completeRefresh({ verified, writes, finish, consistentSnapshot }) {
+/**
+ * Trusted state as it is on disk NOW, verified as one chain from the bytes this
+ * call read (R46): timestamp -> snapshot -> targets under the root on disk, with
+ * signatures, pins and expiry and without any retained floor, because the point is
+ * what these bytes are, not how they compare to what came before. Anything but a
+ * complete, reset-free state is refused.
+ */
+async function loadVerifiedChain(metadataDir, now, limits) {
+  const state = await loadTrustedState(metadataDir, limits);
+  const { root, timestamp, snapshot, targets } = state.raw;
+  if (state.rollbackStateReset !== null || state.targetsUnpinned
+      || timestamp === null || snapshot === null || targets === null) {
+    fail('PERSISTED_STATE_UNVERIFIED', 'trusted state on disk is not one complete chain', {
+      rollbackStateReset: state.rollbackStateReset,
+      targetsUnpinned: state.targetsUnpinned,
+    });
+  }
+  const outcome = verifyTopLevelMetadataBytes({
+    trustedState: {
+      root: state.parsed.root,
+      versions: { timestamp: 0, snapshot: 0, targets: 0 },
+      snapshotMeta: {},
+    },
+    bundle: { roots: [], timestamp, snapshot, targets },
+    now,
+    limits,
+  });
+  if (outcome.status !== 'metadata-verified') {
+    fail('PERSISTED_STATE_UNVERIFIED', `read-back verification ended as ${outcome.status}`);
+  }
+  return {
+    state,
+    readBack: {
+      status: 'verified-from-read-bytes',
+      sha256: {
+        root: sha256(root),
+        timestamp: sha256(timestamp),
+        snapshot: sha256(snapshot),
+        targets: sha256(targets),
+      },
+    },
+  };
+}
+
+/** The refresh must have left the bytes it verified, not merely valid ones. */
+function assertReadBackIs(readBack, bundle) {
+  const expected = {
+    root: bundle.roots.at(-1),
+    timestamp: bundle.timestamp,
+    snapshot: bundle.snapshot,
+    targets: bundle.targets,
+  };
+  for (const [role, bytes] of Object.entries(expected)) {
+    if (bytes !== undefined && readBack.sha256[role] !== sha256(bytes)) {
+      fail('PERSISTED_STATE_UNVERIFIED', `${role}.json on disk is not the verified file`, { role });
+    }
+  }
+}
+
+async function completeRefresh({
+  verified, writes, finish, consistentSnapshot, bundle, metadataDir, now, limits,
+}) {
   const resumed = verified.status === 'no-update' ? await finish(verified) : null;
+  const { readBack } = await loadVerifiedChain(metadataDir, now, limits);
+  if (resumed !== null) {
+    assertReadBackIs(readBack, resumed.bundle);
+  } else if (verified.status === 'metadata-verified') {
+    assertReadBackIs(readBack, bundle);
+  }
   if (resumed === null) {
-    return { ...verified, writes, consistentSnapshot };
+    return { ...verified, writes, consistentSnapshot, readBack };
   }
   return {
     ...resumed.verified,
     resumedFromTrustedTimestamp: true,
     writes: [...writes, ...resumed.writes],
     consistentSnapshot,
+    readBack,
   };
 }
 
@@ -997,7 +1223,8 @@ export async function downloadTargets({
     limits,
     fetchImpl,
   });
-  const local = await loadTrustedState(metadataDir, limits);
+  // Authorise from exactly the bytes verified here, not from a later read.
+  const { state: local } = await loadVerifiedChain(metadataDir, now, limits);
   if (local.parsed.targets === null) fail('MISSING_TARGETS', 'trusted targets metadata is unavailable');
 
   const targetBase = baseUrl(targetBaseUrl, 'target base URL');

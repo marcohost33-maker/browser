@@ -1268,6 +1268,194 @@ test('a pending rotation reset survives a crash before the root.json of a later 
   assert.equal(await markerPresent(metadataDir), false);
 });
 
+// C5/C6 over several refreshes (R46). Refresh 1 runs against a repository with root
+// v2, refresh 2 against one that has published root v3 meanwhile, and each may die
+// at any crash point. Between the two a mirror replays the fast-forwarded chain.
+// The oracle does not depend on which point was hit:
+//   O1 once root v2 is down, the fast-forwarded floors never come back;
+//   O2 no replay of the fast-forwarded chain is accepted once the root moved;
+//   O3 the last refresh ends on exactly the repository's files, without a marker;
+//   O4 afterwards the floors hold: an older signed chain is refused.
+const ROTATIONS = Object.freeze({
+  'timestamp-only (C5)': {
+    root: timestampOnlyRotatedRoot,
+    chain: { timestampSigner: 'timestampB' },
+  },
+  'snapshot-only (C6)': {
+    root: snapshotOnlyRotatedRoot,
+    chain: { snapshotSigner: 'snapshotB' },
+  },
+});
+
+async function crashChainFixture(fx, rotation) {
+  const rotatedRoot = rotation.root(fx);
+  const nextRoot = bumpedRoot(rotatedRoot, 3);
+  const fastForward = rebuildChain(fx, {
+    mutateSnapshot(metadata) { metadata.signed.version = 1000; },
+    mutateTimestamp(metadata) { metadata.signed.version = 1000; },
+  });
+  const recovery = rebuildChain(fx, {
+    mutateTimestamp(metadata) { metadata.signed.version = 3; },
+    ...rotation.chain,
+  });
+  const snapshotVersion = parseTufMetadataBytes(recovery.snapshot).signed.version;
+  const targetsVersion = parseTufMetadataBytes(recovery.targets).signed.version;
+  const honest = (rootRoutes) => new Map([
+    ...rootRoutes,
+    [`${METADATA_URL}timestamp.json`, recovery.timestamp],
+    [`${METADATA_URL}${snapshotVersion}.snapshot.json`, recovery.snapshot],
+    [`${METADATA_URL}${targetsVersion}.targets.json`, recovery.targets],
+  ]);
+  const fastForwardRoutes = (rootRoutes) => new Map([
+    ...rootRoutes,
+    [`${METADATA_URL}timestamp.json`, fastForward.timestamp],
+    [`${METADATA_URL}1000.snapshot.json`, fastForward.snapshot],
+    [`${METADATA_URL}${targetsVersion}.targets.json`, fastForward.targets],
+  ]);
+  const v2 = [
+    [`${METADATA_URL}2.root.json`, rotatedRoot],
+    [`${METADATA_URL}3.root.json`, null],
+  ];
+  const v3 = [
+    [`${METADATA_URL}2.root.json`, rotatedRoot],
+    [`${METADATA_URL}3.root.json`, nextRoot],
+    [`${METADATA_URL}4.root.json`, null],
+  ];
+  return {
+    nextRoot,
+    recovery,
+    firstRoutes: () => honest(v2),
+    secondRoutes: () => honest(v3),
+    replayRoutes: () => fastForwardRoutes(v3),
+    attackRoutes: () => {
+      const attack = metadataRoutes(fx);
+      attack.set(`${METADATA_URL}timestamp.json`, fastForward.timestamp);
+      attack.set(`${METADATA_URL}1000.snapshot.json`, fastForward.snapshot);
+      attack.set(`${METADATA_URL}${targetsVersion}.targets.json`, fastForward.targets);
+      return attack;
+    },
+  };
+}
+
+async function fastForwardedChainClient(fx, name, setup) {
+  const metadataDir = join(fx.dir, name);
+  const sourceRoot = join(fx.dir, 'source-root.json');
+  await writeFile(sourceRoot, fx.root);
+  await initClient(metadataDir, sourceRoot);
+  await refreshClient({
+    metadataDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(setup.attackRoutes(), []),
+  });
+  assert.equal((await loadTrustedState(metadataDir)).trustedState.versions.snapshot, 1000);
+  return metadataDir;
+}
+
+/** Runs one refresh that may die at `point`. A point it never reaches is no error. */
+async function refreshCrashingAt(point, metadataDir, routes) {
+  try {
+    await crashAt(point, () => refreshClient({
+      metadataDir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(routes, []),
+    }));
+    return false;
+  } catch (error) {
+    if (!isSimulatedCrash(error)) throw error;
+    return true;
+  }
+}
+
+function assertFloorsGoneOnceRootMoved(loaded, context) {
+  if (loaded.trustedState.root.signed.version < 2) return;
+  const { versions } = loaded.trustedState;
+  assert.ok(versions.timestamp < 1000, `O1 timestamp floor came back: ${context}`);
+  assert.ok(versions.snapshot < 1000, `O1 snapshot floor came back: ${context}`);
+}
+
+for (const [rotationName, rotation] of Object.entries(ROTATIONS)) {
+  test(`every pair of crash points over two refreshes recovers: ${rotationName}`, async () => {
+    const fx = await fixture();
+    const setup = await crashChainFixture(fx, rotation);
+    let crashes = 0;
+    let replaysRefused = 0;
+
+    for (const [i, first] of REFRESH_CRASH_POINTS.entries()) {
+      for (const [j, second] of REFRESH_CRASH_POINTS.entries()) {
+        const context = `${rotationName}, crash 1 at ${first}, crash 2 at ${second}`;
+        const dir = await fastForwardedChainClient(fx, `chain-${rotationName[0]}-${i}-${j}`, setup);
+
+        crashes += await refreshCrashingAt(first, dir, setup.firstRoutes()) ? 1 : 0;
+        assertFloorsGoneOnceRootMoved(await loadTrustedState(dir), `${context} (after 1)`);
+
+        // The mirror replays the fast-forwarded chain. Old signatures must not
+        // get anywhere once the rotation committed, and must not change the disk.
+        if ((await loadTrustedState(dir)).trustedState.root.signed.version >= 2) {
+          const before = await readRoleFiles(dir);
+          await assert.rejects(refreshClient({
+            metadataDir: dir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(setup.replayRoutes(), []),
+          }), (error) => !isSimulatedCrash(error), `O2 replay accepted: ${context}`);
+          replaysRefused += 1;
+          const after = await readRoleFiles(dir);
+          for (const role of ['timestamp', 'snapshot', 'targets']) {
+            assert.deepEqual(after[role], before[role], `O2 replay wrote ${role}: ${context}`);
+          }
+        }
+
+        crashes += await refreshCrashingAt(second, dir, setup.secondRoutes()) ? 1 : 0;
+        assertFloorsGoneOnceRootMoved(await loadTrustedState(dir), `${context} (after 2)`);
+
+        let recovered;
+        await assert.doesNotReject(async () => {
+          recovered = await refreshClient({
+            metadataDir: dir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(setup.secondRoutes(), []),
+          });
+        }, `O3 no recovery: ${context}`);
+        assert.equal(recovered.status, 'metadata-verified', context);
+        assert.equal(recovered.readBack.status, 'verified-from-read-bytes', context);
+        assert.deepEqual(await readRoleFiles(dir), { root: setup.nextRoot, ...setup.recovery }, context);
+        assert.equal(await markerPresent(dir), false, `O3 marker left: ${context}`);
+        const settled = await loadTrustedState(dir);
+        assert.equal(settled.rollbackStateReset, null, context);
+        assert.equal(settled.trustedState.versions.timestamp, 3, context);
+      }
+    }
+
+    // Guards against a vacuous matrix: the crash injection and the replay branch
+    // must actually have run. Exact counts would only restate the sequence.
+    assert.ok(crashes > 36, `only ${crashes} crashes were reached`);
+    assert.ok(replaysRefused > 18, `only ${replaysRefused} replays were tried`);
+  });
+}
+
+test('three crashes in a row still recover, and the floors hold afterwards', async () => {
+  const fx = await fixture();
+  const setup = await crashChainFixture(fx, ROTATIONS['timestamp-only (C5)']);
+  for (const [i, third] of REFRESH_CRASH_POINTS.entries()) {
+    const dir = await fastForwardedChainClient(fx, `chain-triple-${i}`, setup);
+    assert.equal(await refreshCrashingAt('snapshot.json', dir, setup.firstRoutes()), true);
+    assert.equal(await refreshCrashingAt('root.json', dir, setup.secondRoutes()), true);
+    await refreshCrashingAt(third, dir, setup.secondRoutes());
+    assertFloorsGoneOnceRootMoved(await loadTrustedState(dir), `third crash at ${third}`);
+    const recovered = await refreshClient({
+      metadataDir: dir, metadataUrl: METADATA_URL, now: NOW, fetchImpl: fakeFetch(setup.secondRoutes(), []),
+    });
+    assert.equal(recovered.status, 'metadata-verified', third);
+    assert.deepEqual(await readRoleFiles(dir), { root: setup.nextRoot, ...setup.recovery }, third);
+    assert.equal(await markerPresent(dir), false, third);
+    // O4: the reset is over. A chain below the settled floor is a rollback again.
+    const older = rebuildChain(fx, {
+      mutateTimestamp(metadata) { metadata.signed.version = 2; },
+      timestampSigner: 'timestampB',
+    });
+    await assert.rejects(refreshClient({
+      metadataDir: dir,
+      metadataUrl: METADATA_URL,
+      now: NOW,
+      fetchImpl: fakeFetch(new Map([
+        [`${METADATA_URL}4.root.json`, null],
+        [`${METADATA_URL}timestamp.json`, older.timestamp],
+      ]), []),
+    }), (error) => error?.code === 'TIMESTAMP_ROLLBACK', `O4 at ${third}`);
+  }
+});
+
 test('the rollback reset marker resets on load and fails closed when malformed (#59 review)', async () => {
   const fx = await fixture();
   const metadataDir = join(fx.dir, 'metadata-marker');
