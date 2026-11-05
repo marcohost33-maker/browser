@@ -60,6 +60,52 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- TUF-Client-Spike: Rollback-Recovery-Linie #55/#56/#57 aus den Drafts #58/#59 auf
+  aktuellen `main` konsolidiert und den Hold-Befund **P2-BR59-01** aus der
+  Cross-Family-Runde vom 2026-10-13 geschlossen (unsignierter
+  `rollback-reset.json`-Marker).
+  1. **Kontogrenze erzwungen:** Metadatenverzeichnis und vertrauenswuerdige
+     Dateien (`root`, `timestamp`, `snapshot`, `targets`, `rollback-reset`), die
+     ein Link sind, einem anderen Konto gehoeren oder fuer Gruppe/andere
+     beschreibbar sind, werden vor jedem Lesen und jeder Anfrage mit
+     `INSECURE_LOCAL_STATE` abgelehnt; der Client legt Verzeichnisse mit `0700`
+     an, auch unter einer gruppenbeschreibbaren umask.
+  2. **Grenze fuer das eigene Konto belegt statt behauptet:** ein gefaelschter
+     Marker bewirkt nachweislich nicht mehr als das Loeschen der drei
+     Rollendateien (alle 18 Korpusfaelle: gleiches Ergebnis, gleiche Anfragen,
+     gleicher effektiver Vertrauenszustand, Root-Floor unberuehrt). Drei gueltig
+     signierte aeltere Ketten kommen bei beiden Manipulationen durch und sind als
+     dokumentierte Grenze fixiert. TUF selbst schuetzt den lokalen Speicher nicht
+     (Spezifikations-Issue #107); dafuer braeuchte es einen extern verankerten
+     monotonen Backstop, den der Spike nicht beansprucht.
+  3. **Neuer Fehler gefunden und behoben (C5):** lief ein Refresh unter einem
+     bereits offenen Reset und hatte das Repository inzwischen einen neueren Root
+     veroeffentlicht, ueberschrieb der Marker die Root-Version; ein Absturz vor
+     dem neuen `root.json` liess den Reset verfallen, der vorgespulte
+     Snapshot-Floor kehrte zurueck und jeder weitere Refresh scheiterte mit
+     `SNAPSHOT_ROLLBACK` (vor dem Fix gemessen). Der Marker behaelt jetzt den
+     Root, seit dem der Reset offen ist.
+  4. **Selbstpruefung derselben Runde (2026-11-03):** die Kontogrenze pruefte nur
+     das Blattverzeichnis; wer einen Elternordner beschreiben konnte, haette das
+     Metadatenverzeichnis wegbenennen und ersetzen koennen. Jetzt gilt die Regel
+     "sicheres Verzeichnis" nach SEI CERT FIO15-C fuer alle Vorfahren bis `/`
+     (Besitzer Konto oder Superuser, Gruppen-/Weltschreibrecht nur mit
+     Sticky-Bit), danach laeuft jedes IO ueber den geprueften kanonischen Pfad;
+     Besitzerpruefung ueber die effektive uid. Neuer Absturztest C6
+     (Snapshot-only-Rotation, jeder Absturzpunkt inkl. Loeschen des Markers),
+     den die Cross-Family-Runde verlangt hatte. Zwei falsche Spec-Zitate gegen
+     den Spezifikations-Quelltext korrigiert (§5.4.3.1 statt §5.4.3.2;
+     Freeze-Pruefung Targets §5.6.5 statt §5.6.6).
+  **Evidenz:** `npm test` 452 Tests, 447 pass, 0 fail, 5 skip (als root
+  gemessen; unprivilegiert wird der Ende-zu-Ende-Test fuer fremden Besitz
+  sichtbar uebersprungen); TUF-Teil 106/106, auch unter `umask 002`. Die 17
+  Client-Mutanten stehen jetzt in `mutation-study.mjs` (verankerte Edits auf
+  einer Kopie, in CI mit `--require-all`, Report `mutations.json` mit den
+  Namen der fehlschlagenden Tests); lokaler Lauf: Basis 106/0, 17/17 getoetet.
+  **Offen:** externer monotoner Backstop,
+  Windows-ACL-Pruefung, realer Prozess-Kill/Stromausfall, unabhaengige Runde
+  auf dem neuen Kopf.
+
 - Supply-Chain / `audit:ci`-Gate wieder gruen, diesmal durch **Entfernen** statt
   Flicken der verwundbaren Dev-Tool-Ketten (Befund: `npm audit` auf `main` meldete
   19 Advisories, davon 11 high; `security-ci` waere auf jedem neuen Lauf rot und

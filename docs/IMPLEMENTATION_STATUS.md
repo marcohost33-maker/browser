@@ -1,6 +1,6 @@
 # `browser` — Implementation Status
 
-- Updated: 2026-09-29
+- Updated: 2026-11-03
 - Repository: `marcohost33-maker/browser`
 - Product: standalone native, offline-capable web-application runtime
 - Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
@@ -72,12 +72,35 @@ capability approval, secure updates, safe extraction or runtime isolation.
 - dependency-free Node.js verifier for a self-contained TUF v1.0.35 offline bundle;
 - top-level root, timestamp, snapshot and targets threshold verification;
 - old/new root dual-threshold rotation and correct timestamp/snapshot fast-forward reset;
-- preservation of separately trusted targets rollback state across key rotation;
+- targets rollback floor kept across root changes, but reset together with
+  timestamp/snapshot on their key rotation (TUF 5.3.11, fast-forward recovery;
+  #57 supersedes the earlier #33 preservation invariant); the reset also survives a
+  crash after `root.json`, because a retained `targets.json` counts only while the
+  trusted snapshot pins its exact bytes (#55), and a crash after the new
+  `timestamp.json`, because a durable `rollback-reset.json` marker goes down before
+  `root.json` and comes off only after `targets.json` (#59 review: with only the
+  timestamp keys rotated, the old snapshot still verifies); a reset that is already
+  pending keeps its root when a later root lands, so a crash before that root's
+  `root.json` cannot bring the fast-forwarded floor back (C5);
+- trusted-state account boundary (P2-BR59-01): a metadata directory or trusted file
+  that is a link, belongs to another account or is group/world-writable is refused
+  (`INSECURE_LOCAL_STATE`) before it is read, and so is any ancestor directory that
+  another account owns or can rename entries in (SEI CERT FIO15-C; sticky bit
+  accepted); all IO then uses the checked canonical path; crash simulations cover
+  every crash point of timestamp-only and snapshot-only key rotations, including
+  the reset marker's removal (C4, C6); for the running account a forged reset
+  marker is proven equivalent to deleting the role files over the whole differential
+  corpus; same-account tampering stays out of scope, as in TUF itself
+  (specification issue #107), and needs an externally anchored monotonic backstop;
 - rollback, freeze, mix-and-match, target-integrity and capability-expansion checks;
 - canonical JSON depth/node bounds, cycle rejection, canonical UTC expiry and full
   signed-target path validation;
 - immutable bytes/capability identity for a reused application version;
-- 20 deterministic TUF tests plus four ADR-governance tests, all locally green.
+- 106 deterministic TUF tests (verifier, strict JSON, client, differential gates,
+  trust boundary; one end-to-end foreign-owner case needs the superuser and is
+  skipped unprivileged) plus four ADR-governance tests, all locally green
+  (2026-11-03); 21 source-bound mutants in `differential/mutation-study.mjs`, run
+  in CI with every detector.
 
 ### Activation-store spike (ADR-007a section 6)
 
@@ -116,8 +139,9 @@ Not wired to any verifier, installer or runtime. See `spike/activation-store/REA
 - installer wiring of the activation-store spike, power-loss evidence on Windows and
   macOS (the NTFS journal-barrier hypothesis is modelled, not measured) and a real
   power-loss drill;
-- production TUF client/repository, raw-byte parser, delegations, durable monotonic
-  state, revocation operations or atomic offline update activation;
+- production TUF client/repository, delegations, an externally anchored monotonic
+  backstop for the trusted state, revocation operations or atomic offline update
+  activation;
 - publisher admission, namespace ownership and capability approval engine;
 - per-application process, profile, storage and permission isolation;
 - OS-enforced null-egress and independent process-tree/network observation;
@@ -130,9 +154,11 @@ Not wired to any verifier, installer or runtime. See `spike/activation-store/REA
 1. **Product falsifiability (#14):** primary user, anti-persona, top task and go/pivot/stop criteria.
 2. **Acquisition semantics (#30):** distinguish signed package, installed PWA, captured archive and remote browsing.
 3. **Package completion (#24):** container, signed-byte scope, strict crypto, resource limits, extraction and activation evidence.
-4. **Update security (#24 / ADR-009):** raw-byte parser, delegated publishers,
-   durable monotonic state, revocation, independent differential evidence and
-   atomic metadata/package recovery.
+4. **Update security (#24 / ADR-009):** delegated publishers, an externally
+   anchored monotonic backstop for the trusted state, revocation, conformance
+   beyond the top-level differential (#47) and atomic metadata/package recovery
+   (#61). Raw-byte ingress (#43), the python-tuf differential (#48), crash-safe
+   client persistence (#50) and the #55/#56/#57 recovery fixes are in place.
 5. **Runtime evidence (#23):** exact Electron/CEF versions, sandbox configuration, compatibility and patch-SLA measurements.
 6. **T3 isolation:** outer sandbox/VM profile, OS-level deny, resource limits and independently observed null-egress.
 7. **T2 governance (#25):** publisher admission, capability approval, emergency removal and support lifecycle.

@@ -371,6 +371,53 @@ cases.push(makeCase({
   }));
 }
 
+// #56: a role signed by ANOTHER top-level role's key. Every key below is in
+// root.keys, so only the keyid-to-role binding (role.keyids) can reject it.
+for (const [role, signer] of [
+  ['timestamp', 'snapshotA'],
+  ['snapshot', 'targetsA'],
+  ['targets', 'timestampA'],
+]) {
+  cases.push(makeCase({
+    name: `reject-${role}-signed-by-${signer}-key`,
+    expected: 'reject',
+    chain: buildChain({ [`${role}Signer`]: signer }),
+    note: `${role} carries a valid signature by a key that root authorizes only for another role (#56).`,
+  }));
+}
+
+{
+  // #56 for the root role: a new root signed to threshold (2) by two keys that
+  // both the trusted and the new root list in root.keys, but authorize only for
+  // timestamp and snapshot. Only the keyid-to-role binding can reject it.
+  const crossRoleRoot = rootMetadata({
+    version: 2,
+    signerNames: ['timestampA', 'snapshotA'],
+  });
+  cases.push(makeCase({
+    name: 'reject-root-signed-by-timestampA-snapshotA-keys',
+    expected: 'reject',
+    roots: [rawMetadata(crossRoleRoot)],
+    chain: buildChain(),
+    note: 'root v2 carries two valid signatures by keys that root authorizes only for other roles (#56).',
+  }));
+
+  // Partial authorization: one genuine root key plus one key root lists in
+  // root.keys but authorizes only for targets. Counting every key in root.keys
+  // would reach the threshold of 2; the role binding counts only one.
+  const partlyAuthorizedRoot = rootMetadata({
+    version: 2,
+    signerNames: ['rootA', 'targetsA'],
+  });
+  cases.push(makeCase({
+    name: 'reject-root-signed-by-rootA-and-targetsA-keys',
+    expected: 'reject',
+    roots: [rawMetadata(partlyAuthorizedRoot)],
+    chain: buildChain(),
+    note: 'root v2 reaches threshold 2 only if the targets-only key is counted for root (#56).',
+  }));
+}
+
 {
   const badRotatedRoot = rootMetadata({
     version: 2,
