@@ -14,14 +14,17 @@ import fsPromises, {
   mkdtemp,
   readFile,
   rename,
+  stat,
   symlink,
   unlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import {
   downloadTargets,
@@ -174,14 +177,44 @@ test('the file is opened once and read through that descriptor only', async () =
   assert.equal(opens, 1);
 });
 
-// Windows refuses to rename over a file another handle holds open (EPERM, measured).
-test('the bytes come from the descriptor: a replacement after the read has no effect', { skip: !POSIX }, async () => {
+// A timestamp taken now must differ from the fixture's: kernels stamp from a coarse
+// clock, and a change inside the same tick would not show.
+const pastTimestampTick = () => delay(50);
+
+// The bytes read are intact here, and the read still fails closed: renaming over the
+// file takes a link from the open inode, which changes its ctime (step 5 of the threat
+// model). Windows refuses this rename while a handle is open (EPERM, measured).
+test('an atomic replacement during the read is refused', { skip: !POSIX }, async () => {
   const { dir, path } = await fixtureFile();
   const other = join(dir, 'other.json');
   await writePrivate(other, OTHER);
-  const bytes = await read(path, { afterRead: () => rename(other, path) });
-  assert.deepEqual(bytes, ORIGINAL, 'a second read of the path would have returned the new file');
+  await pastTimestampTick();
+  await assert.rejects(
+    read(path, { afterRead: () => rename(other, path) }),
+    hasCode('LOCAL_STATE_CHANGED'),
+  );
   assert.deepEqual(await readFile(path), OTHER, 'the replacement did happen');
+});
+
+test('a status change alone during the read is refused: ctime is part of the stamp', async () => {
+  const { path } = await fixtureFile();
+  const fixed = new Date('2026-01-02T03:04:05.000Z');
+  await utimes(path, fixed, fixed);
+  await pastTimestampTick();
+  const before = await stat(path, { bigint: true });
+
+  // Positive control: the same seam without a change reads normally.
+  assert.deepEqual(await read(path, { afterRead: async () => {} }), ORIGINAL);
+
+  await assert.rejects(
+    read(path, { afterRead: () => utimes(path, fixed, fixed) }),
+    hasCode('LOCAL_STATE_CHANGED'),
+  );
+  // Only ctime may have moved, or this test would not isolate it.
+  const after = await stat(path, { bigint: true });
+  assert.equal(after.size, before.size);
+  assert.equal(after.mtimeNs, before.mtimeNs);
+  assert.notEqual(after.ctimeNs, before.ctimeNs);
 });
 
 // --- one directory instance -------------------------------------------------

@@ -437,7 +437,9 @@ async function readAtMost(handle, maxBytes) {
  *   neither says who caused it.
  * - size, mtime and ctime must be unchanged after the read, so a writer holding the
  *   file open is noticed unless it restores all three. A same-account writer can;
- *   see the threat model.
+ *   see the threat model. A rename over the file during the read also fails here,
+ *   although the bytes are intact: it takes a link from the open inode, which moves
+ *   its ctime. That is the fail-closed side of "names no cause", not a defect.
  *
  * `null` means no such file, including one removed between lstat and open: that is
  * the state a deletion leaves, and deleting is already inside the account boundary

@@ -251,6 +251,14 @@ export const MUTANTS = Object.freeze([
     detectableBy: ['unit'],
   },
   {
+    id: 'client-read-stamp-ignores-ctime',
+    description: 'a status change or a replacement during the read goes unnoticed',
+    file: CLIENT,
+    find: '  return `${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;',
+    replace: '  return `${stat.size}:${stat.mtimeNs}`; // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
     id: 'client-read-twice-by-path',
     description: 'the returned bytes come from a second read of the path',
     file: CLIENT,

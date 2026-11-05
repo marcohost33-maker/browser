@@ -47,7 +47,10 @@ restores size, mtime and ctime can stay unnoticed. What they do provide:
 3. `fstat` the descriptor: the same rules again, plus `dev` and `ino` equal to step 1
    (as bigint, because an NTFS file id does not fit a double).
 4. Read through that descriptor, bounded by the limit plus one byte.
-5. `fstat` again: size, mtime and ctime unchanged.
+5. `fstat` again: size, mtime and ctime unchanged. On POSIX this also refuses an
+   atomic replacement during the read, although the bytes read are intact: the rename
+   takes a link from the open inode, which changes its ctime. A concurrent refresh can
+   therefore make a read fail; a retry reads the new file.
 6. Return those bytes. There is no second open of the path.
 
 `readTrustedRoleFiles()` also compares the directory's `dev`/`ino` before and after
