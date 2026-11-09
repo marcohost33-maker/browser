@@ -142,7 +142,7 @@ it here. `PASS` = observed and held, `FAIL` = observed and did not hold (exit 1)
 |---|---|---|
 | `network` | **PASS** | zero external requests reached Chromium's network stack (allowedLocal=24); NOT an OS kernel socket/DNS observation |
 | `external_protocol_os` | **PASS** | no OS handler process appeared; positive control present: mailto->outlook.exe [attempts: web+spikeext(no handler), ms-settings(no handler), mailto->outlook.exe; 1 unrelated new process image(s) in the window] |
-| `download_os` | **PASS** | no file written to <user-downloads> (checked spike-fixture.bin before and after the fixture) |
+| `download_os` | **PASS** | no file written to {user-downloads} (checked spike-fixture.bin before and after the fixture) |
 | `navigation_os` | **PASS** | DENIED (origin unchanged: app://local/index.html) |
 | `crash_containment` | **PASS** | CONTAINED (render-process-gone reason=crashed; host alive; relaunch produced results=true, done-state=done) |
 | `hang_detection` | **INCONCLUSIVE** | NOT-OBSERVED within 12s bound (renderer busy-loop; window force-destroyed; host stayed alive) — Chromium hung-renderer detection can exceed this bound without input |

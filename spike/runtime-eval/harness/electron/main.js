@@ -652,7 +652,7 @@ async function realMain() {
   // The checks use the real path; the report only gets a neutral label, because
   // app.getPath('downloads') contains the OS user name and the results file is
   // committed to a public repository.
-  const DOWNLOAD_DIR_LABEL = '<user-downloads>';
+  const DOWNLOAD_DIR_LABEL = '{user-downloads}';
   let downloadOs;
   if (downloadFile === null) {
     downloadOs = { verdict: 'INCONCLUSIVE', detail: `download directory unavailable ${downloadDir}` };
