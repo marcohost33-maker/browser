@@ -367,6 +367,36 @@ export const MUTANTS = Object.freeze([
     replace: '      const metadataDir = attempt > 1 ? resolve(requestedDir) : await secureMetadataDir(requestedDir); // MUTANT',
     detectableBy: ['unit'],
   },
+  // --- power loss (BR64-04): a process kill keeps the page cache, so no SIGKILL state
+  // breaks K1-K5 for these. tests/tuf/tuf-client-power-loss.test.js catches them by
+  // its contract (K1, K6); the kill matrix only by its drift guard (a step is gone).
+  {
+    id: 'client-write-without-file-fsync',
+    description: 'atomicWriteFile renames the temp over the role file without fsync of its data',
+    file: CLIENT,
+    find: '    await handle.writeFile(data);',
+    replace: '    await handle.writeFile(data); handle.sync = async () => {}; // MUTANT',
+    env: { BROWSER_TUF_KILL_MATRIX: '1' },
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-write-without-directory-fsync',
+    description: 'atomicWriteFile does not make the rename durable (no fsync of the directory)',
+    file: CLIENT,
+    find: '    directorySyncs.push({ path: resolve(parent), synced: await syncDirectory(parent) });',
+    replace: '    directorySyncs.push({ path: resolve(parent), synced: true }); // MUTANT',
+    env: { BROWSER_TUF_KILL_MATRIX: '1' },
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-marker-removal-not-durable',
+    description: 'the reset marker removal is not followed by fsync of the directory',
+    file: CLIENT,
+    find: '    directorySynced: await syncDirectory(metadataDir),',
+    replace: '    directorySynced: true, // MUTANT',
+    env: { BROWSER_TUF_KILL_MATRIX: '1' },
+    detectableBy: ['unit'],
+  },
   {
     id: 'client-readback-leaks-verifier-code',
     description: 'a mixed state on disk is refused with the verifier code, not PERSISTED_STATE_UNVERIFIED',

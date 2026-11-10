@@ -99,17 +99,23 @@ study fail it.
 - **mtime granularity:** a same-size rewrite within the file system's timestamp
   resolution, with an equal ctime, is not detected. This is a consistency check, not
   an integrity check.
-- **Process kills are measured, power loss is not.** `tests/tuf/tuf-client-process-kill.test.js`
-  kills a real refresh process with SIGKILL before each of its mutating or
-  durability steps (create, write, fsync, rename, directory fsync, unlink, mkdir)
-  and after the last one, in three scenarios (plain update, root rotation with the
-  5.3.11 reset, rotation over a fast-forwarded targets floor): 86 kill points, see
-  "Crash evidence" below. A SIGKILL leaves the kernel page cache intact, so this
-  proves the ORDER of the protocol against a process crash, OOM kill or forced
-  termination. It cannot show a missing or ineffective fsync: that needs power-loss
-  emulation (a FUSE layer that drops unsynced data, such as LazyFS, or a
-  block-device model as in CrashMonkey/ALICE). The activation-store spike models
-  this; the TUF client does not yet.
+- **Process kills are measured; power loss is modelled, not measured on hardware.**
+  `tests/tuf/tuf-client-process-kill.test.js` kills real refresh processes with
+  SIGKILL (single kills, a second kill inside the recovery, kills during the
+  bootstrap). A SIGKILL leaves the page cache intact, so it proves the ORDER of the
+  protocol against a process crash, OOM kill or forced termination, and cannot show a
+  missing fsync. `tests/tuf/tuf-client-power-loss.test.js` covers that part with the
+  abstract persistence model of ALICE (Pillai et al., OSDI 2014;
+  `tests/tuf/power-loss-model.mjs`): the exact operations of a refresh are recorded,
+  and every on-disk state a power cut after each operation may leave is built and
+  checked. The model is stricter than ext4 `data=ordered` (data durable only after
+  fsync of the file, directory operations durable only after fsync of the directory,
+  any subset of pending ones may survive). Not covered: torn writes inside one
+  write call, devices that acknowledge a flush they did not perform, metadata other
+  than the directory entries, and real hardware. A LazyFS run (FUSE layer that drops
+  unsynced data) was prepared but not executed: building external code is not
+  permitted in the environment where this evidence was produced; it remains the next
+  step for a measured rather than modelled result.
 
 ## Linux `openat2` (evaluation, not implemented)
 
@@ -135,12 +141,26 @@ directory exactly as the killed process left it:
 | K3 | Replaying the old bundle never verifies after a crash, and fails once anything new was committed (no floor goes back through a crash) |
 | K4 | One refresh with the new bundle reaches exactly the new state, without reset marker and verified offline; a second refresh is a no-update |
 | K5 | No temp file survives the next refresh |
+| K6 | (power loss) Once a refresh has returned, every power-loss state is exactly the new state, without reset marker |
 
-Measured on Linux (Node 22, ext4/overlay in a container): 20 + 33 + 33 kill points,
-all five properties hold at every point. States after the kill: update v2->v3
-6 old / 12 between / 2 new; each rotation scenario 11 / 20 / 2. The run is a test
-in `node --test tests/tuf/*.test.js` (about 17 s), skipped on Windows, where a
-process cannot SIGKILL itself in the same way.
+Measured on Linux (Node 22, ext4/overlay in a container, as superuser; the same
+tests passed in CI on `ubuntu-latest` as an unprivileged user, run 42798074801):
+
+| Matrix | Points | Result |
+| --- | --- | --- |
+| Single kill, update v2->v3 | 20 | K1-K5 hold; 6 old / 12 between / 2 new |
+| Single kill, rotation with reset (C2) | 33 | K1-K5 hold; 11 / 20 / 2 |
+| Single kill, rotation over targets floor 99999 (C3) | 33 | K1-K5 hold; 11 / 20 / 2 |
+| Double kill (second kill inside the recovery), C2, every third recovery step and the last | 162 recovery kills from 16 distinct first-kill states | K1-K5 hold |
+| Double kill, all scenarios, every recovery step (`BROWSER_TUF_CRASH_EXHAUSTIVE=1`, 232 s) | 186 + 451 + 478 = 1,115 recovery kills from 10 + 16 + 17 distinct first-kill states | K1-K5 hold; states after the second kill 160 old / 875 between / 80 new |
+| Kill during the bootstrap (`initClient`) | 9 | no torn root; re-init completes an absent root, refuses a present one; first refresh verifies and sweeps temps |
+| Power loss (model), three scenarios | 18 + 32 + 32 operations, 10 + 16 + 17 distinct states | K1-K6 hold; one state after return each, the new one |
+
+The matrices run in `node --test tests/tuf/*.test.js` (about one minute), skipped
+on Windows, where a process cannot SIGKILL itself in the same way. Every trace also
+passes a drift guard: each role-file replacement must show create, write, fsync,
+rename and the directory fsync, and a marker removal its directory fsync, so a hook
+that stops seeing a step kind fails the run instead of silently shrinking it.
 
 The matrix found two defects, both fixed with it:
 
@@ -158,6 +178,13 @@ The matrix found two defects, both fixed with it:
   the documented `PERSISTED_STATE_UNVERIFIED`. The read-back now reports one code
   for "not one verifiable chain" and keeps the verifier's code as `details.cause`.
 
-Mutants that the kill matrix (and only it, for the last one) must catch:
+Mutants that the matrices must catch (mutation study, `env: BROWSER_TUF_KILL_MATRIX`):
 `client-write-in-place` (truncate and rewrite instead of rename; K1),
-`client-stale-temps-kept` (K5), `client-readback-leaks-verifier-code` (K2).
+`client-stale-temps-kept` (K5), `client-readback-leaks-verifier-code` (K2, caught by
+the kill matrix only), and three that only a power cut can expose:
+`client-write-without-file-fsync` (empty role file, K1),
+`client-write-without-directory-fsync` (committed state lost after return, K6) and
+`client-marker-removal-not-durable` (reset marker back after return, K6). The
+power-loss matrix catches these three through its contract; the kill matrix catches
+them only through its drift guard (a step kind is missing), never through K1-K5,
+which is the reason the model exists.

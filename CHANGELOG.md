@@ -60,6 +60,43 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- TUF-Client-Spike, Selbstpruefung der BR64-Runde (2026-11-10, zweiter Durchgang),
+  fuenf Luecken geschlossen:
+  1. **Stromausfall statt nur Prozess-Kill:** SIGKILL laesst den Page-Cache stehen
+     und kann ein fehlendes `fsync` nicht zeigen. Neu
+     `tests/tuf/tuf-client-power-loss.test.js` mit eigenem Persistenzmodell nach
+     ALICE (OSDI 2014, `tests/tuf/power-loss-model.mjs`): exakte Operationen eines
+     Refresh aufzeichnen, jeden nach Stromausfall moeglichen Plattenzustand bauen
+     (Daten erst nach Datei-`fsync`, Verzeichnisoperationen erst nach
+     Verzeichnis-`fsync` dauerhaft, beliebige Teilmengen der offenen). Neue
+     Eigenschaft **K6**: nach Rueckkehr des Refresh ist jeder Stromausfall-Zustand
+     genau der neue. Ergebnis: 82 Operationen, 43 verschiedene Zustaende, K1-K6
+     halten. Selbsttest des Modells am klassischen Null-Laengen-Fehler (rename ohne
+     `fsync`). Drei neue Mutanten (Datei-`fsync`, Verzeichnis-`fsync`,
+     Marker-Loeschung ohne Verzeichnis-`fsync`) – nur ein Stromausfall zeigt sie;
+     alle getoetet. LazyFS war vorgesehen, sein Build ist in der verwendeten
+     Umgebung als Fremdcode nicht erlaubt; als naechster Schritt eingetragen.
+  2. **Doppelabsturz:** zweiter SIGKILL waehrend der Recovery jedes
+     unterschiedlichen ersten Absturzzustands: im Standardlauf (Rotation mit
+     Reset, jeder dritte Recovery-Schritt und der letzte) 162 Recovery-Kills aus 16
+     Zustaenden; vollstaendig (`BROWSER_TUF_CRASH_EXHAUSTIVE=1`, alle drei
+     Szenarien, jeder Schritt) **1'115 Recovery-Kills aus 43 Zustaenden, alle
+     vertragsgemaess** (232 s, lokal).
+  3. **Bootstrap:** Kill an jedem Schritt von `initClient` (9 Punkte): nie ein
+     zerrissenes `root.json`; erneutes `init` vervollstaendigt, ein vorhandener Root
+     wird nicht ersetzt; der erste Refresh verifiziert und raeumt Temps.
+  4. **Drift-Waechter des Harness:** jede Ersetzung einer Rollendatei muss als
+     create -> write -> fsync -> rename -> Verzeichnis-fsync in der Spur stehen;
+     faellt ein Hook still weg, schlaegt der Lauf fehl statt die Matrix zu
+     verkleinern. Fehlgeschlagene Schritte (unlink eines fehlenden Markers) werden
+     als solche protokolliert.
+  5. **Belege:** CI-Lauf 42798074801 (`ubuntu-latest`, ohne Root) zeigt die
+     Kill-Matrix und 40/40 Mutanten am Kopf `ab80620`; `security-ci`/`docs-ci`
+     laufen fuer einen gestapelten PR (Basis nicht `main`) nicht – dort gilt nur
+     der lokale Lauf.
+  Gemeinsame Szenarien und Vertragspruefung in `tests/tuf/crash-matrix-support.mjs`.
+  Mutationsstudie 40 -> 43; die Doppel-Kill-Matrix laeuft in der Studie nicht
+  (kein Mutant braucht sie als Detektor).
 - TUF-Client-Spike, offene Punkte der Cross-Family-Runde zu #64 (2026-11-05,
   `SECURITY_REVIEW_REQUIRED`):
   1. **BR64-04 – echte Prozess-Kills statt nur simulierter Abbrueche:**

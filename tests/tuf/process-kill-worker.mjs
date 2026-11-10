@@ -24,7 +24,7 @@
 import { appendFileSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import fsPromises, { cp, readdir, readFile } from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
-import { basename, resolve } from 'node:path';
+import { basename, relative, resolve } from 'node:path';
 
 import { sha256 } from '../../spike/tuf-offline-metadata/tuf-offline.js';
 import { bundleMirror, decode } from './client-fixtures.mjs';
@@ -57,6 +57,15 @@ function die() {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
 }
 
+// Exact operation record for the power-loss model (tests/tuf/power-loss-model.mjs):
+// names relative to the metadata directory, written bytes included. Only written
+// when `spec.opsLog` is set (the uninterrupted trace run).
+function recordOp(op) {
+  if (!spec.opsLog) return;
+  appendFileSync(spec.opsLog, `${JSON.stringify(op)}\n`);
+}
+const inMetadata = (path) => relative(resolve(spec.metadataDir), resolve(String(path))) || '.';
+
 function instrument({ killAt, log }) {
   let step = 0;
   const stepBefore = (label) => {
@@ -76,7 +85,15 @@ function instrument({ killAt, log }) {
   };
   const around = (label, fn) => async (...args) => {
     const current = stepBefore(label);
-    const result = await fn(...args);
+    let result;
+    try {
+      result = await fn(...args);
+    } catch (error) {
+      // A step that failed (for instance unlink of an absent marker, ENOENT) is
+      // still a kill point, but it changed nothing: say so for the drift guard.
+      appendFileSync(log, `${JSON.stringify({ failed: current, label, code: error?.code ?? null })}\n`);
+      throw error;
+    }
     stepAfter(current, label);
     return result;
   };
@@ -87,28 +104,49 @@ function instrument({ killAt, log }) {
     rename: fsPromises.rename,
     unlink: fsPromises.unlink,
   };
-  fsPromises.mkdir = (path, ...rest) => around(`mkdir ${stepName(path)}`, real.mkdir)(path, ...rest);
+  fsPromises.mkdir = (path, ...rest) => around(`mkdir ${stepName(path)}`, async (...args) => {
+    const result = await real.mkdir(...args);
+    recordOp({ op: 'mkdir', name: inMetadata(path) });
+    return result;
+  })(path, ...rest);
   fsPromises.rename = (from, to) => around(
     `rename ${stepName(from)} -> ${stepName(to)}`,
-    real.rename,
+    async (a, b) => {
+      await real.rename(a, b);
+      recordOp({ op: 'rename', from: inMetadata(a), to: inMetadata(b) });
+    },
   )(from, to);
-  fsPromises.unlink = (path) => around(`unlink ${stepName(path)}`, real.unlink)(path);
+  fsPromises.unlink = (path) => around(`unlink ${stepName(path)}`, async (target) => {
+    await real.unlink(target);
+    recordOp({ op: 'unlink', name: inMetadata(target) });
+  })(path);
   fsPromises.open = async (path, flags, ...rest) => {
     // Any open that can create or truncate is a step: 'wx' is the client's temp
     // file; other write flags only occur in mutants of the mutation study.
     if (typeof flags === 'string' && /[wa+]/.test(flags)) {
       const handle = await around(`create ${stepName(path)}`, real.open)(path, flags, ...rest);
       const name = stepName(path);
+      const exact = inMetadata(path);
+      recordOp({ op: 'open-write', name: exact, exclusive: flags.includes('x') });
       const writeFile = handle.writeFile.bind(handle);
       const sync = handle.sync.bind(handle);
-      handle.writeFile = around(`write ${name}`, writeFile);
-      handle.sync = around(`fsync ${name}`, sync);
+      handle.writeFile = around(`write ${name}`, async (data, ...more) => {
+        await writeFile(data, ...more);
+        recordOp({ op: 'write', name: exact, data: Buffer.from(data).toString('base64') });
+      });
+      handle.sync = around(`fsync ${name}`, async () => {
+        await sync();
+        recordOp({ op: 'fsync', name: exact });
+      });
       return handle;
     }
     const handle = await real.open(path, flags, ...rest);
     if (flags === 'r' && lstatSync(path).isDirectory()) {
       const sync = handle.sync.bind(handle);
-      handle.sync = around(`fsync-dir ${stepName(path)}`, sync);
+      handle.sync = around(`fsync-dir ${stepName(path)}`, async () => {
+        await sync();
+        recordOp({ op: 'fsync-dir', name: inMetadata(path) });
+      });
     }
     return handle;
   };
@@ -157,6 +195,41 @@ async function main() {
       fetchImpl: mirrorOf(spec.mirror),
     });
     writeFileSync(spec.out, JSON.stringify({ status: result.status }));
+    return;
+  }
+
+  if (spec.mode === 'init') {
+    instrument({ killAt: spec.killAt ?? null, log: spec.log });
+    const { initClient } = await import('../../spike/tuf-offline-metadata/client/client-core.mjs');
+    await initClient(spec.metadataDir, spec.sourceRoot);
+    writeFileSync(spec.out, JSON.stringify({ status: 'initialised' }));
+    return;
+  }
+
+  if (spec.mode === 'after-init-crash') {
+    const {
+      initClient,
+      refreshClient,
+      verifyTrustedStateOffline,
+    } = await import('../../spike/tuf-offline-metadata/client/client-core.mjs');
+    let crashed = null;
+    try {
+      crashed = await snapshotDirectory(spec.metadataDir);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error; // killed before the directory existed
+    }
+    // A second init must either complete the bootstrap or refuse an existing root.
+    const reinit = await outcome(initClient(spec.metadataDir, spec.sourceRoot).then(() => 'initialised'));
+    const refresh = await outcome(refreshClient({
+      metadataDir: spec.metadataDir,
+      metadataUrl: 'https://repo.test/metadata/',
+      now,
+      fetchImpl: mirrorOf(spec.newBundle),
+    }).then((result) => ({ status: result.status, staleTempsRemoved: result.staleTempsRemoved })));
+    const recovered = await snapshotDirectory(spec.metadataDir);
+    const offline = await outcome(verifyTrustedStateOffline(spec.metadataDir, { now })
+      .then((result) => result.sha256));
+    writeFileSync(spec.out, JSON.stringify({ crashed, reinit, refresh, recovered, offline }));
     return;
   }
 

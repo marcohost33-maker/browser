@@ -11,6 +11,8 @@ Ablage: `pr_nr/PR/<slug>.md` bzw. `pr_nr/NR/<slug>.md`.
 
 | Datum | Typ | Slug | Kurz | Root-Cause / Nutzen |
 |-------|-----|------|------|---------------------|
+| 2026-11-10 | PR | [`alice-model-instead-of-blocked-fuse`](PR/alice-model-instead-of-blocked-fuse.md) | Stromausfall-Zustaende aus aufgezeichneten Operationen nach ALICE-Modell, 43 Zustaende, K6 | Luecke trotz blockierter FUSE-Emulation geschlossen; 3 fsync-Mutanten nur so sichtbar |
+| 2026-11-10 | NR | [`diagnostic-counted-placeholder-rows`](NR/diagnostic-counted-placeholder-rows.md) | Doppel-Kill-Diagnose zaehlte Platzhalterzeilen (163 statt 162) | Zahl aus Zeilenzahl statt aus Ereignis abgeleitet und vor Berichtsauswertung uebernommen |
 | 2026-11-10 | PR | [`real-kill-matrix-per-syscall`](PR/real-kill-matrix-per-syscall.md) | SIGKILL vor jedem FS-Schritt eines Refresh, 86 Punkte, frischer Beobachterprozess | Fand zwei Fehler, die simulierte Abbrueche prinzipiell nicht sehen (Temp-Leichen, Fehlercode); per Mutanten trennscharf belegt |
 | 2026-11-10 | NR | [`test-seam-after-the-guard`](NR/test-seam-after-the-guard.md) | Versuchszaehler stand hinter der Grenzpruefung; zwei Retry-Mutanten ueberlebten trotz gruener Tests | Naht dort gesetzt, wo bequem, nicht wo das Ereignis beginnt; jede Naht braucht einen Mutanten |
 | 2026-11-03 | NR | [`node-test-directory-argument`](NR/node-test-directory-argument.md) | `node --test tests/tuf/` lief als *eine* fehlschlagende Datei; jede Mutante sah "getoetet" aus | Kontrolllauf ohne Mutation fehlte; immer zuerst die unmutierte Kontrolle messen und Dateien explizit uebergeben |

@@ -136,8 +136,12 @@ Real process kills are measured as well (BR64-04,
 refresh process is killed with SIGKILL before every create, write, fsync, rename,
 directory fsync, unlink and mkdir it performs, and after the last one, in three
 scenarios (86 kill points). A fresh process then checks old-or-new-or-refused
-(K1 to K5 in `THREAT-MODEL.md`, "Crash evidence"). Power loss is not measured: a
-SIGKILL keeps the page cache, so a missing fsync stays invisible to this matrix.
+(K1 to K5 in `THREAT-MODEL.md`, "Crash evidence"), also with a second kill inside
+the recovery and during the bootstrap. A SIGKILL keeps the page cache, so a missing
+fsync stays invisible to it; `tests/tuf/tuf-client-power-loss.test.js` therefore
+builds every power-loss state of the recorded operations under an ALICE-style
+persistence model and adds K6 (a returned refresh survives a power cut). Modelled,
+not measured on hardware.
 
 A refresh starts by removing the temp files a killed refresh left
 (`sweepStaleTempFiles()`, only for pids that are no longer running; the removed
