@@ -96,11 +96,23 @@ capability approval, secure updates, safe extraction or runtime isolation.
 - canonical JSON depth/node bounds, cycle rejection, canonical UTC expiry and full
   signed-target path validation;
 - immutable bytes/capability identity for a reused application version;
-- 106 deterministic TUF tests (verifier, strict JSON, client, differential gates,
-  trust boundary; one end-to-end foreign-owner case needs the superuser and is
-  skipped unprivileged) plus four ADR-governance tests, all locally green
-  (2026-11-03); 21 source-bound mutants in `differential/mutation-study.mjs`, run
-  in CI with every detector.
+- real process kills (BR64-04): a refresh process is killed with SIGKILL before
+  every mutating or durability step and after the last one, in three scenarios
+  (86 kill points); a fresh process verifies old-or-new-or-refused, no torn file,
+  no floor regression through a crash, convergent recovery and no leftover temp
+  (`tests/tuf/tuf-client-process-kill.test.js`, Linux; K1-K5 in
+  `client/THREAT-MODEL.md`). It found and closed two defects: temp files of a
+  killed refresh were never removed, and the read-back leaked a verifier code for a
+  mixed state. Power loss is not measured for the TUF client;
+- bounded fresh re-read after a concurrent change (BR64-02, at most three full
+  attempts, boundary rules re-run each time, insecure state never retried) and an
+  offline start check `verifyTrustedStateOffline()`;
+- 139 deterministic TUF tests (verifier, strict JSON, client, differential gates,
+  trust boundary, read-once, re-read, stale temps, process kills; one end-to-end
+  foreign-owner case needs the superuser and is skipped unprivileged) plus four
+  ADR-governance tests, all locally green (2026-11-10, Linux, as superuser);
+  40 source-bound mutants in `differential/mutation-study.mjs`, 40/40 killed with
+  every detector (unit, Browser differential, python-tuf 7.0.1).
 
 ### Activation-store spike (ADR-007a section 6)
 
@@ -141,7 +153,8 @@ Not wired to any verifier, installer or runtime. See `spike/activation-store/REA
   power-loss drill;
 - production TUF client/repository, delegations, an externally anchored monotonic
   backstop for the trusted state, revocation operations or atomic offline update
-  activation;
+  activation; power-loss evidence for the TUF client's trusted state (process
+  kills are measured, an ineffective fsync is not visible to them);
 - publisher admission, namespace ownership and capability approval engine;
 - per-application process, profile, storage and permission isolation;
 - OS-enforced null-egress and independent process-tree/network observation;

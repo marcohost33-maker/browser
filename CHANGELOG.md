@@ -60,6 +60,53 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- TUF-Client-Spike, offene Punkte der Cross-Family-Runde zu #64 (2026-11-05,
+  `SECURITY_REVIEW_REQUIRED`):
+  1. **BR64-04 – echte Prozess-Kills statt nur simulierter Abbrueche:**
+     `tests/tuf/tuf-client-process-kill.test.js` startet einen Refresh als eigenen
+     Prozess (`process-kill-worker.mjs`) und beendet ihn per SIGKILL vor jedem
+     einzelnen Dateisystemschritt (`mkdir`, `create`, `write`, `fsync`, `rename`,
+     Verzeichnis-`fsync`, `unlink`) und nach dem letzten. Ein frischer Prozess
+     liest danach den hinterlassenen Zustand, bevor er irgendetwas schreibt.
+     Vertrag K1–K5 (`client/THREAT-MODEL.md`, "Crash evidence"): keine zerrissene
+     Datei; offline wird genau der alte oder der neue vollstaendige Stand
+     verifiziert, alles dazwischen mit `PERSISTED_STATE_UNVERIFIED` verweigert;
+     ein Replay des alten Buendels gewinnt nie; eine Recovery erreicht genau den
+     neuen Stand, die zweite ist ein `no-update`; kein Temp bleibt. Drei
+     Szenarien (Update v2→v3, Root-Rotation mit 5.3.11-Reset, Rotation ueber einen
+     auf 99999 vorgespulten Targets-Floor): **86/86 Kill-Punkte** vertragsgemaess
+     (Linux). Grenze: SIGKILL laesst den Page-Cache stehen; ein fehlendes `fsync`
+     zeigt nur eine Stromausfall-Emulation (offen).
+     Die Matrix fand **zwei Fehler, beide behoben:** (a) Temp-Dateien eines
+     getoeteten Refresh blieben fuer immer liegen (`finally` laeuft nach SIGKILL
+     nicht) – neu `sweepStaleTempFiles()` am Anfang jedes Refresh, nur exakte
+     Client-Temp-Namen, nur fuer nicht mehr laufende PIDs, nur regulaere Dateien
+     ohne Linkverfolgung (`staleTempsRemoved` im Ergebnis); (b) der Read-back
+     verweigerte einen zwischen `timestamp.json` und `snapshot.json` getoeteten
+     Stand mit dem Verifier-Code `METADATA_HASH` statt dem dokumentierten
+     `PERSISTED_STATE_UNVERIFIED` – jetzt ein Code, Verifier-Code in
+     `details.cause`.
+  2. **BR64-02 – begrenztes, frisches Neu-Lesen:** `loadTrustedState()` liest nach
+     `LOCAL_STATE_CHANGED` den gesamten Zustand neu (hoechstens drei Versuche,
+     Pausen 10/50 ms). Jeder Versuch prueft die Verzeichnisgrenze erneut und
+     oeffnet alle Dateien neu; nichts aus einem verworfenen Versuch wird
+     behalten. Nur `LOCAL_STATE_CHANGED` wird wiederholt, `INSECURE_LOCAL_STATE`
+     nie; nach dem dritten Versuch Fehler mit `details.attempts = 3`
+     (`tests/tuf/tuf-client-read-retry.test.js`, `readAttempts` im Zustand).
+  3. **Offline-Startpruefung** `verifyTrustedStateOffline(dir, { now })`: derselbe
+     Lese- und Verifikationspfad, aus dem `download` autorisiert; liest und
+     verifiziert, schreibt und repariert nie (fuer einen Start mit abgeschalteten
+     Updates, ROADMAP M3).
+  4. **Mutationsstudie 32 → 40 Mutanten, 40/40 getoetet** (unit, Differential,
+     python-tuf 7.0.1, `--require-all`, lokal 5:33 min): neu u. a. In-Place-Write,
+     liegengelassene Temps, Sweep ohne Lebendpruefung oder mit Linkverfolgung,
+     Retry von `INSECURE_LOCAL_STATE`, Retry ohne erneute Verzeichnispruefung,
+     Annahme nach dem letzten Versuch, Verifier-Code im Read-back. Die
+     Kill-Matrix laeuft in der Studie nur fuer ihre drei Mutanten
+     (`env: BROWSER_TUF_KILL_MATRIX`), damit das CI-Zeitbudget haelt. Der Mutant
+     `client-load-skips-secure-directory` sitzt jetzt an der Grenzpruefung im
+     Leseversuch. Korrigiert: die Differential-README nannte 17 statt (bisher) 28
+     `client-*`-Mutanten; jetzt 36.
 - TUF-Client-Spike: Rollback-Recovery-Linie #55/#56/#57 aus den Drafts #58/#59 auf
   aktuellen `main` konsolidiert und den Hold-Befund **P2-BR59-01** aus der
   Cross-Family-Runde vom 2026-10-13 geschlossen (unsignierter

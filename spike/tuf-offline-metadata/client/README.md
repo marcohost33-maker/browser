@@ -129,11 +129,31 @@ cases C1 to C6; C4 and C6 run every crash point of a timestamp-only and a
 snapshot-only key rotation). The rotations also run over several refreshes: every
 pair of crash points across a repository that publishes a later root in between,
 with a replay of the fast-forwarded chain between the crashes, and three crashes
-in a row. A real process kill or power loss has not been measured.
+in a row.
+
+Real process kills are measured as well (BR64-04,
+`tests/tuf/tuf-client-process-kill.test.js` with `process-kill-worker.mjs`): a
+refresh process is killed with SIGKILL before every create, write, fsync, rename,
+directory fsync, unlink and mkdir it performs, and after the last one, in three
+scenarios (86 kill points). A fresh process then checks old-or-new-or-refused
+(K1 to K5 in `THREAT-MODEL.md`, "Crash evidence"). Power loss is not measured: a
+SIGKILL keeps the page cache, so a missing fsync stays invisible to this matrix.
+
+A refresh starts by removing the temp files a killed refresh left
+(`sweepStaleTempFiles()`, only for pids that are no longer running; the removed
+names are `staleTempsRemoved` in the result).
 
 After a refresh, and before `download` authorises a target, the state on disk is
 read again and verified as one chain from those bytes (`readBack` in the result; a
-mismatch is `PERSISTED_STATE_UNVERIFIED`).
+mismatch is `PERSISTED_STATE_UNVERIFIED`, with the failing chain check as
+`details.cause`). The same check is exported as `verifyTrustedStateOffline(dir,
+{ now })` for a start with updates disabled: it reads and verifies, never writes or
+repairs.
+
+A read that sees a trusted file change under it (`LOCAL_STATE_CHANGED`, for
+instance during a concurrent refresh in another process) is repeated in full, at
+most three attempts in total (BR64-02; `readAttempts` in the loaded state). See
+"Bounded fresh re-read" in `THREAT-MODEL.md`.
 
 ## Trusted-state boundary (P2-BR59-01)
 

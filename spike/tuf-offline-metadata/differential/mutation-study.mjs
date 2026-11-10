@@ -85,8 +85,9 @@ export const MUTANTS = Object.freeze([
     id: 'client-load-skips-secure-directory',
     description: 'loadTrustedState() uses the requested path unchecked',
     file: CLIENT,
-    find: 'export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {',
-    replace: 'export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) { const secureMetadataDir = async (dir) => resolve(dir); // MUTANT',
+    // The check runs inside each read attempt since BR64-02 (readSettledTrustedState).
+    find: '      const metadataDir = await secureMetadataDir(requestedDir);',
+    replace: '      const metadataDir = resolve(requestedDir); // MUTANT',
     detectableBy: ['unit'],
   },
   {
@@ -306,6 +307,75 @@ export const MUTANTS = Object.freeze([
     replace: '  const rollbackStateReset = rotatedOut.length > 0; // MUTANT',
     detectableBy: ['unit'],
   },
+  // --- process kills (BR64-04): judged by tests/tuf/tuf-client-process-kill.test.js,
+  // which runs only for mutants that set BROWSER_TUF_KILL_MATRIX (time budget).
+  {
+    id: 'client-write-in-place',
+    description: 'atomicWriteFile truncates and rewrites the target instead of renaming the temp over it',
+    file: CLIENT,
+    find: '    await rename(tempPath, path);',
+    replace: "    { const target = await open(path, 'w', 0o600); await target.writeFile(data); await target.sync(); await target.close(); await unlink(tempPath); } // MUTANT",
+    env: { BROWSER_TUF_KILL_MATRIX: '1' },
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-stale-temps-kept',
+    description: 'a refresh no longer sweeps the temp files of a killed refresh',
+    file: CLIENT,
+    find: '  const staleTempsRemoved = await sweepStaleTempFiles(metadataDir);',
+    replace: '  const staleTempsRemoved = []; // MUTANT',
+    env: { BROWSER_TUF_KILL_MATRIX: '1' },
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-sweep-ignores-liveness',
+    description: 'the sweep removes temp files of processes that are still running',
+    file: CLIENT,
+    find: '    if (!Number.isSafeInteger(pid) || pid < 1 || processMayBeAlive(pid)) continue;',
+    replace: '    if (!Number.isSafeInteger(pid) || pid < 1) continue; // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-sweep-follows-any-entry',
+    description: 'the sweep removes links and directories that carry a temp name',
+    file: CLIENT,
+    find: '    if (entry === null || !entry.isFile()) continue;',
+    replace: '    if (entry === null) continue; // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-load-retry-accepts-changed-state',
+    description: 'after the last attempt a refused concurrent change is accepted instead of thrown',
+    file: CLIENT,
+    find: '        error.details = { ...(error.details ?? {}), attempts: attempt };',
+    replace: '        return { metadataDir: resolve(requestedDir), ...(await readTrustedRoleFiles(resolve(requestedDir), limits)), attempts: attempt }; // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-load-retries-insecure-state',
+    description: 'INSECURE_LOCAL_STATE is retried like a concurrent change',
+    file: CLIENT,
+    find: "      if (error?.code !== 'LOCAL_STATE_CHANGED') throw error;",
+    replace: "      if (error?.code !== 'LOCAL_STATE_CHANGED' && error?.code !== 'INSECURE_LOCAL_STATE') throw error; // MUTANT",
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-load-retry-reuses-directory-check',
+    description: 'a retry skips the boundary check of the (possibly replaced) directory',
+    file: CLIENT,
+    find: '      const metadataDir = await secureMetadataDir(requestedDir);',
+    replace: '      const metadataDir = attempt > 1 ? resolve(requestedDir) : await secureMetadataDir(requestedDir); // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-readback-leaks-verifier-code',
+    description: 'a mixed state on disk is refused with the verifier code, not PERSISTED_STATE_UNVERIFIED',
+    file: CLIENT,
+    find: "    if (typeof error?.code !== 'string') throw error;",
+    replace: '    throw error; // MUTANT',
+    env: { BROWSER_TUF_KILL_MATRIX: '1' },
+    detectableBy: ['unit'],
+  },
 ]);
 
 function parseArgs(argv) {
@@ -354,16 +424,16 @@ const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 // would then report to the parent instead of printing its own TAP summary.
 // BROWSER_TUF_MUTATION_STUDY lets the copied tests skip the tests that run this
 // study themselves, so a mutant is judged by the suite, not by a nested study.
-function childEnv() {
-  const env = { ...process.env, BROWSER_TUF_MUTATION_STUDY: '1' };
+function childEnv(extra = {}) {
+  const env = { ...process.env, BROWSER_TUF_MUTATION_STUDY: '1', ...extra };
   delete env.NODE_TEST_CONTEXT;
   return env;
 }
 
-function run(command, args, cwd) {
+function run(command, args, cwd, extraEnv = {}) {
   const result = spawnSync(command, args, {
     cwd,
-    env: childEnv(),
+    env: childEnv(extraEnv),
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -398,11 +468,12 @@ function tapCount(stdout, name) {
   return match ? Number(match[1]) : null;
 }
 
-function unitDetector(root) {
+function unitDetector(root, extraEnv = {}) {
   const result = run(
     process.execPath,
     ['--test', '--test-reporter=tap', 'tests/tuf/*.test.js'],
     root,
+    extraEnv,
   );
   return {
     exit: result.status,
@@ -454,12 +525,12 @@ function differentialDetector(root, work, python) {
   };
 }
 
-function evaluate(root, options, baseline) {
+function evaluate(root, options, baseline, extraEnv = {}) {
   const detectors = {};
   const kills = [];
   const crashes = [];
   if (options.detectors.includes('unit')) {
-    const unit = unitDetector(root);
+    const unit = unitDetector(root, extraEnv);
     detectors.unit = unit;
     if (unit.tests === null || unit.fail === null || (baseline && unit.tests !== baseline.unit.tests)) {
       crashes.push('unit');
@@ -531,6 +602,7 @@ export function main(argv = process.argv.slice(2)) {
         description: mutant.description,
         file: mutant.file,
         detectable_by: mutant.detectableBy,
+        ...(mutant.env ? { env: mutant.env } : {}),
       };
       if (!evaluable) {
         report.mutants.push({ ...entry, status: 'not-evaluated' });
@@ -539,7 +611,7 @@ export function main(argv = process.argv.slice(2)) {
       const root = makeCopy();
       try {
         Object.assign(entry, applyMutant(root, mutant));
-        const result = evaluate(root, options, baseline.detectors);
+        const result = evaluate(root, options, baseline.detectors, mutant.env ?? {});
         let status = 'survived';
         if (result.crashes.length > 0) status = 'crashed';
         else if (result.kills.length > 0) status = 'killed';

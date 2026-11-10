@@ -77,10 +77,17 @@ crashes. Counts are therefore read from that artifact; this README states none.
 | `role-binding-skipped-for-root` | unit suite, differential |
 | `keyid-non-canonical` (`keyIdFor` hashes `JSON.stringify(key)`) | python-tuf keyid check only |
 | `retained-version-binding-removed` (#55 version comparison removed) | unit suite only |
-| `client-*` (17 mutants of the stateful client: trusted-state boundary, ancestor rule, canonical IO path, private `mkdir`, 5.3.11 reset marker write/order/removal, C5) | unit suite only |
+| `client-*` (36 mutants of the stateful client: trusted-state boundary, ancestor rule, canonical IO path, private `mkdir`, 5.3.11 reset marker write/order/removal, C5, read-once and read-back, bounded re-read, stale-temp sweep, in-place write) | unit suite only |
 
 `keyid-non-canonical` shows why the keyid check sits in the oracle: a
 self-consistent drift cannot be seen from inside the code under test.
+
+The process-kill matrix (`tests/tuf/tuf-client-process-kill.test.js`, about 17 s)
+runs inside the study only for the mutants that set
+`env: { BROWSER_TUF_KILL_MATRIX: '1' }` (in-place write, stale temps kept, verifier
+code leaked by the read-back); every other mutant is judged by the suite without
+it, which keeps the study inside the workflow's time budget. The env is recorded
+per mutant in `mutations.json`.
 
 For each unit kill the report lists the top-level tests that failed
 (`detectors.unit.failed_tests`), so a claim that a named test catches a mutant can
