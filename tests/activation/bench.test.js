@@ -52,7 +52,12 @@ test('the benchmark measures every operation of one small profile and reports pe
   assert.ok(result.memoryBytes.peakRss >= result.memoryBytes.baselineRss);
   assert.deepEqual(Object.keys(result.memoryBytes.byPhase), ['stage', 'activate', 'verify', 'read', 'stream', 'recover', 'restage']);
   assert.ok(result.memoryBytes.byPhase.stream.arrayBuffers > 0, 'every phase was sampled at least once');
-  assert.ok(result.throughputMiBps.stage > 0);
+  // Throughput is a presentation metric rounded to 0.1 MiB/s. A tiny 16 KiB
+  // smoke package can therefore legitimately round a positive measured rate to
+  // 0.0 on a slow/shared runner; null, not zero, is the "not measurable"
+  // sentinel (milliseconds === 0).
+  assert.notEqual(result.throughputMiBps.stage, null);
+  assert.ok(result.throughputMiBps.stage >= 0);
   assert.match(result.commitBarrier, /^(directory-fsync|file-fsync-only)$/);
   const table = markdownTable({ profiles: [result] });
   assert.match(table, /\| smoke \| 8 × 2 KiB = 16 KiB \|/);
