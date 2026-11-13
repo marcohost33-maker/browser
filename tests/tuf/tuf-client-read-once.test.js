@@ -349,7 +349,9 @@ test('a chain broken on disk after the run is refused, not reported as verified'
         fetchImpl: bundleMirror(chain),
       }),
     ),
-    hasCode('PERSISTED_STATE_UNVERIFIED'),
+    // Refused by the completeness guard (targets no longer pinned by the snapshot on
+    // disk), which names the reason; not only by whichever chain check fails later.
+    (error) => error?.code === 'PERSISTED_STATE_UNVERIFIED' && error.details?.targetsUnpinned === true,
   );
 });
 

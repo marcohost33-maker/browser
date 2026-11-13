@@ -3,6 +3,7 @@ import {
   lstat,
   mkdir,
   open,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -14,6 +15,7 @@ import {
   join,
   resolve,
 } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import {
   DEFAULT_LIMITS,
@@ -162,6 +164,58 @@ export async function atomicWriteFile(path, bytes) {
       }
     }
   }
+}
+
+/**
+ * Temp files of a refresh that was killed (BR64-04). atomicWriteFile removes its
+ * temp in `finally`, which a SIGKILL, an OOM kill or a power cut never reaches; the
+ * process-kill matrix left one behind at every kill point between `create` and
+ * `rename`, and nothing ever removed it, so every crash added one. They are never
+ * read as state (role files are opened by exact name), they only accumulate.
+ *
+ * Removed only when all of this holds: the name is exactly one this client creates
+ * (`.<role>.json.tmp-<pid>-<n>` for a trusted-state file), the pid is not this
+ * process and is not alive (ESRCH; EPERM counts as alive), and the entry is a
+ * regular file, checked without following links. A live writer's temp is never
+ * touched; a reused pid only postpones the removal to a later refresh. Removing
+ * garbage needs no durability, so there is no directory sync.
+ *
+ * Limit: liveness is judged in this process's pid namespace. If one metadata
+ * directory is shared between containers, a writer that is alive in another
+ * namespace can look dead here; its temp is then removed, its rename fails with
+ * ENOENT and that refresh fails closed. No state is lost or mixed by this, but such
+ * a deployment also has no cross-process lock and is not supported by this spike.
+ */
+const TRUSTED_TEMP_NAME = /^\.(?:root|timestamp|snapshot|targets|rollback-reset)\.json\.tmp-(\d+)-\d+$/;
+
+function processMayBeAlive(pid) {
+  if (pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== 'ESRCH';
+  }
+}
+
+export async function sweepStaleTempFiles(metadataDir) {
+  const removed = [];
+  for (const name of (await readdir(metadataDir)).sort()) {
+    const match = TRUSTED_TEMP_NAME.exec(name);
+    if (match === null) continue;
+    const pid = Number(match[1]);
+    if (!Number.isSafeInteger(pid) || pid < 1 || processMayBeAlive(pid)) continue;
+    const path = join(metadataDir, name);
+    const entry = await lstatMaybe(path);
+    if (entry === null || !entry.isFile()) continue;
+    try {
+      await unlink(path);
+      removed.push(name);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
+  return removed;
 }
 
 function rolePath(metadataDir, role) {
@@ -525,9 +579,57 @@ export async function readTrustedRoleFiles(metadataDir, limits, probes = {}) {
   return { files, marker };
 }
 
-export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {
-  const metadataDir = await secureMetadataDir(requestedDir);
+/**
+ * Bounded, fresh re-read after LOCAL_STATE_CHANGED (BR64-02).
+ *
+ * The descriptor checks refuse a concurrent atomic replacement although the bytes
+ * read are intact (THREAT-MODEL.md, step 5), so a refresh in another process can
+ * make a read of the same account fail. That refusal stays: no attempt is ever
+ * accepted with a changed object. What changes is who retries: the whole read is
+ * repeated from the start, at most LOCAL_STATE_READ_ATTEMPTS times in total, with
+ * a short pause, and every attempt
+ * - re-runs the directory boundary check (a replaced directory is a new object
+ *   that must pass the rules again),
+ * - re-reads every role file and the marker through new descriptors,
+ * - keeps nothing from an earlier attempt: no bytes, no stat, no partial state.
+ * Only LOCAL_STATE_CHANGED is retried. INSECURE_LOCAL_STATE, parse errors and
+ * everything else fail on the first attempt. After the last attempt the error of
+ * that attempt is thrown with `details.attempts`.
+ *
+ * A retry can still read a state between two writes of one refresh (for instance
+ * the new timestamp.json with the old snapshot.json). That is the same state a
+ * crash leaves, and it is handled the same way: loadTrustedState treats it as a
+ * resumable update, and the read-back (loadVerifiedChain) refuses it.
+ */
+const LOCAL_STATE_READ_ATTEMPTS = 3;
+const LOCAL_STATE_RETRY_PAUSE_MS = Object.freeze([10, 50]);
+
+async function readSettledTrustedState(requestedDir, limits, probes) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await probes.beforeAttempt?.(attempt);
+      // Rules and reads both inside the attempt: a retry is a full fresh read.
+      const metadataDir = await secureMetadataDir(requestedDir);
+      const read = await readTrustedRoleFiles(metadataDir, limits, probes);
+      return { metadataDir, ...read, attempts: attempt };
+    } catch (error) {
+      if (error?.code !== 'LOCAL_STATE_CHANGED') throw error;
+      if (attempt >= LOCAL_STATE_READ_ATTEMPTS) {
+        error.details = { ...(error.details ?? {}), attempts: attempt };
+        throw error;
+      }
+      await sleep(LOCAL_STATE_RETRY_PAUSE_MS[attempt - 1] ?? LOCAL_STATE_RETRY_PAUSE_MS.at(-1));
+    }
+  }
+}
+
+/**
+ * `probes` are test seams (see readTrustedFileOnce and readTrustedRoleFiles, plus
+ * `beforeAttempt(attempt)`), never set in production.
+ */
+export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS, probes = {}) {
   const {
+    metadataDir,
     files: {
       root: rootBytes,
       timestamp: timestampBytes,
@@ -535,7 +637,8 @@ export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {
       targets: targetsBytes,
     },
     marker,
-  } = await readTrustedRoleFiles(metadataDir, limits);
+    attempts: readAttempts,
+  } = await readSettledTrustedState(requestedDir, limits, probes);
   if (rootBytes === null) {
     fail('MISSING_TRUSTED_ROOT', 'metadata directory has no root.json');
   }
@@ -587,6 +690,8 @@ export async function loadTrustedState(requestedDir, limits = DEFAULT_LIMITS) {
   return {
     // The checked, canonical directory: callers persist through this path only.
     metadataDir,
+    // 1 normally; 2 or 3 after a concurrent change was refused and re-read (BR64-02).
+    readAttempts,
     trustedState: {
       root,
       versions: {
@@ -1014,6 +1119,7 @@ export async function refreshClient({
   const local = await loadTrustedState(requestedDir, limits);
   // Every write below goes to the directory the boundary check approved.
   const { metadataDir } = local;
+  const staleTempsRemoved = await sweepStaleTempFiles(metadataDir);
   const metadataBase = baseUrl(metadataUrl, 'metadata URL');
   const fetchBytes = (url, options) => fetchBounded(url, { ...options, fetchImpl });
 
@@ -1070,6 +1176,7 @@ export async function refreshClient({
     });
     return completeRefresh({
       verified, writes, finish, consistentSnapshot, bundle, metadataDir, now, limits,
+      staleTempsRemoved,
     });
   }
   const { snapshot, targets } = await fetchSnapshotAndTargets({
@@ -1095,6 +1202,7 @@ export async function refreshClient({
   });
   return completeRefresh({
     verified, writes, finish, consistentSnapshot, bundle, metadataDir, now, limits,
+    staleTempsRemoved,
   });
 }
 
@@ -1115,16 +1223,28 @@ async function loadVerifiedChain(metadataDir, now, limits) {
       targetsUnpinned: state.targetsUnpinned,
     });
   }
-  const outcome = verifyTopLevelMetadataBytes({
-    trustedState: {
-      root: state.parsed.root,
-      versions: { timestamp: 0, snapshot: 0, targets: 0 },
-      snapshotMeta: {},
-    },
-    bundle: { roots: [], timestamp, snapshot, targets },
-    now,
-    limits,
-  });
+  let outcome;
+  try {
+    outcome = verifyTopLevelMetadataBytes({
+      trustedState: {
+        root: state.parsed.root,
+        versions: { timestamp: 0, snapshot: 0, targets: 0 },
+        snapshotMeta: {},
+      },
+      bundle: { roots: [], timestamp, snapshot, targets },
+      now,
+      limits,
+    });
+  } catch (error) {
+    // One answer for "the disk is not one verifiable chain", whichever check of the
+    // chain caught it first (BR64-04: a refresh killed between timestamp.json and
+    // snapshot.json leaves a pin mismatch, METADATA_HASH). The verifier's own code
+    // stays available as the cause.
+    if (typeof error?.code !== 'string') throw error;
+    fail('PERSISTED_STATE_UNVERIFIED', `trusted state on disk does not verify: ${error.message}`, {
+      cause: error.code,
+    });
+  }
   if (outcome.status !== 'metadata-verified') {
     fail('PERSISTED_STATE_UNVERIFIED', `read-back verification ended as ${outcome.status}`);
   }
@@ -1140,6 +1260,24 @@ async function loadVerifiedChain(metadataDir, now, limits) {
       },
     },
   };
+}
+
+/**
+ * Offline start check: is the trusted state on disk, as read NOW, one complete
+ * chain that verifies without the network? Same read and verification as the one
+ * `download` authorises from (loadVerifiedChain), exposed for a runtime that
+ * starts with updates disabled, and for the process-kill matrix
+ * (tests/tuf/tuf-client-process-kill.test.js), which uses it as the observer of
+ * the state a killed refresh left. It never writes and never repairs: anything
+ * but a complete, reset-free chain is PERSISTED_STATE_UNVERIFIED (or the load
+ * error), and repairing is the job of the next refresh.
+ */
+export async function verifyTrustedStateOffline(metadataDir, {
+  now = new Date(),
+  limits = DEFAULT_LIMITS,
+} = {}) {
+  const { state, readBack } = await loadVerifiedChain(metadataDir, now, limits);
+  return { metadataDir: state.metadataDir, ...readBack };
 }
 
 /** The refresh must have left the bytes it verified, not merely valid ones. */
@@ -1159,6 +1297,7 @@ function assertReadBackIs(readBack, bundle) {
 
 async function completeRefresh({
   verified, writes, finish, consistentSnapshot, bundle, metadataDir, now, limits,
+  staleTempsRemoved = [],
 }) {
   const resumed = verified.status === 'no-update' ? await finish(verified) : null;
   const { readBack } = await loadVerifiedChain(metadataDir, now, limits);
@@ -1168,7 +1307,7 @@ async function completeRefresh({
     assertReadBackIs(readBack, bundle);
   }
   if (resumed === null) {
-    return { ...verified, writes, consistentSnapshot, readBack };
+    return { ...verified, writes, consistentSnapshot, readBack, staleTempsRemoved };
   }
   return {
     ...resumed.verified,
@@ -1176,6 +1315,7 @@ async function completeRefresh({
     writes: [...writes, ...resumed.writes],
     consistentSnapshot,
     readBack,
+    staleTempsRemoved,
   };
 }
 

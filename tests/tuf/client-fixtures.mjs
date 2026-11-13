@@ -59,7 +59,7 @@ function corpusSigner(name) {
   return { privateKey, keyId };
 }
 
-function resignedRaw(metadata, signerName) {
+export function resignedRaw(metadata, signerName) {
   const signer = corpusSigner(signerName);
   metadata.signatures = [{
     keyid: signer.keyId,
@@ -68,7 +68,7 @@ function resignedRaw(metadata, signerName) {
   return Buffer.from(`${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
 }
 
-function fileDescriptor(raw, version) {
+export function fileDescriptor(raw, version) {
   return { version, length: raw.length, hashes: { sha256: sha256(raw) } };
 }
 
