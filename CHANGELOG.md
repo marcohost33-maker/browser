@@ -60,6 +60,136 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- TUF-Client-Spike, Selbstpruefung der BR64-Runde (2026-11-10, zweiter Durchgang),
+  fuenf Luecken geschlossen:
+  1. **Stromausfall statt nur Prozess-Kill:** SIGKILL laesst den Page-Cache stehen
+     und kann ein fehlendes `fsync` nicht zeigen. Neu
+     `tests/tuf/tuf-client-power-loss.test.js` mit eigenem Persistenzmodell nach
+     ALICE (OSDI 2014, `tests/tuf/power-loss-model.mjs`): exakte Operationen eines
+     Refresh aufzeichnen, jeden nach Stromausfall moeglichen Plattenzustand bauen
+     (Daten erst nach Datei-`fsync`, Verzeichnisoperationen erst nach
+     Verzeichnis-`fsync` dauerhaft, beliebige Teilmengen der offenen). Neue
+     Eigenschaft **K6**: nach Rueckkehr des Refresh ist jeder Stromausfall-Zustand
+     genau der neue. Ergebnis: 82 Operationen, 43 verschiedene Zustaende, K1-K6
+     halten. Selbsttest des Modells am klassischen Null-Laengen-Fehler (rename ohne
+     `fsync`). Drei neue Mutanten (Datei-`fsync`, Verzeichnis-`fsync`,
+     Marker-Loeschung ohne Verzeichnis-`fsync`) – nur ein Stromausfall zeigt sie;
+     alle getoetet. LazyFS war vorgesehen, sein Build ist in der verwendeten
+     Umgebung als Fremdcode nicht erlaubt; als naechster Schritt eingetragen.
+  2. **Doppelabsturz:** zweiter SIGKILL waehrend der Recovery jedes
+     unterschiedlichen ersten Absturzzustands: im Standardlauf (Rotation mit
+     Reset, jeder dritte Recovery-Schritt und der letzte) 162 Recovery-Kills aus 16
+     Zustaenden; vollstaendig (`BROWSER_TUF_CRASH_EXHAUSTIVE=1`, alle drei
+     Szenarien, jeder Schritt) **1'115 Recovery-Kills aus 43 Zustaenden, alle
+     vertragsgemaess** (232 s, lokal).
+  3. **Bootstrap:** Kill an jedem Schritt von `initClient` (9 Punkte): nie ein
+     zerrissenes `root.json`; erneutes `init` vervollstaendigt, ein vorhandener Root
+     wird nicht ersetzt; der erste Refresh verifiziert und raeumt Temps.
+  4. **Drift-Waechter des Harness:** jede Ersetzung einer Rollendatei muss als
+     create -> write -> fsync -> rename -> Verzeichnis-fsync in der Spur stehen;
+     faellt ein Hook still weg, schlaegt der Lauf fehl statt die Matrix zu
+     verkleinern. Fehlgeschlagene Schritte (unlink eines fehlenden Markers) werden
+     als solche protokolliert.
+  5. **Belege:** CI-Lauf 42798074801 (`ubuntu-latest`, ohne Root) zeigt die
+     Kill-Matrix und 40/40 Mutanten am Kopf `ab80620`; `security-ci`/`docs-ci`
+     laufen fuer einen gestapelten PR (Basis nicht `main`) nicht – dort gilt nur
+     der lokale Lauf.
+  Gemeinsame Szenarien und Vertragspruefung in `tests/tuf/crash-matrix-support.mjs`.
+  Mutationsstudie 40 -> 43; die Doppel-Kill-Matrix laeuft in der Studie nicht
+  (kein Mutant braucht sie als Detektor).
+- TUF-Client-Spike, offene Punkte der Cross-Family-Runde zu #64 (2026-11-05,
+  `SECURITY_REVIEW_REQUIRED`):
+  1. **BR64-04 – echte Prozess-Kills statt nur simulierter Abbrueche:**
+     `tests/tuf/tuf-client-process-kill.test.js` startet einen Refresh als eigenen
+     Prozess (`process-kill-worker.mjs`) und beendet ihn per SIGKILL vor jedem
+     einzelnen Dateisystemschritt (`mkdir`, `create`, `write`, `fsync`, `rename`,
+     Verzeichnis-`fsync`, `unlink`) und nach dem letzten. Ein frischer Prozess
+     liest danach den hinterlassenen Zustand, bevor er irgendetwas schreibt.
+     Vertrag K1–K5 (`client/THREAT-MODEL.md`, "Crash evidence"): keine zerrissene
+     Datei; offline wird genau der alte oder der neue vollstaendige Stand
+     verifiziert, alles dazwischen mit `PERSISTED_STATE_UNVERIFIED` verweigert;
+     ein Replay des alten Buendels gewinnt nie; eine Recovery erreicht genau den
+     neuen Stand, die zweite ist ein `no-update`; kein Temp bleibt. Drei
+     Szenarien (Update v2→v3, Root-Rotation mit 5.3.11-Reset, Rotation ueber einen
+     auf 99999 vorgespulten Targets-Floor): **86/86 Kill-Punkte** vertragsgemaess
+     (Linux). Grenze: SIGKILL laesst den Page-Cache stehen; ein fehlendes `fsync`
+     zeigt nur eine Stromausfall-Emulation (offen).
+     Die Matrix fand **zwei Fehler, beide behoben:** (a) Temp-Dateien eines
+     getoeteten Refresh blieben fuer immer liegen (`finally` laeuft nach SIGKILL
+     nicht) – neu `sweepStaleTempFiles()` am Anfang jedes Refresh, nur exakte
+     Client-Temp-Namen, nur fuer nicht mehr laufende PIDs, nur regulaere Dateien
+     ohne Linkverfolgung (`staleTempsRemoved` im Ergebnis); (b) der Read-back
+     verweigerte einen zwischen `timestamp.json` und `snapshot.json` getoeteten
+     Stand mit dem Verifier-Code `METADATA_HASH` statt dem dokumentierten
+     `PERSISTED_STATE_UNVERIFIED` – jetzt ein Code, Verifier-Code in
+     `details.cause`.
+  2. **BR64-02 – begrenztes, frisches Neu-Lesen:** `loadTrustedState()` liest nach
+     `LOCAL_STATE_CHANGED` den gesamten Zustand neu (hoechstens drei Versuche,
+     Pausen 10/50 ms). Jeder Versuch prueft die Verzeichnisgrenze erneut und
+     oeffnet alle Dateien neu; nichts aus einem verworfenen Versuch wird
+     behalten. Nur `LOCAL_STATE_CHANGED` wird wiederholt, `INSECURE_LOCAL_STATE`
+     nie; nach dem dritten Versuch Fehler mit `details.attempts = 3`
+     (`tests/tuf/tuf-client-read-retry.test.js`, `readAttempts` im Zustand).
+  3. **Offline-Startpruefung** `verifyTrustedStateOffline(dir, { now })`: derselbe
+     Lese- und Verifikationspfad, aus dem `download` autorisiert; liest und
+     verifiziert, schreibt und repariert nie (fuer einen Start mit abgeschalteten
+     Updates, ROADMAP M3).
+  4. **Mutationsstudie 32 → 40 Mutanten, 40/40 getoetet** (unit, Differential,
+     python-tuf 7.0.1, `--require-all`, lokal 5:33 min): neu u. a. In-Place-Write,
+     liegengelassene Temps, Sweep ohne Lebendpruefung oder mit Linkverfolgung,
+     Retry von `INSECURE_LOCAL_STATE`, Retry ohne erneute Verzeichnispruefung,
+     Annahme nach dem letzten Versuch, Verifier-Code im Read-back. Die
+     Kill-Matrix laeuft in der Studie nur fuer ihre drei Mutanten
+     (`env: BROWSER_TUF_KILL_MATRIX`), damit das CI-Zeitbudget haelt. Der Mutant
+     `client-load-skips-secure-directory` sitzt jetzt an der Grenzpruefung im
+     Leseversuch. Korrigiert: die Differential-README nannte 17 statt (bisher) 28
+     `client-*`-Mutanten; jetzt 36.
+- TUF-Client-Spike: Rollback-Recovery-Linie #55/#56/#57 aus den Drafts #58/#59 auf
+  aktuellen `main` konsolidiert und den Hold-Befund **P2-BR59-01** aus der
+  Cross-Family-Runde vom 2026-10-13 geschlossen (unsignierter
+  `rollback-reset.json`-Marker).
+  1. **Kontogrenze erzwungen:** Metadatenverzeichnis und vertrauenswuerdige
+     Dateien (`root`, `timestamp`, `snapshot`, `targets`, `rollback-reset`), die
+     ein Link sind, einem anderen Konto gehoeren oder fuer Gruppe/andere
+     beschreibbar sind, werden vor jedem Lesen und jeder Anfrage mit
+     `INSECURE_LOCAL_STATE` abgelehnt; der Client legt Verzeichnisse mit `0700`
+     an, auch unter einer gruppenbeschreibbaren umask.
+  2. **Grenze fuer das eigene Konto belegt statt behauptet:** ein gefaelschter
+     Marker bewirkt nachweislich nicht mehr als das Loeschen der drei
+     Rollendateien (alle 18 Korpusfaelle: gleiches Ergebnis, gleiche Anfragen,
+     gleicher effektiver Vertrauenszustand, Root-Floor unberuehrt). Drei gueltig
+     signierte aeltere Ketten kommen bei beiden Manipulationen durch und sind als
+     dokumentierte Grenze fixiert. TUF selbst schuetzt den lokalen Speicher nicht
+     (Spezifikations-Issue #107); dafuer braeuchte es einen extern verankerten
+     monotonen Backstop, den der Spike nicht beansprucht.
+  3. **Neuer Fehler gefunden und behoben (C5):** lief ein Refresh unter einem
+     bereits offenen Reset und hatte das Repository inzwischen einen neueren Root
+     veroeffentlicht, ueberschrieb der Marker die Root-Version; ein Absturz vor
+     dem neuen `root.json` liess den Reset verfallen, der vorgespulte
+     Snapshot-Floor kehrte zurueck und jeder weitere Refresh scheiterte mit
+     `SNAPSHOT_ROLLBACK` (vor dem Fix gemessen). Der Marker behaelt jetzt den
+     Root, seit dem der Reset offen ist.
+  4. **Selbstpruefung derselben Runde (2026-11-03):** die Kontogrenze pruefte nur
+     das Blattverzeichnis; wer einen Elternordner beschreiben konnte, haette das
+     Metadatenverzeichnis wegbenennen und ersetzen koennen. Jetzt gilt die Regel
+     "sicheres Verzeichnis" nach SEI CERT FIO15-C fuer alle Vorfahren bis `/`
+     (Besitzer Konto oder Superuser, Gruppen-/Weltschreibrecht nur mit
+     Sticky-Bit), danach laeuft jedes IO ueber den geprueften kanonischen Pfad;
+     Besitzerpruefung ueber die effektive uid. Neuer Absturztest C6
+     (Snapshot-only-Rotation, jeder Absturzpunkt inkl. Loeschen des Markers),
+     den die Cross-Family-Runde verlangt hatte. Zwei falsche Spec-Zitate gegen
+     den Spezifikations-Quelltext korrigiert (§5.4.3.1 statt §5.4.3.2;
+     Freeze-Pruefung Targets §5.6.5 statt §5.6.6).
+  **Evidenz:** `npm test` 452 Tests, 447 pass, 0 fail, 5 skip (als root
+  gemessen; unprivilegiert wird der Ende-zu-Ende-Test fuer fremden Besitz
+  sichtbar uebersprungen); TUF-Teil 106/106, auch unter `umask 002`. Die 17
+  Client-Mutanten stehen jetzt in `mutation-study.mjs` (verankerte Edits auf
+  einer Kopie, in CI mit `--require-all`, Report `mutations.json` mit den
+  Namen der fehlschlagenden Tests); lokaler Lauf: Basis 106/0, 17/17 getoetet.
+  **Offen:** externer monotoner Backstop,
+  Windows-ACL-Pruefung, realer Prozess-Kill/Stromausfall, unabhaengige Runde
+  auf dem neuen Kopf.
+
 - Supply-Chain / `audit:ci`-Gate wieder gruen, diesmal durch **Entfernen** statt
   Flicken der verwundbaren Dev-Tool-Ketten (Befund: `npm audit` auf `main` meldete
   19 Advisories, davon 11 high; `security-ci` waere auf jedem neuen Lauf rot und

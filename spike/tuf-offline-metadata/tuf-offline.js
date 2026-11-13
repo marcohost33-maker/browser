@@ -456,6 +456,26 @@ export function verifyRetainedRoleMetadata(
   return metadata;
 }
 
+/**
+ * Check a RETAINED role file against the descriptor its trusted parent recorded:
+ * exact bytes (length, SHA-256) and version, the same binding a fresh download
+ * must meet (5.6.2/5.6.4). Signatures and expiry are checked where the file is
+ * used, not here.
+ */
+export function verifyRetainedMetadataDescriptor(
+  metadata,
+  rawBytes,
+  descriptor,
+  label,
+  limits = DEFAULT_LIMITS,
+) {
+  verifyMetadataDescriptor(metadata, descriptor, label, limits, rawBytes);
+  if (metadata.signed?.version !== descriptor.version) {
+    fail('METADATA_VERSION', `${label} version does not match its descriptor`);
+  }
+  return metadata;
+}
+
 function assertDigest(actual, expected, code, label) {
   if (typeof expected !== 'string' || !HEX_64.test(expected)) {
     fail('INVALID_HASH', `${label} has an invalid SHA-256 digest`);
@@ -781,8 +801,14 @@ export function verifyTopLevelMetadata({
   const snapshotMeta = assertMetaMap(bundle.snapshot, limits);
   const targetsDescriptor = snapshotMeta['targets.json'];
 
+  // TUF 5.3.11: a timestamp/snapshot key rotation discards the trusted
+  // timestamp AND snapshot; the targets rollback floor is the version that
+  // trusted snapshot recorded (5.5.5), so it goes with it. Keeping the old
+  // targets version here would let a compromised, fast-forwarded targets
+  // version block the recovery chain forever (#57, python-tuf
+  // test_updater_key_rotations).
   const oldTargetsVersion = metadataRollbackStateReset
-    ? trustedTargetsVersion
+    ? 0
     : Math.max(trustedTargetsVersion, trustedSnapshotTargetVersion(trustedState));
   if (targetsDescriptor.version < oldTargetsVersion) {
     fail('TARGETS_ROLLBACK', 'snapshot points to an older targets version');

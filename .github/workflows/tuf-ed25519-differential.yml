@@ -23,7 +23,9 @@ permissions:
 jobs:
   differential:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 40 mutants incl. three with the process-kill matrix: 5.5 min measured locally
+    # (2026-11-10); hosted runners are slower, so 10 min left no margin.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -90,6 +92,13 @@ jobs:
             artifacts/tuf-differential/browser-results.json \
             artifacts/tuf-differential/python-tuf-results.json \
             artifacts/tuf-differential/comparison.json
+
+      - name: Run mutation study
+        run: |
+          node spike/tuf-offline-metadata/differential/mutation-study.mjs \
+            artifacts/tuf-differential/mutations.json \
+            --python "$(command -v python)" \
+            --require-all
 
       - name: Upload differential evidence
         if: ${{ !cancelled() }}
