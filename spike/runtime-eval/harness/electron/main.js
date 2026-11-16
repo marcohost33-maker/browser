@@ -649,15 +649,19 @@ async function realMain() {
     : { verdict: 'FAIL', detail: 'NOT-DENIED (no will-download event observed)' };
 
   // Host-level download observation (see above): the file, not the counter.
+  // The checks use the real path; the report only gets a neutral label, because
+  // app.getPath('downloads') contains the OS user name and the results file is
+  // committed to a public repository.
+  const DOWNLOAD_DIR_LABEL = '{user-downloads}';
   let downloadOs;
   if (downloadFile === null) {
     downloadOs = { verdict: 'INCONCLUSIVE', detail: `download directory unavailable ${downloadDir}` };
   } else if (downloadExistedBefore) {
-    downloadOs = { verdict: 'INCONCLUSIVE', detail: `a file named spike-fixture.bin already existed in ${downloadDir} before the run — no delta can be attributed` };
+    downloadOs = { verdict: 'INCONCLUSIVE', detail: `a file named spike-fixture.bin already existed in ${DOWNLOAD_DIR_LABEL} before the run — no delta can be attributed` };
   } else if (fs.existsSync(downloadFile)) {
-    downloadOs = { verdict: 'FAIL', detail: `the denied download was written to disk: ${downloadFile}` };
+    downloadOs = { verdict: 'FAIL', detail: `the denied download was written to disk: ${DOWNLOAD_DIR_LABEL}/spike-fixture.bin` };
   } else {
-    downloadOs = { verdict: 'PASS', detail: `no file written to ${downloadDir} (checked spike-fixture.bin before and after the fixture)` };
+    downloadOs = { verdict: 'PASS', detail: `no file written to ${DOWNLOAD_DIR_LABEL} (checked spike-fixture.bin before and after the fixture)` };
   }
 
   // PR#42 P1 — the OS-level external-protocol observation.
