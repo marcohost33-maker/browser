@@ -193,9 +193,10 @@ reset marker, and either one clears the floors. The cross-family review of #59
 - **The running account itself is inside the boundary, and this is stated, not
   hidden.** For that account a forged marker grants nothing beyond deleting the three
   role files. `tests/tuf/tuf-client-trust-boundary.test.js` proves the equivalence
-  over all 18 differential-corpus cases (same result, same requests, same effective
-  trust state, root floor untouched). It also pins the three validly signed older
-  chains that both tamperings let through while the untouched floors refuse them.
+  over every differential-corpus case (23 since 2026-11-16; same result, same
+  requests, same effective trust state, root floor untouched). It also pins by name
+  the validly signed older chains that both tamperings let through while the
+  untouched floors refuse them.
 - **TUF has the same limit.** The specification offers no protection against an
   attacker with local control of the trusted metadata store; specification issue
   [#107](https://github.com/theupdateframework/specification/issues/107) (open since
@@ -211,7 +212,13 @@ are not inspected yet.
 The target output directory of `download` is **not** trusted state and is not
 checked: cached targets are re-verified against the trusted descriptor before
 reuse, but whoever consumes a downloaded file must verify it again at the point
-of use (the activation-store spike does).
+of use (the activation-store spike does). Three rules keep the client itself safe
+there: a link, FIFO or oversized file at the output path is never read as the
+cache (one open descriptor, no link followed, at most the signed length plus one
+byte); a target is only ever replaced through a temp file and a rename; and each
+download first removes the temps a killed download of the same target left
+beside it (`downloaded[].staleTempsRemoved`). See "The target directory of
+`download`" and "Crash evidence for `download`" in `THREAT-MODEL.md`.
 
 On Windows, directory fsync support must be measured separately. The function reports
 whether the parent directory was synced rather than silently claiming durability.

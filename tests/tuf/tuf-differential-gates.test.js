@@ -101,7 +101,9 @@ async function honestPython(corpus) {
     results: corpus.cases.map((entry) => ({
       name: entry.name,
       decision: entry.expected_python_tuf ?? 'accept',
-      error: null,
+      error: entry.expected_python_error
+        ? { name: entry.expected_python_error, message: 'as the case expects' }
+        : null,
     })),
   };
 }
@@ -144,6 +146,17 @@ const pythonForgeries = [
       ...last,
       decision: last.decision === 'accept' ? 'reject' : 'accept',
     });
+  }],
+  // A rejection for another reason than the case is about, and one that only says
+  // the oracle script misused the python-tuf API (found 2026-11-16, see
+  // pr_nr/NR/agreeing-rejections-for-the-wrong-reason.md).
+  ['rollback rejected for an unrelated reason', /FAIL reject-targets-rollback-against-trusted-state/, (p) => {
+    p.results.find((item) => item.name === 'reject-targets-rollback-against-trusted-state')
+      .error = { name: 'ExpiredMetadataError', message: 'forged' };
+  }],
+  ['rejection that is a misuse of the oracle API', /FAIL reject-expired-timestamp/, (p) => {
+    p.results.find((item) => item.name === 'reject-expired-timestamp')
+      .error = { name: 'RuntimeError', message: 'Cannot update timestamp after snapshot' };
   }],
   ['extra verdict for an unknown case', /python-tuf decided an unknown case no-such-case/, (p) => {
     p.results.push({ name: 'no-such-case', decision: 'reject', error: null });

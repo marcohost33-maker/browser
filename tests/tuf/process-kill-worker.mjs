@@ -19,6 +19,12 @@
 // the killed process left it (no write before the observation), then replays the
 // old bundle against a copy, then recovers with the new bundle, twice.
 //
+// Mode `download`: the same instrumentation around one downloadTargets() call, so
+// the steps of the target write (its own temp file, in the target's directory,
+// outside the metadata directory) are kill points too. Mode `after-download-crash`
+// is its observer: state of both directories as left, then a download with the new
+// bundle, then a second one that must be a pure cache hit.
+//
 // This file is not a test (no `.test.js`), so `node --test tests/tuf/*.test.js`
 // only runs it through the test that spawns it.
 import { appendFileSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
@@ -45,6 +51,7 @@ const mirrorOf = (bundle) => bundleMirror({
 // Names without pid/counter, so the step sequence is identical across runs.
 function stepName(path) {
   if (resolve(String(path)) === resolve(spec.metadataDir)) return '<metadata-dir>';
+  if (spec.targetDir && resolve(String(path)) === resolve(spec.targetDir)) return '<target-dir>';
   const name = basename(String(path));
   const temp = TEMP_NAME.exec(name);
   return temp ? `.${temp[1]}.tmp` : name;
@@ -173,6 +180,38 @@ async function snapshotDirectory(dir) {
   };
 }
 
+const TARGET_URL = 'https://repo.test/targets/';
+
+/** Metadata from the bundle, and one fixed body for every target request (counted). */
+function downloadMirror(bundle, targetB64, counter) {
+  const metadata = mirrorOf(bundle);
+  const body = Buffer.from(targetB64, 'base64');
+  return async (url) => {
+    if (!String(url).startsWith(TARGET_URL)) return metadata(url);
+    counter.targetRequests += 1;
+    return new Response(body, { status: 200, headers: { 'content-length': String(body.length) } });
+  };
+}
+
+async function snapshotTarget(outputPath) {
+  let file = null;
+  let kind = 'absent';
+  try {
+    const entry = lstatSync(outputPath);
+    kind = entry.isFile() ? 'file' : 'other';
+    if (entry.isFile()) file = sha256(await readFile(outputPath));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  let names = [];
+  try {
+    names = await readdir(resolve(outputPath, '..'));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  return { kind, file, temps: names.filter((name) => TEMP_NAME.test(name)).sort() };
+}
+
 const outcome = (promise) => promise.then(
   (value) => ({ ok: true, value }),
   (error) => ({
@@ -195,6 +234,75 @@ async function main() {
       fetchImpl: mirrorOf(spec.mirror),
     });
     writeFileSync(spec.out, JSON.stringify({ status: result.status }));
+    return;
+  }
+
+  if (spec.mode === 'download') {
+    instrument({ killAt: spec.killAt ?? null, log: spec.log });
+    const { downloadTargets } = await import('../../spike/tuf-offline-metadata/client/client-core.mjs');
+    const counter = { targetRequests: 0 };
+    const result = await downloadTargets({
+      metadataDir: spec.metadataDir,
+      metadataUrl: 'https://repo.test/metadata/',
+      targetBaseUrl: TARGET_URL,
+      targetDir: spec.targetDir,
+      targetNames: [spec.targetName],
+      now,
+      fetchImpl: downloadMirror(spec.mirror, spec.targetBytes, counter),
+    });
+    writeFileSync(spec.out, JSON.stringify({
+      status: result.refresh.status,
+      cached: result.downloaded[0].cached,
+      targetRequests: counter.targetRequests,
+    }));
+    return;
+  }
+
+  if (spec.mode === 'after-download-crash') {
+    const {
+      downloadTargets,
+      verifyTrustedStateOffline,
+    } = await import('../../spike/tuf-offline-metadata/client/client-core.mjs');
+    const outputPath = resolve(spec.targetDir, ...spec.targetName.split('/'));
+    const download = () => {
+      const counter = { targetRequests: 0 };
+      return outcome(downloadTargets({
+        metadataDir: spec.metadataDir,
+        metadataUrl: 'https://repo.test/metadata/',
+        targetBaseUrl: TARGET_URL,
+        targetDir: spec.targetDir,
+        targetNames: [spec.targetName],
+        now,
+        fetchImpl: downloadMirror(spec.newBundle, spec.newTargetBytes, counter),
+      }).then((result) => ({
+        status: result.refresh.status,
+        cached: result.downloaded[0].cached,
+        staleTempsRemoved: result.downloaded[0].staleTempsRemoved ?? null,
+        targetRequests: counter.targetRequests,
+      })));
+    };
+    const offlineDigests = () => outcome(verifyTrustedStateOffline(spec.metadataDir, { now })
+      .then((result) => result.sha256));
+
+    // 1. Both directories exactly as the killed process left them.
+    const crashed = {
+      metadata: await snapshotDirectory(spec.metadataDir),
+      target: await snapshotTarget(outputPath),
+    };
+    const offline = await offlineDigests();
+
+    // 2. Recovery, then once more: healed means a cache hit without a target request.
+    const recovery = await download();
+    const recovered = {
+      metadata: await snapshotDirectory(spec.metadataDir),
+      target: await snapshotTarget(outputPath),
+    };
+    const recoveredOffline = await offlineDigests();
+    const second = await download();
+
+    writeFileSync(spec.out, JSON.stringify({
+      crashed, offline, recovery, recovered, recoveredOffline, second,
+    }));
     return;
   }
 

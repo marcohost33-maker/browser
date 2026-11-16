@@ -117,6 +117,26 @@ study fail it.
   permitted in the environment where this evidence was produced; it remains the next
   step for a measured rather than modelled result.
 
+## The target directory of `download`
+
+The directory a download writes to is the caller's. It is **not** trusted state:
+no owner, mode or ancestor rule is applied to it, and whoever consumes a downloaded
+file verifies it again at the point of use. Three rules keep the client itself
+safe and tidy there (`tests/tuf/tuf-client-target-cache.test.js`):
+
+| Rule | Why (measured before the rule, 2026-11-16) |
+| --- | --- |
+| A cache hit is decided on one open descriptor: opened without following a link and without blocking, a regular file, and at most the signed length plus one byte is read | A link at the output path was served as the cached target; a file over 2 GiB failed the download with `ERR_FS_FILE_TOO_LARGE`; a FIFO blocked it for good |
+| Whatever is not a cache hit is replaced by the verified bytes through a temp file and a rename, never rewritten in place | A link is replaced, not what it points to; a kill never leaves a torn target |
+| Before each target, the temps of a killed download of **that** target are removed: exact name `.<file>.tmp-<pid>-<n>` in the target's own directory, dead pid, regular file, no link followed | A kill between `create` and `rename` left a full or partial copy beside the target, and nothing ever removed it |
+
+The sweep is narrower than the one in the metadata directory on purpose: it never
+judges another target's temps, because the directory is not the client's alone. A
+file the caller created under exactly the client's temp name is indistinguishable
+from a leftover and is removed. On Windows there is no `O_NOFOLLOW`; a link at the
+output path is followed there, and the bytes behind it are still verified against
+the signed descriptor.
+
 ## Linux `openat2` (evaluation, not implemented)
 
 `openat2(2)` with `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS`, relative to a descriptor of
@@ -155,6 +175,38 @@ tests passed in CI on `ubuntu-latest` as an unprivileged user, run 42798074801):
 | Double kill, all scenarios, every recovery step (`BROWSER_TUF_CRASH_EXHAUSTIVE=1`, 232 s) | 186 + 451 + 478 = 1,115 recovery kills from 10 + 16 + 17 distinct first-kill states | K1-K5 hold; states after the second kill 160 old / 875 between / 80 new |
 | Kill during the bootstrap (`initClient`) | 9 | no torn root; re-init completes an absent root, refuses a present one; first refresh verifies and sweeps temps |
 | Power loss (model), three scenarios | 18 + 32 + 32 operations, 10 + 16 + 17 distinct states | K1-K6 hold; one state after return each, the new one |
+
+### Crash evidence for `download`
+
+A download continues after the refresh: it writes the verified target through its
+own temp file in the target's directory. `tests/tuf/tuf-client-download-kill.test.js`
+kills a real `downloadTargets()` process before every step of **both** directories
+and after the last one. A fresh process observes both, downloads again, and
+downloads once more.
+
+| ID | Property |
+| --- | --- |
+| T1 | The output path is absent (only if it was before), or byte-equal to the previously verified target, or to the newly authorised one |
+| T2 | The new target is on disk only under completely committed new metadata; the metadata itself keeps K1 and K2 |
+| T3 | One download by a fresh process converges: new metadata verified offline, the output is exactly the authorised bytes, and correct bytes already there are not fetched again |
+| T4 | No temp file is left in the metadata directory or beside the target |
+| T5 | A second download is a pure cache hit, without a target request |
+| T6 | (power loss) Once a download has returned, every power-loss state of the target's directory holds the new bytes |
+
+Measured on Linux (Node 22.23.4, as superuser, 2026-11-16):
+
+| Matrix | Points | Result |
+| --- | --- | --- |
+| Single kill, first download (target directories do not exist yet) | 8 steps, 9 kill points | T1-T5 hold; target absent 7 / new 2; 3 kill points leave a target temp |
+| Single kill, update v2->v3 that replaces the cached target | 25 steps, 26 kill points | T1-T5 hold; target old 24 / new 2; 3 kill points leave a target temp |
+| Power loss (model) of the target's directory, replacing the cached target | 6 operations, 4 distinct states | T1-T6 hold; one state after return, the new one |
+
+Before the sweep existed, 3 of 9 and 3 of 26 kill points, and one power-loss state,
+failed T4. Limits of this evidence: one target per call; the power-loss model
+covers the entries of the target's existing directory, not the creation of new
+directories (there the trace must show a sync of every directory that gained an
+entry, which the test checks); kills inside the network read are not separate
+points, because nothing is on disk before the verified bytes are written.
 
 The matrices run in `node --test tests/tuf/*.test.js` (about one minute), skipped
 on Windows, where a process cannot SIGKILL itself in the same way. Every trace also

@@ -60,6 +60,39 @@ key). All signing keys are in `root.keys`, so only the keyid-to-role binding can
 reject them. `tests/tuf/tuf-differential-gates.test.js` runs every corpus case
 through the Browser verifier under `npm test` as well.
 
+## Stateful rollback cases and the reason of a rejection
+
+Rollback is a decision against trusted state, so these cases bring both oracles
+to the same trusted state first (the default chain at version 2 in every role)
+and then offer a candidate that is validly signed and consistent in itself:
+
+| Case | Candidate | Spec step | python-tuf must raise |
+|---|---|---|---|
+| `reject-timestamp-rollback-against-trusted-state` | timestamp v1 | 5.4.3.1 | `BadVersionNumberError` |
+| `reject-snapshot-rollback-against-trusted-state` | timestamp v3 pointing to snapshot v1 | 5.4.3.2 | `BadVersionNumberError` |
+| `reject-targets-rollback-against-trusted-state` | timestamp v3, snapshot v3 listing targets v1 | 5.5.5 | `BadVersionNumberError` |
+| `reject-root-version-replayed`, `reject-root-version-skipped` | next root with version 1 or 3 instead of 2 | 5.3.5 | `BadVersionNumberError` |
+| `accept-newer-chain-over-trusted-state` | v3 in every role (control) | - | accept |
+
+The python oracle loads the stored snapshot the way `ngclient.Updater` does: after
+the new timestamp and as `trusted`, so that it stays in the set as the intermediate
+snapshot python-tuf takes its targets floor from.
+
+**An agreeing "reject" is not enough.** When these cases were first written
+(2026-11-16), the oracle script loaded the stored snapshot before the new
+timestamp. python-tuf answered every one of them, the control included, with
+`RuntimeError: Cannot update timestamp after snapshot`: a misuse of its API, not a
+judgement about the metadata. Two of the three decisions still matched the expected
+"reject". Since then a case may name the exception class its rejection must carry
+(`expected_python_error`), and `compare-results.mjs` fails any case whose python-tuf
+error is an API-misuse class (`RuntimeError`, `TypeError`, `KeyError`,
+`AttributeError`, `NameError`). The gate tests forge both situations.
+
+Not covered here: fast-forward recovery after a key rotation (5.3.11). python-tuf
+does not implement it inside `TrustedMetadataSet`; the old files simply fail
+verification under the new root when its `Updater` loads them. That path stays
+covered by the client tests (C2 to C6) and the crash matrices, not differentially.
+
 ## Mutation evidence
 
 `mutation-study.mjs` applies each mutant as one anchored edit to a temporary copy

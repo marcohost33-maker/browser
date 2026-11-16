@@ -72,6 +72,32 @@ export const MUTANTS = Object.freeze([
     // independent python keyid recomputation can see it.
     detectableBy: ['python'],
   },
+  // --- stateful rollback (R8 roadmap 2026-11-15): each floor has a corpus case that
+  // only this check rejects, so both oracles must see its removal.
+  {
+    id: 'snapshot-rollback-check-removed',
+    description: 'a timestamp that points to an older snapshot than the trusted one is accepted',
+    file: `${SPIKE}/tuf-offline.js`,
+    find: '  if (snapshotDescriptor.version < trustedSnapshotVersion) {',
+    replace: '  if (false) { // MUTANT: snapshot rollback floor removed',
+    detectableBy: ['unit', 'differential', 'python'],
+  },
+  {
+    id: 'targets-rollback-check-removed',
+    description: 'a snapshot that points to an older targets version than the trusted one is accepted',
+    file: `${SPIKE}/tuf-offline.js`,
+    find: '  if (targetsDescriptor.version < oldTargetsVersion) {',
+    replace: '  if (false) { // MUTANT: targets rollback floor removed',
+    detectableBy: ['unit', 'differential', 'python'],
+  },
+  {
+    id: 'timestamp-rollback-check-removed',
+    description: 'a timestamp older than the trusted one is accepted',
+    file: `${SPIKE}/tuf-offline.js`,
+    find: '  if (timestampVersion < trustedTimestampVersion) {',
+    replace: '  if (false) { // MUTANT: timestamp rollback floor removed',
+    detectableBy: ['unit', 'differential', 'python'],
+  },
   {
     id: 'retained-version-binding-removed',
     description: 'verifyRetainedMetadataDescriptor no longer compares the descriptor version',
@@ -325,6 +351,51 @@ export const MUTANTS = Object.freeze([
     find: '  const staleTempsRemoved = await sweepStaleTempFiles(metadataDir);',
     replace: '  const staleTempsRemoved = []; // MUTANT',
     env: { BROWSER_TUF_KILL_MATRIX: '1' },
+    detectableBy: ['unit'],
+  },
+  // --- download and its target cache: tests/tuf/tuf-client-target-cache.test.js pins
+  // each rule; tuf-client-download-kill.test.js reaches the sweep through real kills.
+  {
+    id: 'client-target-temps-kept',
+    description: 'a download no longer sweeps the temp files a killed download left beside its target',
+    file: CLIENT,
+    find: '    const staleTempsRemoved = await sweepStaleTargetTemps(outputPath);',
+    replace: '    const staleTempsRemoved = []; // MUTANT',
+    env: { BROWSER_TUF_KILL_MATRIX: '1' },
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-target-sweep-any-target',
+    description: 'the target sweep removes the temps of every target in the directory, not only its own',
+    file: CLIENT,
+    find: '    return await sweepStaleTemps(dirname(outputPath), new RegExp(`^\\\\.${file}\\\\.tmp-(\\\\d+)-\\\\d+$`));',
+    replace: '    return await sweepStaleTemps(dirname(outputPath), /^\\..+\\.tmp-(\\d+)-\\d+$/); // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-target-cache-follows-link',
+    description: 'a link at the output path is followed and served as the cached target',
+    file: CLIENT,
+    find: 'const CACHED_TARGET_READ_FLAGS = TRUSTED_READ_FLAGS;',
+    replace: 'const CACHED_TARGET_READ_FLAGS = fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0); // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-target-cache-blocking-open',
+    description: 'the cached target is opened blocking, so a FIFO at the output path holds the download',
+    file: CLIENT,
+    find: 'const CACHED_TARGET_READ_FLAGS = TRUSTED_READ_FLAGS;',
+    // The FIFO test runs the download in a child with a hard time limit, so this
+    // is a failed test and not a hung suite.
+    replace: 'const CACHED_TARGET_READ_FLAGS = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0); // MUTANT',
+    detectableBy: ['unit'],
+  },
+  {
+    id: 'client-target-cache-unbounded-read',
+    description: 'the cached target is read whole before it is checked against the signed length',
+    file: CLIENT,
+    find: '    const bytes = await readAtMost(handle, length);',
+    replace: '    const bytes = await handle.readFile(); // MUTANT',
     detectableBy: ['unit'],
   },
   {

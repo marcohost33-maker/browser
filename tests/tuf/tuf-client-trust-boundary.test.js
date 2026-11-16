@@ -426,6 +426,11 @@ test('a forged reset marker grants nothing beyond deleting the retained role fil
   // the untampered floors refuse. Pinned so that a change in either direction
   // is noticed and re-reviewed.
   assert.deepEqual(boundaryCases.sort(), [
+    // The stateful rollback cases of the corpus (added 2026-11-16) are, like the
+    // timestamp one, validly signed chains below the honest floors.
+    'accept-newer-chain-over-trusted-state',
+    'reject-snapshot-rollback-against-trusted-state',
+    'reject-targets-rollback-against-trusted-state',
     'reject-timestamp-rollback-against-trusted-state',
     'valid-pretty-envelope',
     'valid-unicode-key-ordering',

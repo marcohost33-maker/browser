@@ -240,6 +240,8 @@ function makeCase({
   note,
   trustedVersions = null,
   preloadTimestampRaw = null,
+  preloadSnapshotRaw = null,
+  expectedPythonError = null,
 }) {
   return {
     name,
@@ -247,11 +249,17 @@ function makeCase({
     must_agree: mustAgree,
     expected_browser: expected,
     expected_python_tuf: mustAgree ? expected : null,
+    // Optional: the python-tuf exception class a rejection must carry, so that an
+    // oracle rejecting for another reason (or for misuse of its API) is a failure.
+    expected_python_error: expectedPythonError,
     note: note ?? null,
     trusted_versions: trustedVersions,
     preload_timestamp_b64: preloadTimestampRaw === null
       ? null
       : encode(preloadTimestampRaw),
+    preload_snapshot_b64: preloadSnapshotRaw === null
+      ? null
+      : encode(preloadSnapshotRaw),
     trusted_root_b64: encode(trustedRootRaw),
     roots_b64: roots.map((value) => encode(value)),
     timestamp_b64: encode(timestampRaw),
@@ -335,10 +343,66 @@ cases.push(makeCase({
   cases.push(makeCase({
     name: 'reject-timestamp-rollback-against-trusted-state',
     expected: 'reject',
+    expectedPythonError: 'BadVersionNumberError',
     chain: rollback,
     trustedVersions: { timestamp: 2, snapshot: 0, targets: 0 },
     preloadTimestampRaw: preload.raw.timestampRaw,
     note: 'Stateful rollback: candidate timestamp v1 follows an already trusted v2.',
+  }));
+}
+
+// Stateful rollback beyond the timestamp (R8 roadmap 2026-11-15). The trusted
+// state is the default chain at version 2 for every role; both oracles are
+// brought there first (Browser: trusted_versions, python-tuf: the preloaded
+// timestamp and snapshot). Every candidate below is validly signed and consistent
+// in itself, so only the comparison with the trusted state can decide it.
+{
+  const trusted = buildChain();
+  const trustedState = {
+    trustedVersions: { timestamp: 2, snapshot: 2, targets: 2 },
+    preloadTimestampRaw: trusted.raw.timestampRaw,
+    preloadSnapshotRaw: trusted.raw.snapshotRaw,
+  };
+
+  // Control: the same trusted state accepts a chain that is newer in every role,
+  // so the rejections below are caused by the lower version and not by the preload.
+  cases.push(makeCase({
+    name: 'accept-newer-chain-over-trusted-state',
+    expected: 'accept',
+    chain: buildChain({ timestampVersion: 3, snapshotVersion: 3, targetsVersion: 3 }),
+    ...trustedState,
+    note: 'Control for the stateful rollback cases: v3/v3/v3 follows a trusted v2/v2/v2.',
+  }));
+
+  cases.push(makeCase({
+    name: 'reject-snapshot-rollback-against-trusted-state',
+    expected: 'reject',
+    expectedPythonError: 'BadVersionNumberError',
+    chain: buildChain({ timestampVersion: 3, snapshotVersion: 1, targetsVersion: 2 }),
+    ...trustedState,
+    note: 'A newer timestamp (v3) points to snapshot v1 below the trusted v2 (TUF 5.4.3.2).',
+  }));
+
+  cases.push(makeCase({
+    name: 'reject-targets-rollback-against-trusted-state',
+    expected: 'reject',
+    expectedPythonError: 'BadVersionNumberError',
+    chain: buildChain({ timestampVersion: 3, snapshotVersion: 3, targetsVersion: 1 }),
+    ...trustedState,
+    note: 'A newer snapshot (v3) lists targets v1 below the trusted v2 (TUF 5.5.5).',
+  }));
+}
+
+// Root version sequence (TUF 5.3.5): the next root must be exactly N+1. Both are
+// signed to threshold by the trusted root keys, so only the version decides.
+for (const [label, version] of [['replayed', 1], ['skipped', 3]]) {
+  cases.push(makeCase({
+    name: `reject-root-version-${label}`,
+    expected: 'reject',
+    expectedPythonError: 'BadVersionNumberError',
+    roots: [rawMetadata(rootMetadata({ version }))],
+    chain: buildChain(),
+    note: `The file served as 2.root.json carries version ${version}; trusted root is version 1.`,
   }));
 }
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import tuf
 from securesystemslib.formats import encode_canonical
+from tuf.api.exceptions import RepositoryError
 from tuf.ngclient._internal.trusted_metadata_set import TrustedMetadataSet
 from tuf.ngclient.config import EnvelopeType
 
@@ -64,6 +65,20 @@ def decide(case: dict) -> dict:
             trusted.update_timestamp(decode(preload_timestamp))
 
         trusted.update_timestamp(decode(case["timestamp_b64"]))
+
+        # The locally stored snapshot of an earlier refresh, loaded the way
+        # ngclient.Updater._load_snapshot does: AFTER the new timestamp and as
+        # `trusted`, so it stays in the set as the intermediate snapshot that
+        # python-tuf takes its targets rollback floor from (5.5.5). That it is no
+        # longer the final snapshot for the new timestamp is expected and, as in
+        # the Updater, not a decision about the candidate chain.
+        preload_snapshot = case.get("preload_snapshot_b64")
+        if preload_snapshot is not None:
+            try:
+                trusted.update_snapshot(decode(preload_snapshot), trusted=True)
+            except RepositoryError:
+                pass
+
         trusted.update_snapshot(decode(case["snapshot_b64"]))
         trusted.update_targets(decode(case["targets_b64"]))
 

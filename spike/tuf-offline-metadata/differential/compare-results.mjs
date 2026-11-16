@@ -16,6 +16,9 @@ const python = JSON.parse(readFileSync(pythonPath, 'utf8'));
 // the expected oracle. A Map built from the raw list would let a later
 // duplicate overwrite an earlier verdict and would ignore extra rows.
 const DECISIONS = new Set(['accept', 'reject']);
+// Exception classes that say the oracle script drove python-tuf wrongly, not that
+// python-tuf judged the metadata: never a valid rejection, in any case.
+const ORACLE_MISUSE_ERRORS = new Set(['RuntimeError', 'TypeError', 'KeyError', 'AttributeError', 'NameError']);
 const KEYID_METHOD = 'sha256(securesystemslib.formats.encode_canonical(key))';
 const pinnedTuf = /^tuf==(\S+)/m.exec(readFileSync(
   new URL('./requirements-oracle.txt', import.meta.url),
@@ -77,6 +80,15 @@ for (const testCase of corpus.cases) {
   if (testCase.must_agree) {
     pass = pass && pythonExpected === true && agrees;
   }
+  // A rejection only counts for the reason the case is about. Found 2026-11-16: two
+  // new rollback cases were first "rejected" by python-tuf with RuntimeError
+  // ("Cannot update timestamp after snapshot"), a misuse of its API by the oracle
+  // script, and the decisions still agreed.
+  const pythonErrorName = pythonResult.error?.name ?? null;
+  const pythonErrorExpected = (testCase.expected_python_error ?? null) === null
+    || pythonErrorName === testCase.expected_python_error;
+  const oracleMisuse = ORACLE_MISUSE_ERRORS.has(pythonErrorName);
+  if (!pythonErrorExpected || oracleMisuse) pass = false;
   if (!pass) failures += 1;
 
   rows.push({
@@ -90,6 +102,8 @@ for (const testCase of corpus.cases) {
     pass,
     browser_error: browserResult.error,
     python_error: pythonResult.error,
+    expected_python_error: testCase.expected_python_error ?? null,
+    oracle_misuse: oracleMisuse,
     note: testCase.note,
   });
 }

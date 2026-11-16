@@ -1,6 +1,6 @@
 # `browser` — Implementation Status
 
-- Updated: 2026-11-10
+- Updated: 2026-11-16
 - Repository: `marcohost33-maker/browser`
 - Product: standalone native, offline-capable web-application runtime
 - Delivery: T1 owner-controlled → T2 curated third-party → T3 arbitrary foreign content
@@ -109,14 +109,31 @@ capability approval, secure updates, safe extraction or runtime isolation.
   operations (43 distinct states): old-or-new-or-refused, and a returned refresh
   survives a power cut (K6); three fsync mutants only this model can expose are
   killed. Modelled, not measured on hardware (LazyFS not run);
+- the same crash evidence for `download` and its target cache (2026-11-16): a
+  real download process is killed before every step of the metadata and the target
+  directory (35 kill points in two scenarios), plus the modelled power-loss states
+  of the target's directory; old-or-new target, never before its metadata is
+  committed, convergent recovery, no leftover temp, durable after return (T1-T6 in
+  `client/THREAT-MODEL.md`). It confirmed one suspected defect and found three gaps, all
+  closed: temps of a killed download were never removed; a link at the output path
+  was served as the cached target; a file over 2 GiB failed the download; a FIFO
+  blocked it;
+- stateful rollback differentially against python-tuf 7.0.1 (2026-11-16): snapshot
+  rollback (5.4.3.2), targets rollback (5.5.5) and a replayed or skipped root
+  version (5.3.5) join the timestamp case, each against a common trusted state and
+  with an accept control; 23 corpus cases, 21 conformance, 0 disagreements. A
+  rejection must now carry the exception class the case is about, after the first
+  run agreed on "reject" for an API-misuse error of the oracle script. Fast-forward
+  recovery (5.3.11) is not covered differentially;
 - bounded fresh re-read after a concurrent change (BR64-02, at most three full
   attempts, boundary rules re-run each time, insecure state never retried) and an
   offline start check `verifyTrustedStateOffline()`;
-- 146 deterministic TUF tests (verifier, strict JSON, client, differential gates,
-  trust boundary, read-once, re-read, stale temps, process kills, power loss; one end-to-end
-  foreign-owner case needs the superuser and is skipped unprivileged) plus four
-  ADR-governance tests, all locally green (2026-11-10, Linux, as superuser);
-  43 source-bound mutants in `differential/mutation-study.mjs`, all killed with
+- 157 deterministic TUF tests (verifier, strict JSON, client, differential gates,
+  trust boundary, read-once, re-read, stale temps, process kills, power loss,
+  download kills, target cache; one end-to-end foreign-owner case needs the
+  superuser and is skipped unprivileged) plus four ADR-governance tests, all
+  locally green (2026-11-16, Linux, as superuser, on the merge of this line with
+  `main` at `8bc0ef5`); 51 source-bound mutants in `differential/mutation-study.mjs`, all killed with
   every detector (unit, Browser differential, python-tuf 7.0.1).
 
 ### Activation-store spike (ADR-007a section 6)

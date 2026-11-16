@@ -23,9 +23,10 @@ permissions:
 jobs:
   differential:
     runs-on: ubuntu-latest
-    # 40 mutants incl. three with the process-kill matrix: 5.5 min measured locally
-    # (2026-11-10); hosted runners are slower, so 10 min left no margin.
-    timeout-minutes: 15
+    # 51 mutants incl. seven with the crash matrices: 11.6 min measured locally
+    # (2026-11-16, 43 mutants took 6.4 min on 2026-11-10); hosted runners are
+    # slower, so the margin is kept wide.
+    timeout-minutes: 30
 
     steps:
       - name: Checkout

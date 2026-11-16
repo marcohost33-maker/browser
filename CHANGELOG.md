@@ -60,6 +60,61 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Security
 
+- TUF-Client-Spike, `download` und Target-Cache (2026-11-16; offener Punkt aus
+  `todo/` vom 2026-11-10). Zuerst gemessen, dann behoben:
+  1. **Kill-Matrix fuer `download`:** `tests/tuf/tuf-client-download-kill.test.js`
+     toetet einen echten `downloadTargets()`-Prozess vor jedem Schritt im
+     Metadaten- UND im Target-Verzeichnis (9 + 26 = 35 Kill-Punkte, zwei Szenarien:
+     Erst-Download in nicht existierende Verzeichnisse; Update v2->v3, das ein
+     gecachtes Target ersetzt). Vertrag T1-T5: Target fehlt, ist das alte oder das
+     neue, nie zerrissen; das neue Target liegt nie vor vollstaendig geschriebenen
+     neuen Metadaten auf der Platte; ein Download eines frischen Prozesses
+     konvergiert; kein Temp bleibt; der zweite Download ist ein reiner Cache-Treffer.
+     Dazu das Stromausfall-Modell fuer das Target-Verzeichnis (6 Operationen,
+     4 Zustaende; T6: nach Rueckkehr ist das neue Target dauerhaft).
+  2. **Defekt (in `todo/` vermutet, jetzt gemessen):** Ein Kill zwischen `create`
+     und `rename` liess `.<datei>.tmp-<pid>-<n>` neben dem Target liegen; nichts
+     raeumte es je weg (3 von 9 und 3 von 26 Kill-Punkten). Neu
+     `sweepStaleTargetTemps()`: nur Temps genau dieses Targets, nur in dessen
+     Verzeichnis, nur tote PID, nur regulaere Datei, ohne Links zu folgen.
+  3. **Drei Luecken beim Lesen des Caches (neu gefunden, je vorher gemessen):** Ein
+     Link am Ausgabepfad wurde als gecachtes Target geliefert; eine Datei ueber
+     2 GiB liess den Download mit `ERR_FS_FILE_TOO_LARGE` scheitern; ein FIFO
+     blockierte ihn dauerhaft. Neu entscheidet EIN geoeffneter Deskriptor: ohne
+     Link-Folgen, nicht blockierend, regulaere Datei, hoechstens signierte Laenge
+     plus ein Byte gelesen. Alles andere gilt als "nicht gecacht" und wird per
+     Temp-Datei und Rename ersetzt.
+  4. **Fuenf neue Mutanten** fuer Sweep und Cache-Leseregel, je vom vorgesehenen
+     Test getoetet. Das Ergebnis von `download` nennt neu `staleTempsRemoved` je
+     Target. Der FIFO-Test laeuft in einem Kindprozess mit hartem Zeitlimit: Ohne
+     das liess ein bestehender Mutant die ganze Studie haengen.
+  **Grenzen:** ein Target je Aufruf; Stromausfall modelliert, nicht gemessen; das
+  Modell deckt das bestehende Target-Verzeichnis, nicht das Anlegen neuer
+  Verzeichnisse (dort prueft der Test die Verzeichnis-Syncs in der Spur); das
+  Target-Verzeichnis bleibt ausserhalb des Vertrauenszustands; Windows ohne
+  `O_NOFOLLOW`.
+  5. **Rollback differenziell gegen python-tuf (R8-Roadmap 007acc2, 2026-11-15):**
+     Das Differential-Korpus kannte nur den Timestamp-Rollback. Neu fuenf Faelle
+     gegen einen gemeinsamen Vertrauenszustand v2/v2/v2: Snapshot-Rollback (TUF
+     5.4.3.2), Targets-Rollback (5.5.5), Root-Version wiederholt und uebersprungen
+     (5.3.5) und eine Accept-Kontrolle (v3/v3/v3). Korpus 18 -> 23 Faelle, 21
+     Konformitaetsfaelle, 0 Abweichungen zu python-tuf 7.0.1. Abschnittsnummern
+     gegen den Spezifikations-Quelltext v1.0.37 (2026-10-08) geprueft. Drei neue
+     Mutanten entfernen je eine Rollback-Schranke im Verifier; jeder muss von Unit,
+     Browser-Differential und python-tuf erkannt werden.
+  6. **Scheinbeweis verhindert:** Beim ersten Lauf "lehnte" python-tuf die neuen
+     Faelle mit `RuntimeError` ab (Bedienfehler der API-Reihenfolge im
+     Orakel-Skript), und der Vergleich meldete Uebereinstimmung. Das Orakel folgt
+     jetzt dem Ablauf von `ngclient.Updater`; ein Fall kann die erwartete
+     Fehlerklasse nennen (`expected_python_error`), und Bedienfehler-Klassen sind nie
+     eine gueltige Ablehnung. Zwei Faelschungstests belegen beide Regeln.
+  **Nicht differenziell belegt:** Fast-Forward-Recovery nach Key-Rotation (5.3.11);
+  python-tuf bildet sie nicht in `TrustedMetadataSet` ab. Sie bleibt durch die
+  Client-Tests C2-C6 und die Crash-Matrizen belegt.
+  **Neu getestetes Merge-Objekt:** Diese Linie (#64 inkl. #66) mit `main` bei
+  `8bc0ef5` zusammengefuehrt, ohne Konflikte; `npm test` darauf vor den Aenderungen
+  492 Tests, 487 bestanden, 0 fehlgeschlagen, 5 uebersprungen (R8-Roadmap 007acc2,
+  Punkt `browser#64`).
 - TUF-Client-Spike, Selbstpruefung der BR64-Runde (2026-11-10, zweiter Durchgang),
   fuenf Luecken geschlossen:
   1. **Stromausfall statt nur Prozess-Kill:** SIGKILL laesst den Page-Cache stehen

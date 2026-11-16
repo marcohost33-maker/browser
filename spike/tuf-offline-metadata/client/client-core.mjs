@@ -55,15 +55,6 @@ function limitValue(limits, name) {
   return value;
 }
 
-async function readMaybe(path) {
-  try {
-    return await readFile(path);
-  } catch (error) {
-    if (error?.code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
 async function syncDirectory(path) {
   let handle;
   try {
@@ -198,14 +189,14 @@ function processMayBeAlive(pid) {
   }
 }
 
-export async function sweepStaleTempFiles(metadataDir) {
+async function sweepStaleTemps(directory, tempName) {
   const removed = [];
-  for (const name of (await readdir(metadataDir)).sort()) {
-    const match = TRUSTED_TEMP_NAME.exec(name);
+  for (const name of (await readdir(directory)).sort()) {
+    const match = tempName.exec(name);
     if (match === null) continue;
     const pid = Number(match[1]);
     if (!Number.isSafeInteger(pid) || pid < 1 || processMayBeAlive(pid)) continue;
-    const path = join(metadataDir, name);
+    const path = join(directory, name);
     const entry = await lstatMaybe(path);
     if (entry === null || !entry.isFile()) continue;
     try {
@@ -216,6 +207,33 @@ export async function sweepStaleTempFiles(metadataDir) {
     }
   }
   return removed;
+}
+
+export async function sweepStaleTempFiles(metadataDir) {
+  return sweepStaleTemps(metadataDir, TRUSTED_TEMP_NAME);
+}
+
+/**
+ * The same sweep for ONE target (download kill matrix): a download killed between
+ * `create` and `rename` of the target left `.<file>.tmp-<pid>-<n>` beside it, and
+ * unlike the metadata directory nothing ever removed it, so every interrupted
+ * download of a large target kept a full or partial copy for good.
+ *
+ * Narrower than the metadata sweep on purpose, because the target directory is
+ * the caller's and not trusted state: only temps of exactly this output file,
+ * only in its own directory, and with the same three conditions (dead pid, regular
+ * file, no link followed). A file with that exact name that the caller put there
+ * is indistinguishable and is removed; it carries the client's temp name.
+ * A missing directory (first download) has nothing to sweep.
+ */
+export async function sweepStaleTargetTemps(outputPath) {
+  const file = basename(outputPath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    return await sweepStaleTemps(dirname(outputPath), new RegExp(`^\\.${file}\\.tmp-(\\d+)-\\d+$`));
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
 }
 
 function rolePath(metadataDir, role) {
@@ -1334,13 +1352,54 @@ function targetFetchPath(targetPath, descriptor, consistentSnapshot, limits) {
   return components.join('/');
 }
 
+// What `open` reports when the output path cannot be a cached target at all: no
+// such file, a link (O_NOFOLLOW), a directory, a socket.
+const NOT_A_CACHED_TARGET_CODES = Object.freeze(
+  new Set(['ENOENT', 'ENOTDIR', 'EISDIR', 'ENXIO', ...LINK_REFUSED_CODES]),
+);
+
+/**
+ * A cache hit is decided on ONE open descriptor, so there is no window between a
+ * check and the read. Measured before this rule (2026-11-16): a link at the output
+ * path was served as the cached target, a file over 2 GiB failed the download with
+ * ERR_FS_FILE_TOO_LARGE, and a FIFO blocked it for good.
+ *
+ * - The path is opened without following a link and without blocking.
+ * - The descriptor must be a regular file.
+ * - At most the authorised length plus one byte is read, whatever is there, so a
+ *   foreign or huge file is never loaded into memory; one byte too many already
+ *   fails the length check of verifyTargetBytes.
+ *
+ * Anything else is "not cached": the target is fetched and renamed over whatever
+ * is there. Windows has no O_NOFOLLOW; there a link at the output path is followed,
+ * and the bytes behind it are still verified against the signed descriptor.
+ */
+const CACHED_TARGET_READ_FLAGS = TRUSTED_READ_FLAGS;
+
 async function readVerifiedCachedTarget(path, descriptor, limits) {
-  const bytes = await readMaybe(path);
-  if (bytes === null) return null;
+  const length = descriptor?.length;
+  // The read below is sized by the signed length; keep it under the caller's
+  // ceiling as well, the same one the fetch of this target would have to meet.
+  if (!Number.isSafeInteger(length) || length < 0
+      || length > limitValue(limits, 'targetBytes')) return null;
+
+  let handle;
   try {
-    return verifyTargetBytes(bytes, descriptor, limits);
-  } catch {
-    return null;
+    handle = await open(path, CACHED_TARGET_READ_FLAGS);
+  } catch (error) {
+    if (NOT_A_CACHED_TARGET_CODES.has(error?.code)) return null;
+    throw error;
+  }
+  try {
+    if (!(await handle.stat()).isFile()) return null;
+    const bytes = await readAtMost(handle, length);
+    try {
+      return verifyTargetBytes(bytes, descriptor, limits);
+    } catch {
+      return null;
+    }
+  } finally {
+    await handle.close();
   }
 }
 
@@ -1378,9 +1437,12 @@ export async function downloadTargets({
     if (!descriptor) fail('TARGET_NOT_FOUND', `target is not authorized: ${targetName}`);
 
     const outputPath = join(targetDir, ...targetName.split('/'));
+    const staleTempsRemoved = await sweepStaleTargetTemps(outputPath);
     const cached = await readVerifiedCachedTarget(outputPath, descriptor, limits);
     if (cached !== null) {
-      downloaded.push({ targetName, outputPath, cached: true, bytes: cached.length });
+      downloaded.push({
+        targetName, outputPath, cached: true, bytes: cached.length, staleTempsRemoved,
+      });
       continue;
     }
 
@@ -1403,6 +1465,7 @@ export async function downloadTargets({
       cached: false,
       bytes: verifiedBytes.length,
       write,
+      staleTempsRemoved,
     });
   }
 

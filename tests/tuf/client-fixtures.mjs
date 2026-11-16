@@ -91,6 +91,30 @@ export function chainAtVersion(fx, version) {
   return { timestamp: timestampRaw, snapshot: snapshotRaw, targets: targetsRaw };
 }
 
+/** The chain at `version` whose targets metadata authorises `bytes` as `targetName`. */
+export function chainWithTarget(fx, version, targetName, bytes) {
+  const targets = parseTufMetadataBytes(fx.targets);
+  targets.signed.version = version;
+  targets.signed.targets[targetName] = {
+    ...targets.signed.targets[targetName],
+    length: bytes.length,
+    hashes: { sha256: sha256(bytes) },
+  };
+  const targetsRaw = resignedRaw(targets, 'targetsA');
+
+  const snapshot = parseTufMetadataBytes(fx.snapshot);
+  snapshot.signed.version = version;
+  snapshot.signed.meta['targets.json'] = fileDescriptor(targetsRaw, version);
+  const snapshotRaw = resignedRaw(snapshot, 'snapshotA');
+
+  const timestamp = parseTufMetadataBytes(fx.timestamp);
+  timestamp.signed.version = version;
+  timestamp.signed.meta['snapshot.json'] = fileDescriptor(snapshotRaw, version);
+  const timestampRaw = resignedRaw(timestamp, 'timestampA');
+
+  return { timestamp: timestampRaw, snapshot: snapshotRaw, targets: targetsRaw };
+}
+
 /**
  * A mirror that serves one fixed bundle: `N.root.json` from `roots` (N = 2, 3,
  * ...), and the same timestamp/snapshot/targets bytes for any requested
