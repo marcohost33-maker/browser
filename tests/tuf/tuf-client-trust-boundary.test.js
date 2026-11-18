@@ -429,6 +429,9 @@ test('a forged reset marker grants nothing beyond deleting the retained role fil
     // The stateful rollback cases of the corpus (added 2026-11-16) are, like the
     // timestamp one, validly signed chains below the honest floors.
     'accept-newer-chain-over-trusted-state',
+    // Positive control for the timestamp rollback case (A7-R14, 2026-11-18):
+    // timestamp v3, also below the honest floors, so the same class.
+    'accept-newer-timestamp-over-trusted-timestamp',
     'reject-snapshot-rollback-against-trusted-state',
     'reject-targets-rollback-against-trusted-state',
     'reject-timestamp-rollback-against-trusted-state',
