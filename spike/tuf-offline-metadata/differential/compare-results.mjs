@@ -83,13 +83,33 @@ for (const testCase of corpus.cases) {
   // A rejection only counts for the reason the case is about. Found 2026-11-16: two
   // new rollback cases were first "rejected" by python-tuf with RuntimeError
   // ("Cannot update timestamp after snapshot"), a misuse of its API by the oracle
-  // script, and the decisions still agreed.
+  // script, and the decisions still agreed. A7-R14: every reject case names the
+  // reason for EACH oracle (no default that lets a case pass without one), the
+  // python rejection must belong to python-tuf's own error class, and a positive
+  // control with the same oracle setup must be accepted by both (checked below).
+  const reasons = [];
   const pythonErrorName = pythonResult.error?.name ?? null;
-  const pythonErrorExpected = (testCase.expected_python_error ?? null) === null
-    || pythonErrorName === testCase.expected_python_error;
-  const oracleMisuse = ORACLE_MISUSE_ERRORS.has(pythonErrorName);
-  if (!pythonErrorExpected || oracleMisuse) pass = false;
-  if (!pass) failures += 1;
+  const oracleMisuse = ORACLE_MISUSE_ERRORS.has(pythonErrorName)
+    || (pythonResult.decision === 'reject' && pythonResult.error?.category !== 'repository');
+  if (oracleMisuse) reasons.push(`python-tuf error ${pythonErrorName} is not a python-tuf verdict`);
+  if (testCase.expected_browser === 'reject') {
+    if (typeof testCase.expected_browser_code !== 'string') {
+      reasons.push('reject case names no expected_browser_code');
+    } else if (browserResult.error?.code !== testCase.expected_browser_code) {
+      reasons.push(`browser code ${browserResult.error?.code} != ${testCase.expected_browser_code}`);
+    }
+  }
+  if (testCase.must_agree && testCase.expected_python_tuf === 'reject') {
+    if (typeof testCase.expected_python_error !== 'string') {
+      reasons.push('reject case names no expected_python_error');
+    } else if (pythonErrorName !== testCase.expected_python_error) {
+      reasons.push(`python-tuf error ${pythonErrorName} != ${testCase.expected_python_error}`);
+    }
+    if (typeof testCase.positive_control !== 'string') {
+      reasons.push('reject case names no positive_control');
+    }
+  }
+  if (reasons.length > 0) pass = false;
 
   rows.push({
     name: testCase.name,
@@ -103,9 +123,54 @@ for (const testCase of corpus.cases) {
     browser_error: browserResult.error,
     python_error: pythonResult.error,
     expected_python_error: testCase.expected_python_error ?? null,
+    expected_browser_code: testCase.expected_browser_code ?? null,
+    positive_control: testCase.positive_control ?? null,
     oracle_misuse: oracleMisuse,
+    reasons,
     note: testCase.note,
   });
+}
+
+// Positive controls (A7-R14). The control must be an accept case that drives both
+// oracles through the same setup as the rejection (same trusted root, same
+// preloaded timestamp/snapshot, same trusted versions, same number of new roots),
+// and both oracles must have accepted it. Otherwise an agreeing rejection could be
+// an artefact of that setup (the 2026-11-16 RuntimeError came from the preload).
+const SETUP_FIELDS = [
+  'trusted_root_b64',
+  'preload_timestamp_b64',
+  'preload_snapshot_b64',
+  'trusted_versions',
+];
+const caseByName = new Map(corpus.cases.map((testCase) => [testCase.name, testCase]));
+const rowByName = new Map(rows.map((row) => [row.name, row]));
+for (const row of rows) {
+  const testCase = caseByName.get(row.name);
+  if (typeof testCase.positive_control !== 'string') continue;
+  const control = caseByName.get(testCase.positive_control);
+  const controlRow = rowByName.get(testCase.positive_control);
+  if (!control) {
+    row.reasons.push(`positive control ${testCase.positive_control} is not in the corpus`);
+  } else if (control.expected_browser !== 'accept' || control.must_agree !== true) {
+    row.reasons.push(`positive control ${control.name} is not a conformance accept case`);
+  } else if (
+    SETUP_FIELDS.some(
+      (field) => JSON.stringify(control[field] ?? null) !== JSON.stringify(testCase[field] ?? null),
+    )
+    || control.roots_b64.length !== testCase.roots_b64.length
+  ) {
+    row.reasons.push(`positive control ${control.name} has another oracle setup`);
+  } else if (
+    !controlRow.pass
+    || controlRow.browser !== 'accept'
+    || controlRow.python_tuf !== 'accept'
+  ) {
+    row.reasons.push(`positive control ${control.name} was not accepted by both oracles`);
+  }
+  if (row.reasons.length > 0) row.pass = false;
+}
+for (const row of rows) {
+  if (!row.pass) failures += 1;
 }
 
 // #56: keyids recomputed by the oracle independently of the code under test.
@@ -149,7 +214,8 @@ writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 
 for (const row of rows) {
   console.log(
-    `${row.pass ? 'PASS' : 'FAIL'} ${row.name}: browser=${row.browser} python-tuf=${row.python_tuf} class=${row.class}`,
+    `${row.pass ? 'PASS' : 'FAIL'} ${row.name}: browser=${row.browser} python-tuf=${row.python_tuf} class=${row.class}`
+    + (row.reasons.length > 0 ? ` reasons=${JSON.stringify(row.reasons)}` : ''),
   );
 }
 console.log(

@@ -21,7 +21,7 @@ Massgeblich fuer Entscheide bleiben GitHub-Issues und ADRs; diese Liste ordnet n
 | 2026-11-10 | Doppelabsturz (Kill waehrend Recovery) und Bootstrap-Kill: `tests/tuf/tuf-client-process-kill.test.js` | P2 | erledigt 2026-11-10 |
 | 2026-11-10 | Kill-Matrix fuer `download` (Target-Cache, eigener Temp-Pfad ausserhalb des Metadatenverzeichnisses): 35 Kill-Punkte, Stromausfall-Modell, Sweep und Cache-Leseregel, `tests/tuf/tuf-client-download-kill.test.js`, `tests/tuf/tuf-client-target-cache.test.js` | P2 | erledigt 2026-11-16 |
 | 2026-11-16 | Rollback differenziell gegen python-tuf (R8-Roadmap): Snapshot, Targets, Root-Version, Accept-Kontrolle; Korpus 23 Faelle, 0 Abweichungen; Vergleich prueft den Ablehnungsgrund | P0 | erledigt 2026-11-16 (lokal; CI-Lauf am Merge-Objekt steht aus) |
-| 2026-11-16 | Differential: `expected_python_error` fuer alle aelteren Reject-Faelle zur Pflicht machen (heute nur die Rollback- und Root-Versions-Faelle) | P2 | offen |
+| 2026-11-16 | Differential: `expected_python_error` fuer alle aelteren Reject-Faelle zur Pflicht machen (heute nur die Rollback- und Root-Versions-Faelle) | P2 | erledigt 2026-11-18 (A7-R14: dazu `expected_browser_code`, `positive_control` mit gleichem Orakel-Setup, python-Fehlerkategorie `repository`/`oracle-fault`; Korpus 24 Faelle) |
 | 2026-11-16 | Differential: Fast-Forward-Recovery (5.3.11) ueber den vollen `ngclient.Updater` mit lokalem Verzeichnis statt `TrustedMetadataSet` vergleichen | P2 | offen |
 | 2026-11-16 | Kill-Matrix fuer die Update-Activation-Kopplung #61 (haengt an deren HOLD) | P2 | blockiert |
 | 2026-11-16 | `download` mit mehreren Targets in einem Aufruf: Kill zwischen zwei Targets (heute nur ein Target je Matrix-Lauf) | P3 | offen |

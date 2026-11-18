@@ -108,6 +108,14 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
      jetzt dem Ablauf von `ngclient.Updater`; ein Fall kann die erwartete
      Fehlerklasse nennen (`expected_python_error`), und Bedienfehler-Klassen sind nie
      eine gueltige Ablehnung. Zwei Faelschungstests belegen beide Regeln.
+  7. **Eigene Orakel-Fehlerklasse und Positivkontrolle (A7-R14, 2026-11-18):**
+     Jeder Reject-Fall nennt jetzt Pflichtfelder statt Optionen: den Browser-Code
+     (`expected_browser_code`), die python-tuf-Klasse (`expected_python_error`) und
+     eine Accept-Kontrolle mit gleichem Orakel-Setup (`positive_control`). Das
+     python-Orakel ordnet jede Ausnahme ein (`repository` nur fuer python-tufs
+     `RepositoryError`-Hierarchie, sonst `oracle-fault`, nie eine Ablehnung).
+     Neue Kontrolle `accept-newer-timestamp-over-trusted-timestamp`; Korpus 24
+     Faelle, 22 Konformitaetsfaelle, 0 Abweichungen. Sieben Faelschungstests.
   **Nicht differenziell belegt:** Fast-Forward-Recovery nach Key-Rotation (5.3.11);
   python-tuf bildet sie nicht in `TrustedMetadataSet` ab. Sie bleibt durch die
   Client-Tests C2-C6 und die Crash-Matrizen belegt.

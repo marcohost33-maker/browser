@@ -102,22 +102,27 @@ async function honestPython(corpus) {
       name: entry.name,
       decision: entry.expected_python_tuf ?? 'accept',
       error: entry.expected_python_error
-        ? { name: entry.expected_python_error, message: 'as the case expects' }
+        ? { name: entry.expected_python_error, category: 'repository', message: 'as the case expects' }
         : null,
     })),
   };
 }
 
-async function compare({ python, browser }) {
+async function compare({ python, browser, corpus }) {
   const base = await shared;
   const dir = await mkdtemp(join(tmpdir(), 'browser-tuf-compare-'));
   const pythonPath = join(dir, 'python.json');
   const browserPath = join(dir, 'browser.json');
-  await writeFile(pythonPath, JSON.stringify(python ?? await honestPython(base.corpus)));
+  let corpusPath = base.corpusPath;
+  if (corpus) {
+    corpusPath = join(dir, 'corpus.json');
+    await writeFile(corpusPath, JSON.stringify(corpus));
+  }
+  await writeFile(pythonPath, JSON.stringify(python ?? await honestPython(corpus ?? base.corpus)));
   await writeFile(browserPath, JSON.stringify(browser ?? base.browser));
   return spawnSync(process.execPath, [
     `${DIFF}/compare-results.mjs`,
-    base.corpusPath,
+    corpusPath,
     browserPath,
     pythonPath,
     join(dir, 'report.json'),
@@ -185,6 +190,100 @@ test('compare-results fails on a duplicated Browser verdict whose last copy matc
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /browser-tuf-spike repeats a decision for/);
 });
+
+// --- A7-R14: own error class per oracle and a positive control per rejection ---
+// Agreeing "reject" verdicts are evidence only with the reason each oracle gives
+// and with an accepted control that takes the same oracle path. Each forgery below
+// passed the comparator at ee2f8e2 and must fail now, for its named reason.
+
+test('every reject case of the corpus names both reasons and a positive control', async () => {
+  const { corpus } = await shared;
+  const rejects = corpus.cases.filter((entry) => entry.expected_browser === 'reject');
+  assert.ok(rejects.length >= 19);
+  for (const entry of rejects) {
+    assert.equal(typeof entry.expected_browser_code, 'string', entry.name);
+    if (!entry.must_agree) continue;
+    assert.equal(typeof entry.expected_python_error, 'string', entry.name);
+    assert.ok(
+      corpus.cases.some((other) => other.name === entry.positive_control && other.expected_browser === 'accept'),
+      `${entry.name}: control ${entry.positive_control}`,
+    );
+  }
+});
+
+function withoutCase(base, name) {
+  const corpus = structuredClone(base.corpus);
+  corpus.cases = corpus.cases.filter((entry) => entry.name !== name);
+  const browser = structuredClone(base.browser);
+  browser.results = browser.results.filter((entry) => entry.name !== name);
+  return { corpus, browser };
+}
+
+const r14Forgeries = [
+  ['a reject case without expected_python_error',
+    /FAIL reject-snapshot-hash-mismatch.*names no expected_python_error/,
+    (base) => {
+      const corpus = structuredClone(base.corpus);
+      delete corpus.cases.find((entry) => entry.name === 'reject-snapshot-hash-mismatch').expected_python_error;
+      return { corpus };
+    }],
+  ['a reject case without expected_browser_code',
+    /FAIL reject-expired-timestamp.*names no expected_browser_code/,
+    (base) => {
+      const corpus = structuredClone(base.corpus);
+      delete corpus.cases.find((entry) => entry.name === 'reject-expired-timestamp').expected_browser_code;
+      return { corpus };
+    }],
+  ['a Browser rejection for another code than the case is about',
+    /FAIL reject-snapshot-rollback-against-trusted-state.*browser code SIGNATURE_THRESHOLD != SNAPSHOT_ROLLBACK/,
+    (base) => {
+      const browser = structuredClone(base.browser);
+      browser.results.find((entry) => entry.name === 'reject-snapshot-rollback-against-trusted-state')
+        .error.code = 'SIGNATURE_THRESHOLD';
+      return { browser };
+    }],
+  ['a profile observation rejected by an oracle fault outside the misuse list',
+    /FAIL profile-observation-decimal-integer-spelling.*not a python-tuf verdict/,
+    async (base) => {
+      const python = await honestPython(base.corpus);
+      Object.assign(python.results.find((entry) => entry.name === 'profile-observation-decimal-integer-spelling'), {
+        decision: 'reject',
+        error: { name: 'ValueError', category: 'oracle-fault', message: 'forged' },
+      });
+      return { python };
+    }],
+  ['a reject case whose positive control is missing from the corpus',
+    /FAIL reject-timestamp-rollback-against-trusted-state.*positive control accept-newer-timestamp-over-trusted-timestamp is not in the corpus/,
+    (base) => withoutCase(base, 'accept-newer-timestamp-over-trusted-timestamp')],
+  ['a positive control with another oracle setup',
+    /FAIL reject-timestamp-rollback-against-trusted-state.*positive control valid-pretty-envelope has another oracle setup/,
+    (base) => {
+      const corpus = structuredClone(base.corpus);
+      corpus.cases.find((entry) => entry.name === 'reject-timestamp-rollback-against-trusted-state')
+        .positive_control = 'valid-pretty-envelope';
+      return { corpus };
+    }],
+  // The 2026-11-16 failure: the preload step misused, every rollback "rejected"
+  // with the expected class. Only the control shows the path cannot accept.
+  ['a positive control that python-tuf rejected',
+    /FAIL reject-snapshot-rollback-against-trusted-state.*positive control accept-newer-chain-over-trusted-state was not accepted by both oracles/,
+    async (base) => {
+      const python = await honestPython(base.corpus);
+      Object.assign(python.results.find((entry) => entry.name === 'accept-newer-chain-over-trusted-state'), {
+        decision: 'reject',
+        error: { name: 'BadVersionNumberError', category: 'repository', message: 'forged' },
+      });
+      return { python };
+    }],
+];
+
+for (const [label, reason, forge] of r14Forgeries) {
+  test(`compare-results fails on ${label}`, async () => {
+    const result = await compare(await forge(await shared));
+    assert.notEqual(result.status, 0, `${label} accepted:\n${result.stdout}`);
+    assert.match(result.stdout + result.stderr, reason);
+  });
+}
 
 // --- mutation-study.mjs -----------------------------------------------------
 

@@ -88,6 +88,27 @@ judgement about the metadata. Two of the three decisions still matched the expec
 error is an API-misuse class (`RuntimeError`, `TypeError`, `KeyError`,
 `AttributeError`, `NameError`). The gate tests forge both situations.
 
+**Since 2026-11-18 (cross-family audit A7-R14) this is a rule, not an option.**
+Every reject case names:
+
+- `expected_browser_code`: the Browser error code its rejection must carry;
+- for conformance cases, `expected_python_error`: the exact python-tuf class;
+- for conformance cases, `positive_control`: an accept case with the same oracle
+  setup (trusted root, preloaded timestamp and snapshot, trusted versions, number
+  of new roots).
+
+`compare-results.mjs` fails a reject case when a field is missing, when an oracle
+gives another reason, or when its control is absent, has another setup, or was not
+accepted by both oracles. The python oracle also classifies every exception it
+records: only python-tuf's own `RepositoryError` hierarchy (its serialization
+errors included) is `category: "repository"`; anything else is `oracle-fault` and
+never counts as a rejection, also for profile observations. The timestamp rollback
+case got its own control (`accept-newer-timestamp-over-trusted-timestamp`), so the
+corpus now holds 24 cases (22 conformance). `generate-corpus.mjs` refuses to write
+a reject case without these fields. Seven forgery tests in
+`tests/tuf/tuf-differential-gates.test.js` show each rule failing for its own
+reason.
+
 Not covered here: fast-forward recovery after a key rotation (5.3.11). python-tuf
 does not implement it inside `TrustedMetadataSet`; the old files simply fail
 verification under the new root when its `Updater` loads them. That path stays

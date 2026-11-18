@@ -88,11 +88,17 @@ def decide(case: dict) -> dict:
             "error": None,
         }
     except Exception as exc:  # Oracle records the precise upstream rejection class.
+        # Own error class of the oracle (A7-R14): only python-tuf's RepositoryError
+        # hierarchy (incl. its (De)SerializationError) is a verdict about the
+        # metadata. Anything else (RuntimeError from calling TrustedMetadataSet in
+        # the wrong order, TypeError, KeyError in this script, ...) says that the
+        # oracle failed, and compare-results never counts it as a rejection.
         return {
             "name": case["name"],
             "decision": "reject",
             "error": {
                 "name": type(exc).__name__,
+                "category": "repository" if isinstance(exc, RepositoryError) else "oracle-fault",
                 "message": str(exc),
             },
         }
