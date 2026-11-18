@@ -116,6 +116,11 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
      `RepositoryError`-Hierarchie, sonst `oracle-fault`, nie eine Ablehnung).
      Neue Kontrolle `accept-newer-timestamp-over-trusted-timestamp`; Korpus 24
      Faelle, 22 Konformitaetsfaelle, 0 Abweichungen. Sieben Faelschungstests.
+  8. **Referenzzeit gehoert zum Orakel-Setup (Codex r65FJwJ, A7-R17 B7-1, 2026-11-18):**
+     `now` steht in `SETUP_FIELDS`. Vorher galt eine Kontrolle als gleiches Setup, auch
+     wenn der Reject-Fall zu einer anderen Zeit beurteilt wurde; derselbe Ablauf-Code
+     konnte dann von einer anderen abgelaufenen Rolle stammen. Achter Faelschungstest
+     (Reject-Fall auf 2028 verschoben); ohne den Fix akzeptiert der Vergleich ihn.
   **Nicht differenziell belegt:** Fast-Forward-Recovery nach Key-Rotation (5.3.11);
   python-tuf bildet sie nicht in `TrustedMetadataSet` ab. Sie bleibt durch die
   Client-Tests C2-C6 und die Crash-Matrizen belegt.

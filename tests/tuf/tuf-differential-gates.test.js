@@ -263,6 +263,15 @@ const r14Forgeries = [
         .positive_control = 'valid-pretty-envelope';
       return { corpus };
     }],
+  // Codex r65FJwJ / A7-R17 B7-1: the same expiry code can come from another expired role
+  // when only the reject case's reference time moves; its control no longer shares the setup.
+  ['a reject case judged at another reference time than its control',
+    /FAIL reject-expired-timestamp.*has another oracle setup/,
+    (base) => {
+      const corpus = structuredClone(base.corpus);
+      corpus.cases.find((entry) => entry.name === 'reject-expired-timestamp').now = '2028-01-01T00:00:00Z';
+      return { corpus };
+    }],
   // The 2026-11-16 failure: the preload step misused, every rollback "rejected"
   // with the expected class. Only the control shows the path cannot accept.
   ['a positive control that python-tuf rejected',

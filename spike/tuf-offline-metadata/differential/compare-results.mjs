@@ -136,7 +136,10 @@ for (const testCase of corpus.cases) {
 // preloaded timestamp/snapshot, same trusted versions, same number of new roots),
 // and both oracles must have accepted it. Otherwise an agreeing rejection could be
 // an artefact of that setup (the 2026-11-16 RuntimeError came from the preload).
+// `now` is the reference time both oracles judge expiry against: a control accepted at
+// another time does not show that the rejection's setup can accept (Codex r65FJwJ, A7-R17 B7-1).
 const SETUP_FIELDS = [
+  'now',
   'trusted_root_b64',
   'preload_timestamp_b64',
   'preload_snapshot_b64',
