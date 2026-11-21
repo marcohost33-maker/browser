@@ -240,18 +240,46 @@ function makeCase({
   note,
   trustedVersions = null,
   preloadTimestampRaw = null,
+  preloadSnapshotRaw = null,
+  expectedPythonError = null,
+  expectedBrowserCode = null,
+  positiveControl = null,
 }) {
+  // Grounds of the evidence (A7-R14 for #67): a rejection is evidence only with the
+  // reason each oracle must give for it and with an accept case that drives both
+  // oracles through the same setup. Without these, two agreeing "reject" verdicts
+  // can come from a misuse of an oracle (2026-11-16, RuntimeError in python-tuf).
+  if (expected === 'reject') {
+    if (typeof expectedBrowserCode !== 'string') {
+      throw new Error(`${name}: a reject case must name expectedBrowserCode`);
+    }
+    if (mustAgree && (typeof expectedPythonError !== 'string' || typeof positiveControl !== 'string')) {
+      throw new Error(`${name}: a conformance reject case must name expectedPythonError and positiveControl`);
+    }
+  }
   return {
     name,
     now: NOW,
     must_agree: mustAgree,
     expected_browser: expected,
     expected_python_tuf: mustAgree ? expected : null,
+    // The python-tuf exception class and the Browser error code a rejection must
+    // carry, so that an oracle rejecting for another reason (or for misuse of its
+    // API) is a failure. Required for every reject case (compare-results checks).
+    expected_python_error: expectedPythonError,
+    expected_browser_code: expectedBrowserCode,
+    // Name of an accept case with the same oracle setup (trusted root, preloaded
+    // state, number of new roots). compare-results requires both oracles to accept
+    // it, so the path that produced the rejection is shown to be able to accept.
+    positive_control: positiveControl,
     note: note ?? null,
     trusted_versions: trustedVersions,
     preload_timestamp_b64: preloadTimestampRaw === null
       ? null
       : encode(preloadTimestampRaw),
+    preload_snapshot_b64: preloadSnapshotRaw === null
+      ? null
+      : encode(preloadSnapshotRaw),
     trusted_root_b64: encode(trustedRootRaw),
     roots_b64: roots.map((value) => encode(value)),
     timestamp_b64: encode(timestampRaw),
@@ -261,6 +289,22 @@ function makeCase({
 }
 
 const cases = [];
+
+// Reasons and positive control of a reject case that both oracles see from the
+// bare trusted root (no preloaded state, no new root): the control is
+// 'valid-pretty-envelope', which takes exactly that path.
+function stateless(expectedBrowserCode, expectedPythonError) {
+  return { expectedBrowserCode, expectedPythonError, positiveControl: 'valid-pretty-envelope' };
+}
+// Same for cases that first verify one new root: the control is the accepted
+// root rotation, which drives update_root/updateRootChain once.
+function oneNewRoot(expectedBrowserCode, expectedPythonError) {
+  return {
+    expectedBrowserCode,
+    expectedPythonError,
+    positiveControl: 'accept-root-rotation-old-and-new-threshold',
+  };
+}
 
 cases.push(makeCase({
   name: 'valid-pretty-envelope',
@@ -288,6 +332,7 @@ cases.push(makeCase({
   cases.push(makeCase({
     name: 'reject-invalid-timestamp-signature',
     expected: 'reject',
+    ...stateless('SIGNATURE_THRESHOLD', 'UnsignedMetadataError'),
     chain,
     timestampRaw: rawMetadata(chain.objects.timestamp),
   }));
@@ -296,6 +341,7 @@ cases.push(makeCase({
 cases.push(makeCase({
   name: 'reject-snapshot-hash-mismatch',
   expected: 'reject',
+  ...stateless('METADATA_HASH', 'LengthOrHashMismatchError'),
   chain: buildChain({
     mutateTimestamp(metadata) {
       metadata.signed.meta['snapshot.json'].hashes.sha256 = '0'.repeat(64);
@@ -306,6 +352,7 @@ cases.push(makeCase({
 cases.push(makeCase({
   name: 'reject-targets-hash-mismatch',
   expected: 'reject',
+  ...stateless('METADATA_HASH', 'LengthOrHashMismatchError'),
   chain: buildChain({
     mutateSnapshot(metadata) {
       metadata.signed.meta['targets.json'].hashes.sha256 = '0'.repeat(64);
@@ -316,12 +363,16 @@ cases.push(makeCase({
 cases.push(makeCase({
   name: 'reject-expired-timestamp',
   expected: 'reject',
+  ...stateless('EXPIRED_METADATA', 'ExpiredMetadataError'),
   chain: buildChain({ timestampExpires: PAST }),
 }));
 
 cases.push(makeCase({
   name: 'reject-wrong-timestamp-type',
   expected: 'reject',
+  // python-tuf raises the base class itself here ("Expected 'timestamp', got
+  // 'snapshot'"); the exact name still excludes every subclass and misuse class.
+  ...stateless('ROLE_MISMATCH', 'RepositoryError'),
   chain: buildChain({
     mutateTimestamp(metadata) {
       metadata.signed._type = 'snapshot';
@@ -332,19 +383,94 @@ cases.push(makeCase({
 {
   const preload = buildChain({ timestampVersion: 2 });
   const rollback = buildChain({ timestampVersion: 1 });
+  const trustedTimestamp = {
+    trustedVersions: { timestamp: 2, snapshot: 0, targets: 0 },
+    preloadTimestampRaw: preload.raw.timestampRaw,
+  };
+  // Positive control (A7-R14): the same preloaded timestamp v2 accepts v3, so the
+  // rejection below comes from the lower version, not from the preload step.
+  cases.push(makeCase({
+    name: 'accept-newer-timestamp-over-trusted-timestamp',
+    expected: 'accept',
+    chain: buildChain({ timestampVersion: 3 }),
+    ...trustedTimestamp,
+    note: 'Control for the timestamp rollback case: v3 follows a trusted timestamp v2.',
+  }));
   cases.push(makeCase({
     name: 'reject-timestamp-rollback-against-trusted-state',
     expected: 'reject',
+    expectedPythonError: 'BadVersionNumberError',
+    expectedBrowserCode: 'TIMESTAMP_ROLLBACK',
+    positiveControl: 'accept-newer-timestamp-over-trusted-timestamp',
     chain: rollback,
-    trustedVersions: { timestamp: 2, snapshot: 0, targets: 0 },
-    preloadTimestampRaw: preload.raw.timestampRaw,
+    ...trustedTimestamp,
     note: 'Stateful rollback: candidate timestamp v1 follows an already trusted v2.',
+  }));
+}
+
+// Stateful rollback beyond the timestamp (R8 roadmap 2026-11-15). The trusted
+// state is the default chain at version 2 for every role; both oracles are
+// brought there first (Browser: trusted_versions, python-tuf: the preloaded
+// timestamp and snapshot). Every candidate below is validly signed and consistent
+// in itself, so only the comparison with the trusted state can decide it.
+{
+  const trusted = buildChain();
+  const trustedState = {
+    trustedVersions: { timestamp: 2, snapshot: 2, targets: 2 },
+    preloadTimestampRaw: trusted.raw.timestampRaw,
+    preloadSnapshotRaw: trusted.raw.snapshotRaw,
+  };
+
+  // Control: the same trusted state accepts a chain that is newer in every role,
+  // so the rejections below are caused by the lower version and not by the preload.
+  cases.push(makeCase({
+    name: 'accept-newer-chain-over-trusted-state',
+    expected: 'accept',
+    chain: buildChain({ timestampVersion: 3, snapshotVersion: 3, targetsVersion: 3 }),
+    ...trustedState,
+    note: 'Control for the stateful rollback cases: v3/v3/v3 follows a trusted v2/v2/v2.',
+  }));
+
+  cases.push(makeCase({
+    name: 'reject-snapshot-rollback-against-trusted-state',
+    expected: 'reject',
+    expectedPythonError: 'BadVersionNumberError',
+    expectedBrowserCode: 'SNAPSHOT_ROLLBACK',
+    positiveControl: 'accept-newer-chain-over-trusted-state',
+    chain: buildChain({ timestampVersion: 3, snapshotVersion: 1, targetsVersion: 2 }),
+    ...trustedState,
+    note: 'A newer timestamp (v3) points to snapshot v1 below the trusted v2 (TUF 5.4.3.2).',
+  }));
+
+  cases.push(makeCase({
+    name: 'reject-targets-rollback-against-trusted-state',
+    expected: 'reject',
+    expectedPythonError: 'BadVersionNumberError',
+    expectedBrowserCode: 'TARGETS_ROLLBACK',
+    positiveControl: 'accept-newer-chain-over-trusted-state',
+    chain: buildChain({ timestampVersion: 3, snapshotVersion: 3, targetsVersion: 1 }),
+    ...trustedState,
+    note: 'A newer snapshot (v3) lists targets v1 below the trusted v2 (TUF 5.5.5).',
+  }));
+}
+
+// Root version sequence (TUF 5.3.5): the next root must be exactly N+1. Both are
+// signed to threshold by the trusted root keys, so only the version decides.
+for (const [label, version] of [['replayed', 1], ['skipped', 3]]) {
+  cases.push(makeCase({
+    name: `reject-root-version-${label}`,
+    expected: 'reject',
+    ...oneNewRoot('ROOT_VERSION', 'BadVersionNumberError'),
+    roots: [rawMetadata(rootMetadata({ version }))],
+    chain: buildChain(),
+    note: `The file served as 2.root.json carries version ${version}; trusted root is version 1.`,
   }));
 }
 
 cases.push(makeCase({
   name: 'reject-snapshot-version-mismatch',
   expected: 'reject',
+  ...stateless('SNAPSHOT_VERSION', 'BadVersionNumberError'),
   chain: buildChain({
     mutateTimestamp(metadata) {
       metadata.signed.meta['snapshot.json'].version = 3;
@@ -371,6 +497,56 @@ cases.push(makeCase({
   }));
 }
 
+// #56: a role signed by ANOTHER top-level role's key. Every key below is in
+// root.keys, so only the keyid-to-role binding (role.keyids) can reject it.
+for (const [role, signer] of [
+  ['timestamp', 'snapshotA'],
+  ['snapshot', 'targetsA'],
+  ['targets', 'timestampA'],
+]) {
+  cases.push(makeCase({
+    name: `reject-${role}-signed-by-${signer}-key`,
+    expected: 'reject',
+    ...stateless('SIGNATURE_THRESHOLD', 'UnsignedMetadataError'),
+    chain: buildChain({ [`${role}Signer`]: signer }),
+    note: `${role} carries a valid signature by a key that root authorizes only for another role (#56).`,
+  }));
+}
+
+{
+  // #56 for the root role: a new root signed to threshold (2) by two keys that
+  // both the trusted and the new root list in root.keys, but authorize only for
+  // timestamp and snapshot. Only the keyid-to-role binding can reject it.
+  const crossRoleRoot = rootMetadata({
+    version: 2,
+    signerNames: ['timestampA', 'snapshotA'],
+  });
+  cases.push(makeCase({
+    name: 'reject-root-signed-by-timestampA-snapshotA-keys',
+    expected: 'reject',
+    ...oneNewRoot('SIGNATURE_THRESHOLD', 'UnsignedMetadataError'),
+    roots: [rawMetadata(crossRoleRoot)],
+    chain: buildChain(),
+    note: 'root v2 carries two valid signatures by keys that root authorizes only for other roles (#56).',
+  }));
+
+  // Partial authorization: one genuine root key plus one key root lists in
+  // root.keys but authorizes only for targets. Counting every key in root.keys
+  // would reach the threshold of 2; the role binding counts only one.
+  const partlyAuthorizedRoot = rootMetadata({
+    version: 2,
+    signerNames: ['rootA', 'targetsA'],
+  });
+  cases.push(makeCase({
+    name: 'reject-root-signed-by-rootA-and-targetsA-keys',
+    expected: 'reject',
+    ...oneNewRoot('SIGNATURE_THRESHOLD', 'UnsignedMetadataError'),
+    roots: [rawMetadata(partlyAuthorizedRoot)],
+    chain: buildChain(),
+    note: 'root v2 reaches threshold 2 only if the targets-only key is counted for root (#56).',
+  }));
+}
+
 {
   const badRotatedRoot = rootMetadata({
     version: 2,
@@ -382,6 +558,7 @@ cases.push(makeCase({
   cases.push(makeCase({
     name: 'reject-root-rotation-missing-old-threshold',
     expected: 'reject',
+    ...oneNewRoot('SIGNATURE_THRESHOLD', 'UnsignedMetadataError'),
     roots: [rawMetadata(badRotatedRoot)],
     chain: buildChain({
       timestampSigner: 'timestampB',
@@ -404,6 +581,7 @@ cases.push(makeCase({
   cases.push(makeCase({
     name: 'profile-observation-duplicate-json-key',
     expected: 'reject',
+    expectedBrowserCode: 'DUPLICATE_JSON_KEY',
     mustAgree: false,
     chain,
     timestampRaw: Buffer.from(duplicate, 'utf8'),
@@ -422,6 +600,7 @@ cases.push(makeCase({
   cases.push(makeCase({
     name: 'profile-observation-decimal-integer-spelling',
     expected: 'reject',
+    expectedBrowserCode: 'FLOAT_FORBIDDEN',
     mustAgree: false,
     chain,
     timestampRaw: Buffer.from(decimal, 'utf8'),

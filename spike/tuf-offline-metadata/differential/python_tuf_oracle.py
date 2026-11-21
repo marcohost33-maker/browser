@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import argparse
 import base64
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
 
 import tuf
+from securesystemslib.formats import encode_canonical
+from tuf.api.exceptions import RepositoryError
 from tuf.ngclient._internal.trusted_metadata_set import TrustedMetadataSet
 from tuf.ngclient.config import EnvelopeType
 
@@ -16,6 +19,34 @@ def decode(value: str) -> bytes:
 
 def iso_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def keyid_mismatches(case: dict) -> list:
+    """Recompute every root keyid independently of the code under test (#56).
+
+    TUF: a KEYID is the hex SHA-256 of the canonical JSON of the public key
+    object. python-tuf does not check a keyid against its key, and the corpus
+    generator uses the Browser's own keyIdFor()/canonicalBytes(), so a drift in
+    that formula would be invisible to both decision paths. Here the canonical
+    form comes from securesystemslib instead.
+    """
+    mismatches = []
+    roots = [case["trusted_root_b64"], *case["roots_b64"]]
+    roots_checked = keys_checked = 0
+    for index, raw in enumerate(roots):
+        signed = json.loads(decode(raw))["signed"]
+        roots_checked += 1
+        for keyid, key in signed["keys"].items():
+            keys_checked += 1
+            expected = hashlib.sha256(encode_canonical(key).encode("utf-8")).hexdigest()
+            if expected != keyid:
+                mismatches.append({
+                    "case": case["name"],
+                    "root_index": index,
+                    "keyid": keyid,
+                    "independent_keyid": expected,
+                })
+    return roots_checked, keys_checked, mismatches
 
 
 def decide(case: dict) -> dict:
@@ -34,6 +65,20 @@ def decide(case: dict) -> dict:
             trusted.update_timestamp(decode(preload_timestamp))
 
         trusted.update_timestamp(decode(case["timestamp_b64"]))
+
+        # The locally stored snapshot of an earlier refresh, loaded the way
+        # ngclient.Updater._load_snapshot does: AFTER the new timestamp and as
+        # `trusted`, so it stays in the set as the intermediate snapshot that
+        # python-tuf takes its targets rollback floor from (5.5.5). That it is no
+        # longer the final snapshot for the new timestamp is expected and, as in
+        # the Updater, not a decision about the candidate chain.
+        preload_snapshot = case.get("preload_snapshot_b64")
+        if preload_snapshot is not None:
+            try:
+                trusted.update_snapshot(decode(preload_snapshot), trusted=True)
+            except RepositoryError:
+                pass
+
         trusted.update_snapshot(decode(case["snapshot_b64"]))
         trusted.update_targets(decode(case["targets_b64"]))
 
@@ -43,11 +88,17 @@ def decide(case: dict) -> dict:
             "error": None,
         }
     except Exception as exc:  # Oracle records the precise upstream rejection class.
+        # Own error class of the oracle (A7-R14): only python-tuf's RepositoryError
+        # hierarchy (incl. its (De)SerializationError) is a verdict about the
+        # metadata. Anything else (RuntimeError from calling TrustedMetadataSet in
+        # the wrong order, TypeError, KeyError in this script, ...) says that the
+        # oracle failed, and compare-results never counts it as a rejection.
         return {
             "name": case["name"],
             "decision": "reject",
             "error": {
                 "name": type(exc).__name__,
+                "category": "repository" if isinstance(exc, RepositoryError) else "oracle-fault",
                 "message": str(exc),
             },
         }
@@ -61,10 +112,26 @@ def main() -> int:
 
     corpus = json.loads(Path(args.corpus).read_text(encoding="utf-8"))
     results = [decide(case) for case in corpus["cases"]]
+    # Counted inside the loop that recomputes the keyids, so the totals say what
+    # was checked, not how large the corpus is; compare-results recomputes the
+    # expected totals from the corpus and requires equality.
+    roots_checked = keys_checked = 0
+    mismatches = []
+    for case in corpus["cases"]:
+        roots, keys, found = keyid_mismatches(case)
+        roots_checked += roots
+        keys_checked += keys
+        mismatches.extend(found)
 
     payload = {
         "oracle": "python-tuf",
         "version": tuf.__version__,
+        "keyid_check": {
+            "method": "sha256(securesystemslib.formats.encode_canonical(key))",
+            "roots_checked": roots_checked,
+            "keys_checked": keys_checked,
+            "mismatches": mismatches,
+        },
         "results": results,
     }
     Path(args.output).write_text(

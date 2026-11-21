@@ -465,6 +465,56 @@ test('valid dual-threshold root rotation resets timestamp and snapshot rollback 
   assert.equal(result.nextState.versions.snapshot, 1);
 });
 
+test('snapshot key rotation recovers from a fast-forwarded targets version (#57)', () => {
+  const oldRoot = rootMetadata();
+  const nextRoot = rootMetadata({
+    version: 2,
+    snapshotName: 'snapshotB',
+    signerNames: ['rootA', 'rootB'],
+  });
+  const bundle = updateBundle({
+    root: oldRoot,
+    roots: [nextRoot],
+    timestampVersion: 2,
+    snapshotVersion: 1,
+    targetsVersion: 1,
+    snapshotSigner: 'snapshotB',
+  });
+  const state = trustedState(oldRoot);
+  state.versions.snapshot = 99999;
+  state.versions.targets = 99999;
+  state.snapshotMeta['targets.json'].version = 99999;
+
+  const result = verifyOfflineBundle({
+    trustedState: state,
+    bundle,
+    targetPath: TARGET_PATH,
+    now: NOW,
+  });
+
+  assert.equal(result.status, 'update-verified');
+  assert.equal(result.nextState.versions.snapshot, 1);
+  assert.equal(result.nextState.versions.targets, 1);
+});
+
+test('a root change without timestamp/snapshot key rotation keeps the targets floor (#57)', () => {
+  const oldRoot = rootMetadata();
+  const nextRoot = rootMetadata({
+    version: 2,
+    rootNames: ['rootB', 'rootC'],
+    signerNames: ['rootA', 'rootB', 'rootC'],
+  });
+  const state = trustedState(oldRoot);
+  state.versions.targets = 3;
+
+  assertCode('TARGETS_ROLLBACK', () => verifyOfflineBundle({
+    trustedState: state,
+    bundle: updateBundle({ root: oldRoot, roots: [nextRoot], targetsVersion: 2 }),
+    targetPath: TARGET_PATH,
+    now: NOW,
+  }));
+});
+
 test('rejects timestamp metadata that describes anything beyond snapshot.json', () => {
   const root = rootMetadata();
   const bundle = cloneBundle(updateBundle({ root }));
